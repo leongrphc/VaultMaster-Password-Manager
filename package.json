@@ -1,0 +1,20 @@
+{
+  "name": "vaultmaster",
+  "private": true,
+  "scripts": {
+    "dev": "turbo dev",
+    "build": "turbo build",
+    "lint": "turbo lint",
+    "dev:api": "turbo dev --filter=@vaultmaster/api",
+    "dev:web": "turbo dev --filter=@vaultmaster/web",
+    "db:generate": "turbo db:generate --filter=@vaultmaster/api",
+    "db:push": "turbo db:push --filter=@vaultmaster/api",
+    "db:migrate": "turbo db:migrate --filter=@vaultmaster/api",
+    "db:seed": "turbo db:seed --filter=@vaultmaster/api"
+  },
+  "devDependencies": {
+    "turbo": "^2.4.0",
+    "typescript": "^5.7.0"
+  },
+  "packageManager": "pnpm@9.15.0"
+}

@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="tr">
+<head>
+	<meta charset="UTF-8" />
+	<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+	<title>VaultMaster Autofill</title>
+	<link rel="stylesheet" href="popup.css" />
+</head>
+<body>
+	<main class="popup-shell">
+		<header class="hero">
+			<div class="badge">VaultMaster</div>
+			<h1>Smart Autofill</h1>
+			<p id="active-domain">Aktif sekme analiz ediliyor...</p>
+		</header>
+
+		<div id="vault-status" class="vault-status unknown">Durum yükleniyor...</div>
+
+		<section class="panel">
+			<div class="panel-header">
+				<h2>Aktif Site İçin Öneriler</h2>
+				<button id="refresh-button" class="ghost">Yenile</button>
+			</div>
+
+			<div id="status" class="status">VaultMaster sekmesi aranıyor...</div>
+			<div id="items" class="items"></div>
+		</section>
+
+		<div id="shortcut-info" class="shortcut-info">
+			<span class="shortcut-key">Ctrl+Shift+V</span> ile hızlı autofill
+		</div>
+
+		<footer class="footer">
+			<button id="open-app-button" class="primary">VaultMaster'ı Aç</button>
+		</footer>
+	</main>
+
+	<script type="module" src="popup.js"></script>
+</body>
+</html>

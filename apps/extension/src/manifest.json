@@ -1,0 +1,36 @@
+{
+	"manifest_version": 3,
+	"name": "VaultMaster Autofill",
+	"version": "1.0.1",
+	"description": "Uses an unlocked VaultMaster web tab to suggest and autofill matching credentials.",
+	"permissions": ["tabs", "storage", "activeTab"],
+	"host_permissions": [
+		"http://localhost:3000/*",
+		"http://127.0.0.1:3000/*",
+		"<all_urls>"
+	],
+	"action": {
+		"default_title": "VaultMaster Autofill",
+		"default_popup": "popup.html"
+	},
+	"background": {
+		"service_worker": "background.js",
+		"type": "module"
+	},
+	"content_scripts": [
+		{
+			"matches": ["<all_urls>"],
+			"js": ["content.js"],
+			"run_at": "document_idle"
+		}
+	],
+	"commands": {
+		"_execute_action": {
+			"suggested_key": {
+				"default": "Ctrl+Shift+V",
+				"mac": "Command+Shift+V"
+			},
+			"description": "VaultMaster Autofill"
+		}
+	}
+}

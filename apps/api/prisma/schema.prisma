@@ -1,0 +1,112 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DATABASE_DIRECT_URL")
+}
+
+model User {
+  id                 String       @id @default(uuid())
+  email              String       @unique
+  masterPasswordHash String
+  kdfSalt            String
+  kdfIterations      Int          @default(600000)
+  twoFactorSecret    String?
+  twoFactorEnabled   Boolean      @default(false)
+  twoFactorRecoveryCodes Json?
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
+
+  vaultItems         VaultItem[]
+  folders            Folder[]
+  devices            Device[]
+  auditEvents        AuditEvent[]
+
+  @@map("users")
+}
+
+model Folder {
+  id        String      @id @default(uuid())
+  name      String
+  userId    String
+  user      User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  items     VaultItem[]
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+
+  @@index([userId])
+  @@map("folders")
+}
+
+model VaultItem {
+  id            String   @id @default(uuid())
+  userId        String
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  folderId      String?
+  folder        Folder?  @relation(fields: [folderId], references: [id], onDelete: SetNull)
+
+  encryptedData String
+  iv            String
+
+  favorite      Boolean  @default(false)
+  deletedAt     DateTime?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  versions      VaultItemVersion[]
+
+  @@index([userId])
+  @@index([folderId])
+  @@index([userId, deletedAt])
+  @@map("vault_items")
+}
+
+model VaultItemVersion {
+  id            String   @id @default(uuid())
+  vaultItemId    String
+  vaultItem      VaultItem @relation(fields: [vaultItemId], references: [id], onDelete: Cascade)
+  encryptedData String
+  iv            String
+  folderId      String?
+  favorite      Boolean
+  reason        String
+  createdAt     DateTime @default(now())
+
+  @@index([vaultItemId, createdAt])
+  @@map("vault_item_versions")
+}
+
+model Device {
+  id           String   @id @default(uuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  deviceName   String
+  deviceType   String
+  createdAt    DateTime @default(now())
+  lastActive   DateTime @default(now())
+  refreshToken String?  @unique
+  auditEvents  AuditEvent[]
+
+  @@index([userId])
+  @@map("devices")
+}
+
+model AuditEvent {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  deviceId  String?
+  device    Device?  @relation(fields: [deviceId], references: [id], onDelete: SetNull)
+  action    String
+  status    String
+  ipAddress String?
+  userAgent String?
+  metadata  Json?
+  createdAt DateTime @default(now())
+
+  @@index([userId, createdAt])
+  @@index([deviceId])
+  @@map("audit_events")
+}
