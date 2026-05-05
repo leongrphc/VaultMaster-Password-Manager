@@ -25,8 +25,10 @@ const PENDING_AUTOFILL_TTL_MS = 20000;
 const AUTOFILL_SUPPRESSION_TTL_MS = 15000;
 const NEVER_SAVE_HOSTS_KEY = "vaultmasterNeverSaveHosts";
 const SUGGESTION_CACHE_TTL_MS = 5000;
+const CREDENTIAL_CACHE_TTL_MS = 30000;
 const autofillSuppressions = new Map();
 const suggestionCache = new Map();
+const credentialCache = new Map();
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 	if (!isVaultMasterPage()) {
@@ -274,6 +276,10 @@ async function prewarmPageAutofillState() {
 
 	const identifier = context.usernameInput?.value.trim() || "";
 	const payload = await fetchSuggestions(identifier);
+	if (payload?.suggestions?.length) {
+		void prefetchSuggestionCredentials(payload.suggestions.slice(0, 4));
+	}
+
 	pageAutofillState = {
 		status: payload?.suggestions?.length ? "ready" : "no_match",
 		suggestions: payload?.suggestions || [],
@@ -350,6 +356,7 @@ async function evaluateAutofillOpportunity() {
 		identifier: context?.usernameInput?.value.trim() || "",
 		updatedAt: Date.now(),
 	};
+	void prefetchSuggestionCredentials(suggestionsPayload.suggestions.slice(0, 4));
 	ensureLauncher(suggestionsPayload.suggestions);
 
 	if (!context) {
@@ -527,18 +534,10 @@ async function handleCredentialFill(itemId, context, panelKey, options = {}) {
 }
 
 async function fillCredentialIntoContext(itemId, context, options = {}) {
-	const response = await sendRuntimeMessage({
-		type: "GET_LOGIN_CREDENTIAL",
-		itemId,
-		pageUrl: window.location.href,
-	}).catch(() => null);
-
-	const payload = response?.payload;
-	if (!response?.ok || payload?.status !== "ready" || !payload.credential) {
+	const credential = await getCachedCredential(itemId);
+	if (!credential) {
 		return { ok: false, message: "Kayıt alınamadı. VaultMaster sekmesinin açık ve kilitsiz olduğundan emin olun." };
 	}
-
-	const { credential } = payload;
 	const latestContext = getPageLoginContext() || context;
 	const filledFields = [];
 
@@ -592,6 +591,37 @@ async function fillCredentialIntoContext(itemId, context, options = {}) {
 		filledFields,
 		hasTotp: credential.hasTotp,
 	};
+}
+
+async function prefetchSuggestionCredentials(suggestions) {
+	await Promise.allSettled(
+		suggestions.map((suggestion) => getCachedCredential(suggestion.itemId))
+	);
+}
+
+async function getCachedCredential(itemId) {
+	const cached = credentialCache.get(itemId);
+	if (cached && cached.expiresAt > Date.now()) {
+		return cached.credential;
+	}
+
+	const response = await sendRuntimeMessage({
+		type: "GET_LOGIN_CREDENTIAL",
+		itemId,
+		pageUrl: window.location.href,
+	}).catch(() => null);
+
+	const credential = response?.payload?.credential;
+	if (!response?.ok || response.payload?.status !== "ready" || !credential) {
+		credentialCache.delete(itemId);
+		return null;
+	}
+
+	credentialCache.set(itemId, {
+		credential,
+		expiresAt: Date.now() + CREDENTIAL_CACHE_TTL_MS,
+	});
+	return credential;
 }
 
 // Phishing koruması - domain doğrulama
