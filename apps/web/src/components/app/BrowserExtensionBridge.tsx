@@ -180,9 +180,21 @@ export default function BrowserExtensionBridge() {
 				);
 			};
 
+			if (data.type === VAULT_STATUS_REQUEST) {
+				respond(VAULT_STATUS_RESPONSE, {
+					isLocked,
+					isAuthenticated,
+					isUsingOfflineData,
+					lastSyncedAt,
+				});
+				return;
+			}
+
 			if (!isAuthenticated) {
 				respond(resolveResponseType(data.type), {
 					status: "logged_out",
+					isAuthenticated,
+					isLocked,
 					lastSyncedAt,
 					isUsingOfflineData,
 				});
@@ -192,6 +204,8 @@ export default function BrowserExtensionBridge() {
 			if (isLocked) {
 				respond(resolveResponseType(data.type), {
 					status: "locked",
+					isAuthenticated,
+					isLocked,
 					lastSyncedAt,
 					isUsingOfflineData,
 				});
@@ -490,16 +504,6 @@ export default function BrowserExtensionBridge() {
 				return;
 			}
 
-			// Vault durumu
-			if (data.type === VAULT_STATUS_REQUEST) {
-				respond(VAULT_STATUS_RESPONSE, {
-					isLocked,
-					isAuthenticated,
-					isUsingOfflineData,
-					lastSyncedAt,
-				});
-				return;
-			}
 		};
 
 		window.addEventListener("message", onMessage);
