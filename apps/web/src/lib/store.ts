@@ -43,12 +43,28 @@ interface AuthState {
   currentDeviceId: string | null;
 }
 
+type VaultSortBy =
+  | "name-asc"
+  | "name-desc"
+  | "updated-desc"
+  | "updated-asc"
+  | "created-desc"
+  | "created-asc"
+  | "type";
+
+type VaultViewMode = "comfortable" | "compact" | "grid";
+
 interface VaultState {
   items: DecryptedVaultItem[];
   folders: FolderResponse[];
   selectedFolderId: string | null;
   showFavoritesOnly: boolean;
   searchQuery: string;
+  sortBy: VaultSortBy;
+  viewMode: VaultViewMode;
+  favoritesFirst: boolean;
+  isSelectionMode: boolean;
+  selectedItemIds: string[];
   isLoading: boolean;
   isLocked: boolean;
   isUsingOfflineData: boolean;
@@ -89,6 +105,13 @@ interface AppStore extends AuthState, VaultState {
   setSelectedFolderId: (id: string | null) => void;
   setShowFavoritesOnly: (show: boolean) => void;
   setSearchQuery: (query: string) => void;
+  setSortBy: (sortBy: VaultSortBy) => void;
+  setViewMode: (viewMode: VaultViewMode) => void;
+  setFavoritesFirst: (favoritesFirst: boolean) => void;
+  setSelectionMode: (enabled: boolean) => void;
+  toggleSelectedItem: (id: string) => void;
+  setSelectedItems: (ids: string[]) => void;
+  clearSelection: () => void;
   setLoading: (loading: boolean) => void;
   syncOfflineSnapshot: () => Promise<void>;
 
@@ -154,6 +177,11 @@ export const useStore = create<AppStore>()(
       selectedFolderId: null,
       showFavoritesOnly: false,
       searchQuery: "",
+      sortBy: "updated-desc",
+      viewMode: "comfortable",
+      favoritesFirst: true,
+      isSelectionMode: false,
+      selectedItemIds: [],
       isLoading: false,
       isLocked: false,
       isUsingOfflineData: false,
@@ -335,6 +363,19 @@ export const useStore = create<AppStore>()(
       setShowFavoritesOnly: (show) =>
         set({ showFavoritesOnly: show, selectedFolderId: null }),
       setSearchQuery: (query) => set({ searchQuery: query }),
+      setSortBy: (sortBy) => set({ sortBy }),
+      setViewMode: (viewMode) => set({ viewMode }),
+      setFavoritesFirst: (favoritesFirst) => set({ favoritesFirst }),
+      setSelectionMode: (enabled) =>
+        set({ isSelectionMode: enabled, selectedItemIds: enabled ? get().selectedItemIds : [] }),
+      toggleSelectedItem: (id) =>
+        set((state) => ({
+          selectedItemIds: state.selectedItemIds.includes(id)
+            ? state.selectedItemIds.filter((itemId) => itemId !== id)
+            : [...state.selectedItemIds, id],
+        })),
+      setSelectedItems: (ids) => set({ selectedItemIds: Array.from(new Set(ids)) }),
+      clearSelection: () => set({ selectedItemIds: [], isSelectionMode: false }),
       setLoading: (loading) => set({ isLoading: loading }),
       syncOfflineSnapshot: async () => {
         const { isAuthenticated, isLocked, items, folders, masterKeyBase64 } = get();
@@ -586,6 +627,15 @@ export const useStore = create<AppStore>()(
             typeof state.masterKeyBase64 === "string" ? state.masterKeyBase64 : null,
           isLocked: state.isAuthenticated ? !state.masterKeyBase64 : false,
           showFavoritesOnly: false,
+          sortBy: typeof state.sortBy === "string" ? state.sortBy : "updated-desc",
+          viewMode:
+            state.viewMode === "comfortable" ||
+            state.viewMode === "compact" ||
+            state.viewMode === "grid"
+              ? state.viewMode
+              : "comfortable",
+          favoritesFirst:
+            typeof state.favoritesFirst === "boolean" ? state.favoritesFirst : true,
         };
       },
       partialize: (state: AppStore) => ({
@@ -596,9 +646,12 @@ export const useStore = create<AppStore>()(
         currentDeviceId: state.currentDeviceId,
         lockTimeoutMinutes: state.lockTimeoutMinutes,
         showFavoritesOnly: state.showFavoritesOnly,
+        sortBy: state.sortBy,
+        viewMode: state.viewMode,
+        favoritesFirst: state.favoritesFirst,
       }),
     } as never
   )
 );
 
-export type { DecryptedVaultItem };
+export type { DecryptedVaultItem, VaultSortBy, VaultViewMode };

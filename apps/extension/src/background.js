@@ -27,6 +27,31 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 		return true;
 	}
 
+	if (message?.type === "LIST_CREDIT_CARDS") {
+		void listCreditCards(sender, sendResponse);
+		return true;
+	}
+
+	if (message?.type === "GET_CREDIT_CARD") {
+		void getCreditCard(message, sender, sendResponse);
+		return true;
+	}
+
+	if (message?.type === "LIST_IDENTITIES") {
+		void listIdentities(sender, sendResponse);
+		return true;
+	}
+
+	if (message?.type === "GET_IDENTITY") {
+		void getIdentity(message, sender, sendResponse);
+		return true;
+	}
+
+	if (message?.type === "SAVE_LOGIN_CREDENTIAL") {
+		void saveLoginCredential(message, sender, sendResponse);
+		return true;
+	}
+
 	if (message?.type === "TRACK_AUTOFILL_SELECTION") {
 		void trackAutofillSelection(message, sendResponse);
 		return true;
@@ -90,7 +115,23 @@ chrome.commands.onCommand.addListener(async (command) => {
 
 // Extension yüklendiğinde badge güncellemesini başlat
 chrome.runtime.onInstalled.addListener(() => {
+	setupContextMenus();
 	void startBadgeUpdater();
+});
+
+chrome.contextMenus.onClicked.addListener(async (info, tab) => {
+	if (!tab?.id) {
+		return;
+	}
+
+	if (info.menuItemId === "vaultmaster-fill") {
+		chrome.tabs.sendMessage(tab.id, { type: "TRIGGER_AUTOFILL" });
+		return;
+	}
+
+	if (info.menuItemId === "vaultmaster-open") {
+		await openVaultMaster(() => undefined);
+	}
 });
 
 // Badge durumunu periyodik güncelle
@@ -101,6 +142,21 @@ async function startBadgeUpdater() {
 	}
 	badgeIntervalId = setInterval(updateBadgeStatus, BADGE_UPDATE_INTERVAL);
 	void updateBadgeStatus();
+}
+
+function setupContextMenus() {
+	chrome.contextMenus.removeAll(() => {
+		chrome.contextMenus.create({
+			id: "vaultmaster-fill",
+			title: "Fill with VaultMaster",
+			contexts: ["editable"],
+		});
+		chrome.contextMenus.create({
+			id: "vaultmaster-open",
+			title: "Open VaultMaster",
+			contexts: ["page", "editable"],
+		});
+	});
 }
 
 async function updateBadgeStatus() {
@@ -211,6 +267,49 @@ async function getLoginCredential(message, sender, sendResponse) {
 	const response = await requestVaultTab("VM_GET_LOGIN_CREDENTIAL_REQUEST", {
 		itemId: message.itemId,
 		pageUrl: message.pageUrl,
+		sourceTabId: sender.tab?.id ?? null,
+	});
+
+	sendResponse(response);
+}
+
+async function listCreditCards(sender, sendResponse) {
+	const response = await requestVaultTab("VM_LIST_CREDIT_CARDS_REQUEST", {
+		sourceTabId: sender.tab?.id ?? null,
+	});
+
+	sendResponse(response);
+}
+
+async function getCreditCard(message, sender, sendResponse) {
+	const response = await requestVaultTab("VM_GET_CREDIT_CARD_REQUEST", {
+		itemId: message.itemId,
+		sourceTabId: sender.tab?.id ?? null,
+	});
+
+	sendResponse(response);
+}
+
+async function listIdentities(sender, sendResponse) {
+	const response = await requestVaultTab("VM_LIST_IDENTITIES_REQUEST", {
+		sourceTabId: sender.tab?.id ?? null,
+	});
+
+	sendResponse(response);
+}
+
+async function getIdentity(message, sender, sendResponse) {
+	const response = await requestVaultTab("VM_GET_IDENTITY_REQUEST", {
+		itemId: message.itemId,
+		sourceTabId: sender.tab?.id ?? null,
+	});
+
+	sendResponse(response);
+}
+
+async function saveLoginCredential(message, sender, sendResponse) {
+	const response = await requestVaultTab("VM_SAVE_LOGIN_REQUEST", {
+		credential: message.credential,
 		sourceTabId: sender.tab?.id ?? null,
 	});
 

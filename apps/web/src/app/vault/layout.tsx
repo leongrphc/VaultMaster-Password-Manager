@@ -8,6 +8,8 @@ import VaultHeader from "@/components/vault/VaultHeader";
 import LockScreen from "@/components/vault/LockScreen";
 import BrowserExtensionBridge from "@/components/app/BrowserExtensionBridge";
 import { ErrorBoundary } from "@/components/app/ErrorBoundary";
+import CommandPalette from "@/components/vault/CommandPalette";
+import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { useShallow } from "zustand/shallow";
 
 export default function DashboardLayout({
@@ -40,6 +42,7 @@ export default function DashboardLayout({
   const [mounted, setMounted] = useState(false);
   const [sessionReady, setSessionReady] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const bootstrappedRef = useRef(false);
 
   useEffect(() => {
@@ -113,6 +116,23 @@ export default function DashboardLayout({
     return () => clearInterval(interval);
   }, [isAuthenticated, isLocked, lastActivity, lockTimeoutMinutes, lockVault]);
 
+  useKeyboardShortcuts([
+    {
+      key: "k",
+      ctrl: true,
+      meta: true,
+      enabled: mounted && sessionReady && isAuthenticated && !isLocked,
+      action: () => setCommandPaletteOpen((open) => !open),
+    },
+    {
+      key: "l",
+      ctrl: true,
+      meta: true,
+      enabled: mounted && sessionReady && isAuthenticated && !isLocked,
+      action: lockVault,
+    },
+  ]);
+
   if (!mounted || !sessionReady || !isAuthenticated) {
     return (
       <div className="min-h-screen bg-midnight flex items-center justify-center">
@@ -128,6 +148,7 @@ export default function DashboardLayout({
   return (
     <div className="min-h-screen bg-midnight flex">
       <BrowserExtensionBridge />
+      <CommandPalette isOpen={commandPaletteOpen} onClose={() => setCommandPaletteOpen(false)} />
       <Sidebar isOpen={sidebarOpen} onToggle={() => setSidebarOpen((open) => !open)} />
       <main className={`flex-1 transition-all duration-300 ${sidebarOpen ? "ml-72" : "ml-16"}`}>
         <VaultHeader onMenuToggle={() => setSidebarOpen((open) => !open)} />

@@ -15,6 +15,7 @@ let activeLauncher = null;
 const dismissedPanelKeys = new Set();
 const PENDING_AUTOFILL_TTL_MS = 20000;
 const AUTOFILL_SUPPRESSION_TTL_MS = 15000;
+const NEVER_SAVE_HOSTS_KEY = "vaultmasterNeverSaveHosts";
 const autofillSuppressions = new Map();
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
@@ -126,6 +127,7 @@ function initializeAutofillAssistant() {
 	document.addEventListener("change", onFieldActivity, true);
 	document.addEventListener("click", onFieldActivity, true);
 	document.addEventListener("keydown", onKeyDown, true);
+	document.addEventListener("submit", onFormSubmitCapture, true);
 	window.addEventListener("resize", updatePanelPosition, true);
 	window.addEventListener("scroll", updatePanelPosition, true);
 
@@ -159,6 +161,31 @@ function onKeyDown(event) {
 	}
 }
 
+async function onFormSubmitCapture(event) {
+	const form = event.target;
+	if (!(form instanceof HTMLFormElement)) return;
+	const hostname = normalizeHostname(window.location.href);
+	if (hostname && (await isNeverSaveHost(hostname))) return;
+
+	const detector = window.VaultMasterFormDetector;
+	const inputs = Array.from(form.querySelectorAll("input"));
+	const passwordInput = inputs.find((input) => detector?.normalizeInputType(input) === "password");
+	const usernameInput =
+		inputs.find((input) => detector?.isLikelyIdentifierInput(input)) ||
+		(passwordInput ? inputs.slice(0, inputs.indexOf(passwordInput)).reverse().find((input) => ["text", "email", "tel"].includes(detector?.normalizeInputType(input))) : null);
+
+	if (!usernameInput || !passwordInput || !usernameInput.value.trim() || !passwordInput.value) return;
+
+	window.setTimeout(() => {
+		showSavePrompt({
+			title: document.title || formatHostname(window.location.href),
+			url: window.location.origin,
+			username: usernameInput.value.trim(),
+			password: passwordInput.value,
+		});
+	}, 800);
+}
+
 function scheduleEvaluation() {
 	window.clearTimeout(evaluationTimer);
 	evaluationTimer = window.setTimeout(() => {
@@ -167,6 +194,37 @@ function scheduleEvaluation() {
 }
 
 async function evaluateAutofillOpportunity() {
+	const detector = window.VaultMasterFormDetector;
+	const cardContext = detector?.detectCardFormContext(activeField);
+	if (cardContext) {
+		const cardsPayload = await fetchCreditCards();
+		if (cardsPayload?.cards?.length) {
+			showStructuredSuggestionPanel({
+				context: cardContext,
+				items: cardsPayload.cards,
+				title: "VaultMaster Cards",
+				subtitle: "Ödeme formu algılandı",
+				fillAction: fillCreditCard,
+			});
+			return;
+		}
+	}
+
+	const identityContext = detector?.detectIdentityFormContext(activeField);
+	if (identityContext) {
+		const identitiesPayload = await fetchIdentities();
+		if (identitiesPayload?.identities?.length) {
+			showStructuredSuggestionPanel({
+				context: identityContext,
+				items: identitiesPayload.identities,
+				title: "VaultMaster Identities",
+				subtitle: "Kimlik/iletişim formu algılandı",
+				fillAction: fillIdentity,
+			});
+			return;
+		}
+	}
+
 	const context = getLoginFormContext(activeField) || getFallbackLoginFormContext();
 	if (isAutofillSuppressed(context)) {
 		removePanel();
@@ -496,7 +554,126 @@ function updatePanelNotice(message, isError) {
   `;
 }
 
+function showSavePrompt(credential) {
+	removePanel();
+	const panel = document.createElement("div");
+	panel.id = "vaultmaster-inline-autofill";
+	panel.style.cssText = [
+		"position:fixed",
+		"z-index:2147483647",
+		"right:20px",
+		"bottom:20px",
+		"width:min(360px, calc(100vw - 24px))",
+		"background:linear-gradient(180deg, rgba(11,17,31,0.98) 0%, rgba(7,11,22,0.98) 100%)",
+		"border:1px solid rgba(0,255,178,0.18)",
+		"border-radius:18px",
+		"box-shadow:0 20px 56px rgba(0,0,0,0.32)",
+		"color:#eef2ff",
+		"font:13px/1.45 'Segoe UI', Arial, sans-serif",
+		"overflow:hidden",
+	].join(";");
+
+	panel.innerHTML = `
+		<div style="padding:14px;border-bottom:1px solid rgba(144,160,195,0.12);">
+			<div style="font-weight:700;margin-bottom:4px;">VaultMaster'a kaydet?</div>
+			<div style="color:#90a0c3;font-size:12px;">${escapeHtml(formatHostname(credential.url))} • ${escapeHtml(maskIdentifier(credential.username))}</div>
+		</div>
+		<div style="padding:12px;display:grid;gap:8px;">
+			<div style="display:flex;gap:8px;">
+					<button data-action="save" style="flex:1;border:0;border-radius:12px;background:#00ffb2;color:#04111d;padding:10px;font-weight:700;cursor:pointer;">Kaydet/Güncelle</button>
+					<button data-action="dismiss" style="border:1px solid rgba(144,160,195,0.18);border-radius:12px;background:rgba(18,26,49,0.9);color:#90a0c3;padding:10px 12px;font-weight:700;cursor:pointer;">Geç</button>
+				</div>
+				<button data-action="never-save" style="border:0;background:transparent;color:#90a0c3;padding:4px 8px;font-size:12px;text-align:left;cursor:pointer;">Bu sitede bir daha sorma</button>
+			</div>
+	`;
+
+	panel.querySelector("[data-action='dismiss']")?.addEventListener("click", removePanel);
+	panel.querySelector("[data-action='never-save']")?.addEventListener("click", async () => {
+		const hostname = normalizeHostname(credential.url);
+		if (hostname) {
+			await addNeverSaveHost(hostname);
+		}
+		removePanel();
+	});
+	panel.querySelector("[data-action='save']")?.addEventListener("click", async () => {
+		const response = await sendRuntimeMessage({ type: "SAVE_LOGIN_CREDENTIAL", credential }).catch(() => null);
+		const status = response?.payload?.status;
+		if (response?.ok && (status === "created" || status === "updated")) {
+			updatePanelNotice(status === "updated" ? "Kayıt güncellendi." : "Kayıt kasaya eklendi.", false);
+			window.setTimeout(removePanel, 1200);
+			return;
+		}
+		updatePanelNotice("Kaydetme başarısız. VaultMaster sekmesinin açık ve kilitsiz olduğundan emin olun.", true);
+	});
+
+	document.body.appendChild(panel);
+	activePanel = { element: panel, anchorInput: null, panelKey: `save|${window.location.hostname}`, fixed: true };
+}
+
+function showStructuredSuggestionPanel({ context, items, title, subtitle, fillAction }) {
+	removePanel();
+	const panel = document.createElement("div");
+	panel.id = "vaultmaster-inline-autofill";
+	panel.style.cssText = [
+		"position:fixed",
+		"z-index:2147483647",
+		"width:min(380px, calc(100vw - 24px))",
+		"background:linear-gradient(180deg, rgba(11,17,31,0.98) 0%, rgba(7,11,22,0.98) 100%)",
+		"border:1px solid rgba(0,255,178,0.18)",
+		"border-radius:18px",
+		"box-shadow:0 20px 56px rgba(0,0,0,0.32)",
+		"backdrop-filter:blur(18px)",
+		"color:#eef2ff",
+		"font:13px/1.45 'Segoe UI', Arial, sans-serif",
+		"overflow:hidden",
+	].join(";");
+
+	panel.innerHTML = `
+		<div style="padding:14px 14px 10px;border-bottom:1px solid rgba(144,160,195,0.12);display:flex;align-items:start;justify-content:space-between;gap:12px;">
+			<div>
+				<div style="display:flex;align-items:center;gap:8px;font-weight:700;margin-bottom:4px;">
+					<span style="display:inline-flex;width:10px;height:10px;border-radius:999px;background:#00ffb2;box-shadow:0 0 12px rgba(0,255,178,0.45);"></span>
+					${escapeHtml(title)}
+				</div>
+				<div style="color:#90a0c3;font-size:12px;">${escapeHtml(subtitle)}</div>
+			</div>
+			<button data-action="dismiss" style="border:0;background:transparent;color:#90a0c3;cursor:pointer;font-size:18px;line-height:1;padding:0;">×</button>
+		</div>
+		<div style="padding:8px;display:grid;gap:8px;">
+			${items.map((item) => `
+				<button data-action="fill-structured" data-item-id="${escapeHtml(item.itemId)}" style="border:1px solid rgba(144,160,195,0.14);background:rgba(18,26,49,0.9);border-radius:14px;padding:12px;text-align:left;color:#eef2ff;cursor:pointer;display:grid;gap:6px;">
+					<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;">
+						<div style="font-weight:700;">${escapeHtml(item.title)}</div>
+						<span style="display:inline-flex;align-items:center;justify-content:center;border-radius:999px;background:#00ffb2;color:#04111d;padding:5px 10px;font-weight:700;font-size:12px;">Doldur</span>
+					</div>
+					<div style="color:#90a0c3;font-size:12px;">${escapeHtml(formatStructuredItemSubtitle(item))}</div>
+				</button>
+			`).join("")}
+		</div>
+	`;
+
+	panel.querySelector("[data-action='dismiss']")?.addEventListener("click", removePanel);
+	panel.querySelectorAll("[data-action='fill-structured']").forEach((node) => {
+		node.addEventListener("click", async () => {
+			const itemId = node.getAttribute("data-item-id");
+			if (itemId) await fillAction(itemId, context);
+		});
+	});
+
+	document.body.appendChild(panel);
+	activePanel = {
+		element: panel,
+		anchorInput: context.anchorInput || activeField,
+		panelKey: `${context.type}|${window.location.hostname}`,
+	};
+	updatePanelPosition();
+}
+
 function updatePanelPosition() {
+	if (activePanel?.fixed) {
+		return;
+	}
+
 	if (!activePanel?.anchorInput || !document.body.contains(activePanel.anchorInput)) {
 		removePanel();
 		return;
@@ -873,6 +1050,60 @@ function buildSuppressionKey(context) {
 	].join("|");
 }
 
+async function fetchCreditCards() {
+	const response = await sendRuntimeMessage({ type: "LIST_CREDIT_CARDS" }).catch(() => null);
+	const payload = response?.payload;
+	if (!response?.ok || payload?.status !== "ready" || !payload.cards?.length) return null;
+	return payload;
+}
+
+async function fetchIdentities() {
+	const response = await sendRuntimeMessage({ type: "LIST_IDENTITIES" }).catch(() => null);
+	const payload = response?.payload;
+	if (!response?.ok || payload?.status !== "ready" || !payload.identities?.length) return null;
+	return payload;
+}
+
+async function fillCreditCard(itemId, context) {
+	const response = await sendRuntimeMessage({ type: "GET_CREDIT_CARD", itemId }).catch(() => null);
+	const card = response?.payload?.card;
+	if (!response?.ok || response.payload?.status !== "ready" || !card) {
+		updatePanelNotice("Kart bilgisi alınamadı. VaultMaster sekmesinin açık ve kilitsiz olduğundan emin olun.", true);
+		return;
+	}
+
+	if (context.cardNumberInput) setNativeValue(context.cardNumberInput, card.cardNumber);
+	if (context.cardholderNameInput) setNativeValue(context.cardholderNameInput, card.cardholderName);
+	if (context.cvvInput) setNativeValue(context.cvvInput, card.cvv);
+	if (context.expMonthInput) setNativeValue(context.expMonthInput, card.expMonth);
+	if (context.expYearInput) setNativeValue(context.expYearInput, card.expYear);
+	if (context.expiryInput) setNativeValue(context.expiryInput, `${card.expMonth}/${String(card.expYear).slice(-2)}`);
+	updatePanelNotice(`${card.title} kartı dolduruldu.`, false);
+	window.setTimeout(removePanel, 1200);
+}
+
+async function fillIdentity(itemId, context) {
+	const response = await sendRuntimeMessage({ type: "GET_IDENTITY", itemId }).catch(() => null);
+	const identity = response?.payload?.identity;
+	if (!response?.ok || response.payload?.status !== "ready" || !identity) {
+		updatePanelNotice("Kimlik bilgisi alınamadı. VaultMaster sekmesinin açık ve kilitsiz olduğundan emin olun.", true);
+		return;
+	}
+
+	if (context.fullNameInput) setNativeValue(context.fullNameInput, identity.fullName);
+	if (context.emailInput && identity.email) setNativeValue(context.emailInput, identity.email);
+	if (context.phoneInput && identity.phone) setNativeValue(context.phoneInput, identity.phone);
+	if (context.organizationInput && identity.organization) setNativeValue(context.organizationInput, identity.organization);
+	if (context.addressInput && identity.address) setNativeValue(context.addressInput, identity.address);
+	updatePanelNotice(`${identity.title} kimliği dolduruldu.`, false);
+	window.setTimeout(removePanel, 1200);
+}
+
+function formatStructuredItemSubtitle(item) {
+	if (item.last4) return `${item.cardholderName || "Kart"} •••• ${item.last4} • ${item.expMonth}/${item.expYear}`;
+	return [item.fullName, item.email].filter(Boolean).join(" • ") || "Kimlik bilgisi";
+}
+
 async function fetchSuggestions(identifier) {
 	const response = await sendRuntimeMessage({
 		type: "LIST_LOGIN_SUGGESTIONS",
@@ -1015,11 +1246,32 @@ function badgeHtml(label, color, background) {
 }
 
 function formatHostname(value) {
+	return normalizeHostname(value) || value;
+}
+
+function normalizeHostname(value) {
 	try {
-		return new URL(value).hostname.replace(/^www\./, "");
+		return new URL(value).hostname.replace(/^www\./, "").toLowerCase();
 	} catch {
-		return value;
+		return String(value || "").replace(/^www\./, "").toLowerCase();
 	}
+}
+
+async function getNeverSaveHosts() {
+	const stored = await chrome.storage.local.get(NEVER_SAVE_HOSTS_KEY);
+	return stored[NEVER_SAVE_HOSTS_KEY] || [];
+}
+
+async function isNeverSaveHost(hostname) {
+	const hosts = await getNeverSaveHosts();
+	return hosts.includes(hostname);
+}
+
+async function addNeverSaveHost(hostname) {
+	const hosts = await getNeverSaveHosts();
+	await chrome.storage.local.set({
+		[NEVER_SAVE_HOSTS_KEY]: Array.from(new Set([...hosts, hostname])),
+	});
 }
 
 function maskIdentifier(value) {

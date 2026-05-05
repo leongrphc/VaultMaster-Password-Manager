@@ -19,6 +19,16 @@ const TOTP_REQUEST = "VM_GET_TOTP_CODE_REQUEST";
 const TOTP_RESPONSE = "VM_GET_TOTP_CODE_RESPONSE";
 const VAULT_STATUS_REQUEST = "VM_GET_VAULT_STATUS_REQUEST";
 const VAULT_STATUS_RESPONSE = "VM_GET_VAULT_STATUS_RESPONSE";
+const LIST_CARDS_REQUEST = "VM_LIST_CREDIT_CARDS_REQUEST";
+const LIST_CARDS_RESPONSE = "VM_LIST_CREDIT_CARDS_RESPONSE";
+const GET_CARD_REQUEST = "VM_GET_CREDIT_CARD_REQUEST";
+const GET_CARD_RESPONSE = "VM_GET_CREDIT_CARD_RESPONSE";
+const LIST_IDENTITIES_REQUEST = "VM_LIST_IDENTITIES_REQUEST";
+const LIST_IDENTITIES_RESPONSE = "VM_LIST_IDENTITIES_RESPONSE";
+const GET_IDENTITY_REQUEST = "VM_GET_IDENTITY_REQUEST";
+const GET_IDENTITY_RESPONSE = "VM_GET_IDENTITY_RESPONSE";
+const SAVE_LOGIN_REQUEST = "VM_SAVE_LOGIN_REQUEST";
+const SAVE_LOGIN_RESPONSE = "VM_SAVE_LOGIN_RESPONSE";
 
 function normalizeUrl(value?: string) {
 	if (!value) {
@@ -119,18 +129,20 @@ function buildLoginSuggestions(
 }
 
 export default function BrowserExtensionBridge() {
-	const { isAuthenticated, isLocked, items, lastSyncedAt, isUsingOfflineData } = useStore(
+	const { isAuthenticated, isLocked, items, lastSyncedAt, isUsingOfflineData, createVaultItem, updateVaultItemFull } = useStore(
 		useShallow((state) => ({
 			isAuthenticated: state.isAuthenticated,
 			isLocked: state.isLocked,
 			items: state.items,
 			lastSyncedAt: state.lastSyncedAt,
 			isUsingOfflineData: state.isUsingOfflineData,
+			createVaultItem: state.createVaultItem,
+			updateVaultItemFull: state.updateVaultItemFull,
 		}))
 	);
 
 	useEffect(() => {
-		const onMessage = (event: MessageEvent) => {
+		const onMessage = async (event: MessageEvent) => {
 			if (event.source !== window) {
 				return;
 			}
@@ -143,6 +155,12 @@ export default function BrowserExtensionBridge() {
 						pageUrl?: string;
 						identifier?: string;
 						itemId?: string;
+						credential?: {
+							title?: string;
+							url?: string;
+							username?: string;
+							password?: string;
+						};
 					}
 				| undefined;
 
@@ -212,6 +230,129 @@ export default function BrowserExtensionBridge() {
 					lastSyncedAt,
 					isUsingOfflineData,
 					suggestion: suggestions[0],
+				});
+				return;
+			}
+
+			if (data.type === SAVE_LOGIN_REQUEST) {
+				const credential = data.credential;
+				if (!credential?.username || !credential.password || !credential.url) {
+					respond(SAVE_LOGIN_RESPONSE, { status: "invalid" });
+					return;
+				}
+
+				const activePage = normalizeUrl(credential.url);
+				const existingItem = items.find((item) => {
+					if (item.data.type !== "login") return false;
+					return (
+						normalizeIdentifier(item.data.username) === normalizeIdentifier(credential.username) &&
+						scoreHostMatch(activePage, item.data.url) > 0
+					);
+				});
+
+				if (existingItem && existingItem.data.type === "login") {
+					await updateVaultItemFull(
+						existingItem.id,
+						{
+							...existingItem.data,
+							password: credential.password,
+							url: existingItem.data.url || credential.url,
+						},
+						existingItem.folderId
+					);
+					respond(SAVE_LOGIN_RESPONSE, { status: "updated", itemId: existingItem.id });
+					return;
+				}
+
+				await createVaultItem({
+					type: "login",
+					title: credential.title || activePage?.hostname || "Yeni Login",
+					url: credential.url,
+					username: credential.username,
+					password: credential.password,
+				});
+				respond(SAVE_LOGIN_RESPONSE, { status: "created" });
+				return;
+			}
+
+			if (data.type === LIST_CARDS_REQUEST) {
+				const cards = items
+					.filter((item) => item.data.type === "credit_card")
+					.slice(0, 8)
+					.map((item) => {
+						if (item.data.type !== "credit_card") return null;
+						return {
+							itemId: item.id,
+							title: item.data.title,
+							cardholderName: item.data.cardholderName,
+							last4: item.data.cardNumber.slice(-4),
+							expMonth: item.data.expMonth,
+							expYear: item.data.expYear,
+						};
+					})
+					.filter((item) => item !== null);
+
+				respond(LIST_CARDS_RESPONSE, {
+					status: cards.length ? "ready" : "no_match",
+					cards,
+					lastSyncedAt,
+					isUsingOfflineData,
+				});
+				return;
+			}
+
+			if (data.type === GET_CARD_REQUEST) {
+				const item = items.find((entry) => entry.id === data.itemId);
+				if (!item || item.data.type !== "credit_card") {
+					respond(GET_CARD_RESPONSE, { status: "no_match" });
+					return;
+				}
+
+				respond(GET_CARD_RESPONSE, {
+					status: "ready",
+					card: item.data,
+					lastSyncedAt,
+					isUsingOfflineData,
+				});
+				return;
+			}
+
+			if (data.type === LIST_IDENTITIES_REQUEST) {
+				const identities = items
+					.filter((item) => item.data.type === "identity")
+					.slice(0, 8)
+					.map((item) => {
+						if (item.data.type !== "identity") return null;
+						return {
+							itemId: item.id,
+							title: item.data.title,
+							fullName: item.data.fullName,
+							email: item.data.email || "",
+						};
+					})
+					.filter((item) => item !== null);
+
+				respond(LIST_IDENTITIES_RESPONSE, {
+					status: identities.length ? "ready" : "no_match",
+					identities,
+					lastSyncedAt,
+					isUsingOfflineData,
+				});
+				return;
+			}
+
+			if (data.type === GET_IDENTITY_REQUEST) {
+				const item = items.find((entry) => entry.id === data.itemId);
+				if (!item || item.data.type !== "identity") {
+					respond(GET_IDENTITY_RESPONSE, { status: "no_match" });
+					return;
+				}
+
+				respond(GET_IDENTITY_RESPONSE, {
+					status: "ready",
+					identity: item.data,
+					lastSyncedAt,
+					isUsingOfflineData,
 				});
 				return;
 			}
@@ -330,8 +471,8 @@ export default function BrowserExtensionBridge() {
 
 			// TOTP code üretimi
 			if (data.type === TOTP_REQUEST) {
-				const item = items.find((i) => i.id === data.itemId && i.data.type === "login");
-				if (!item || !item.data.totpSecret) {
+				const item = items.find((i) => i.id === data.itemId);
+				if (!item || item.data.type !== "login" || !item.data.totpSecret) {
 					respond(TOTP_RESPONSE, { status: "no_totp" });
 					return;
 				}
@@ -363,7 +504,7 @@ export default function BrowserExtensionBridge() {
 
 		window.addEventListener("message", onMessage);
 		return () => window.removeEventListener("message", onMessage);
-	}, [isAuthenticated, isLocked, isUsingOfflineData, items, lastSyncedAt]);
+	}, [createVaultItem, isAuthenticated, isLocked, isUsingOfflineData, items, lastSyncedAt, updateVaultItemFull]);
 
 	return null;
 }
@@ -383,6 +524,26 @@ function resolveResponseType(type: string) {
 
 	if (type === VALIDATE_DOMAIN_REQUEST) {
 		return VALIDATE_DOMAIN_RESPONSE;
+	}
+
+	if (type === SAVE_LOGIN_REQUEST) {
+		return SAVE_LOGIN_RESPONSE;
+	}
+
+	if (type === LIST_CARDS_REQUEST) {
+		return LIST_CARDS_RESPONSE;
+	}
+
+	if (type === GET_CARD_REQUEST) {
+		return GET_CARD_RESPONSE;
+	}
+
+	if (type === LIST_IDENTITIES_REQUEST) {
+		return LIST_IDENTITIES_RESPONSE;
+	}
+
+	if (type === GET_IDENTITY_REQUEST) {
+		return GET_IDENTITY_RESPONSE;
 	}
 
 	if (type === TOTP_REQUEST) {
