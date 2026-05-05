@@ -25,6 +25,22 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 		return false;
 	}
 
+	if (typeof message?.type === "string" && message.type.startsWith("VM_") && message.type.endsWith("_REQUEST")) {
+		const { type, requestId, ...payload } = message;
+		requestVaultBridge(type, payload, requestId)
+			.then((bridgePayload) => sendResponse({ ok: true, payload: bridgePayload }))
+			.catch((error) =>
+				sendResponse({
+					ok: false,
+					payload: {
+						status: "bridge_error",
+						error: error instanceof Error ? error.message : "Unknown error",
+					},
+				})
+			);
+		return true;
+	}
+
 	if (message?.type === "LOOKUP_PASSWORD_SUGGESTION") {
 		requestVaultBridge(BRIDGE_LOOKUP_REQUEST, {
 			identifier: message.identifier,
@@ -1196,9 +1212,9 @@ function isVaultMasterPage() {
 	return VAULTMASTER_ORIGINS.has(window.location.origin);
 }
 
-function requestVaultBridge(type, payload) {
+function requestVaultBridge(type, payload, existingRequestId) {
 	return new Promise((resolve, reject) => {
-		const requestId = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+		const requestId = existingRequestId || `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 		const timeout = window.setTimeout(() => {
 			window.removeEventListener("message", onMessage);
 			reject(new Error("VaultMaster bridge timed out."));
