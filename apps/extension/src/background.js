@@ -1,5 +1,10 @@
-const APP_URL = "http://localhost:3000/vault";
-const VAULTMASTER_URLS = ["http://localhost:3000/*", "http://127.0.0.1:3000/*"];
+const APP_URL = "http://localhost:3001/vault";
+const VAULTMASTER_URLS = [
+	"http://localhost:3000/*",
+	"http://127.0.0.1:3000/*",
+	"http://localhost:3001/*",
+	"http://127.0.0.1:3001/*",
+];
 const RECENT_SELECTIONS_KEY = "vaultmasterRecentSelections";
 const PENDING_AUTOFILL_KEY = "vaultmasterPendingAutofill";
 

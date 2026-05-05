@@ -6,7 +6,12 @@ const BRIDGE_LIST_REQUEST = "VM_LIST_LOGIN_SUGGESTIONS_REQUEST";
 const BRIDGE_LIST_RESPONSE = "VM_LIST_LOGIN_SUGGESTIONS_REQUEST_RESPONSE";
 const BRIDGE_CREDENTIAL_REQUEST = "VM_GET_LOGIN_CREDENTIAL_REQUEST";
 const BRIDGE_CREDENTIAL_RESPONSE = "VM_GET_LOGIN_CREDENTIAL_REQUEST_RESPONSE";
-const VAULTMASTER_ORIGINS = new Set(["http://localhost:3000", "http://127.0.0.1:3000"]);
+const VAULTMASTER_ORIGINS = new Set([
+	"http://localhost:3000",
+	"http://127.0.0.1:3000",
+	"http://localhost:3001",
+	"http://127.0.0.1:3001",
+]);
 
 let evaluationTimer = null;
 let activeField = null;
