@@ -227,6 +227,10 @@ function scheduleEvaluation() {
 }
 
 async function evaluateAutofillOpportunity() {
+	if (activePanel?.locked) {
+		return;
+	}
+
 	const detector = window.VaultMasterFormDetector;
 	const cardContext = detector?.detectCardFormContext(activeField);
 	if (cardContext) {
@@ -412,10 +416,12 @@ function showSuggestionPanel({ context, panelKey, typedIdentifier, suggestions, 
 
 async function handleCredentialFill(itemId, context, panelKey, options = {}) {
 	// Phishing koruması - domain doğrulama
-	const isDomainValid = await validateCredentialForDomain(itemId, window.location.href);
-	if (!isDomainValid) {
-		showPhishingWarning(itemId, context, panelKey);
-		return;
+	if (!options.forceFill) {
+		const isDomainValid = await validateCredentialForDomain(itemId, window.location.href);
+		if (!isDomainValid) {
+			showPhishingWarning(itemId, context, panelKey);
+			return;
+		}
 	}
 
 	const response = await sendRuntimeMessage({
@@ -513,6 +519,8 @@ function showPhishingWarning(itemId, context, panelKey) {
 	if (!activePanel?.element) {
 		return;
 	}
+
+	activePanel.locked = true;
 
 	const body = activePanel.element.querySelector("div:nth-of-type(2)");
 	if (!(body instanceof HTMLElement)) {
@@ -698,12 +706,23 @@ function showStructuredSuggestionPanel({ context, items, title, subtitle, fillAc
 		element: panel,
 		anchorInput: context.anchorInput || activeField,
 		panelKey: `${context.type}|${window.location.hostname}`,
+		locked: true,
 	};
 	updatePanelPosition();
 }
 
 function updatePanelPosition() {
 	if (activePanel?.fixed) {
+		return;
+	}
+
+	if (activePanel?.locked && activePanel.anchorInput && document.body.contains(activePanel.anchorInput)) {
+		const rect = activePanel.anchorInput.getBoundingClientRect();
+		const panel = activePanel.element;
+		const top = Math.min(rect.bottom + 10, window.innerHeight - panel.offsetHeight - 12);
+		const left = Math.min(Math.max(12, rect.left), window.innerWidth - panel.offsetWidth - 12);
+		panel.style.top = `${Math.max(12, top)}px`;
+		panel.style.left = `${left}px`;
 		return;
 	}
 
