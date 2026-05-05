@@ -11,9 +11,15 @@ const BRIDGE_VAULT_STATUS_RESPONSE = "VM_GET_VAULT_STATUS_RESPONSE";
 const VAULTMASTER_ORIGINS = new Set(["http://localhost:3000", "http://127.0.0.1:3000"]);
 
 let evaluationTimer = null;
+let prewarmTimer = null;
 let activeField = null;
 let activePanel = null;
 let activeLauncher = null;
+let pageAutofillState = {
+	status: "initializing",
+	suggestions: [],
+	updatedAt: 0,
+};
 const dismissedPanelKeys = new Set();
 const PENDING_AUTOFILL_TTL_MS = 20000;
 const AUTOFILL_SUPPRESSION_TTL_MS = 15000;
@@ -141,6 +147,11 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 // Klavye kısayolu dinleyicisi (Ctrl+Shift+V ile tetiklenir)
 if (!isVaultMasterPage()) {
 	chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+		if (message?.type === "GET_PAGE_AUTOFILL_STATE") {
+			void getPageAutofillState(message, sendResponse);
+			return true;
+		}
+
 		if (message?.type === "FILL_LOGIN_CREDENTIAL") {
 			void fillCredentialFromMessage(message, sendResponse);
 			return true;
@@ -178,6 +189,7 @@ function initializeAutofillAssistant() {
 	});
 
 	scheduleEvaluation();
+	schedulePrewarm(120);
 }
 
 function onFieldActivity(event) {
@@ -193,6 +205,7 @@ function onFieldActivity(event) {
 
 	activeField = target;
 	scheduleEvaluation();
+	schedulePrewarm(80);
 }
 
 function onKeyDown(event) {
@@ -231,6 +244,43 @@ function scheduleEvaluation() {
 	evaluationTimer = window.setTimeout(() => {
 		void evaluateAutofillOpportunity();
 	}, 220);
+}
+
+function schedulePrewarm(delay = 220) {
+	window.clearTimeout(prewarmTimer);
+	prewarmTimer = window.setTimeout(() => {
+		void prewarmPageAutofillState();
+	}, delay);
+}
+
+async function getPageAutofillState(_message, sendResponse) {
+	if (Date.now() - pageAutofillState.updatedAt > SUGGESTION_CACHE_TTL_MS) {
+		await prewarmPageAutofillState({ silent: true });
+	}
+
+	sendResponse({ ok: true, payload: pageAutofillState });
+}
+
+async function prewarmPageAutofillState() {
+	const context = getPageLoginContext();
+	if (!context) {
+		pageAutofillState = {
+			status: "no_form",
+			suggestions: [],
+			updatedAt: Date.now(),
+		};
+		return;
+	}
+
+	const identifier = context.usernameInput?.value.trim() || "";
+	const payload = await fetchSuggestions(identifier);
+	pageAutofillState = {
+		status: payload?.suggestions?.length ? "ready" : "no_match",
+		suggestions: payload?.suggestions || [],
+		isUsingOfflineData: Boolean(payload?.isUsingOfflineData),
+		identifier,
+		updatedAt: Date.now(),
+	};
 }
 
 async function evaluateAutofillOpportunity() {
@@ -290,10 +340,16 @@ async function evaluateAutofillOpportunity() {
 	const suggestionsPayload = await fetchSuggestions(context?.usernameInput?.value.trim() || "");
 	if (!suggestionsPayload?.suggestions?.length) {
 		removePanel();
-		removeLauncher();
 		return;
 	}
 
+	pageAutofillState = {
+		status: "ready",
+		suggestions: suggestionsPayload.suggestions,
+		isUsingOfflineData: Boolean(suggestionsPayload.isUsingOfflineData),
+		identifier: context?.usernameInput?.value.trim() || "",
+		updatedAt: Date.now(),
+	};
 	ensureLauncher(suggestionsPayload.suggestions);
 
 	if (!context) {

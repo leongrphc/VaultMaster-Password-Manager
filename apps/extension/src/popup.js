@@ -50,25 +50,28 @@ async function loadState() {
 		return;
 	}
 
-	const suggestionsResponse = await sendRuntimeMessage({
-		type: "LIST_LOGIN_SUGGESTIONS",
-		pageUrl: activeUrl,
-		identifier: "",
-	}).catch(() => null);
+	const pageState = activeTab?.id
+		? await sendTabMessage(activeTab.id, { type: "GET_PAGE_AUTOFILL_STATE" }).catch(() => null)
+		: null;
+	let payload = pageState?.payload;
 
-	const payload = suggestionsResponse?.payload;
-	if (!suggestionsResponse?.ok || payload?.status !== "ready" || !payload.suggestions?.length) {
-		setStatus(
-			"VaultMaster hazır. Bu domaine uygun kayıt bulunamadı veya giriş formu bekleniyor."
-		);
+	if (payload?.status !== "ready" || !payload.suggestions?.length) {
+		const suggestionsResponse = await sendRuntimeMessage({
+			type: "LIST_LOGIN_SUGGESTIONS",
+			pageUrl: activeUrl,
+			identifier: "",
+		}).catch(() => null);
+		payload = suggestionsResponse?.payload;
+	}
+
+	if (payload?.status !== "ready" || !payload.suggestions?.length) {
+		setStatus("VaultMaster hazır. Bu domaine uygun kayıt bulunamadı veya giriş formu bekleniyor.");
 		renderEmptyState("Bu site için eşleşen hesap görünmüyor.");
 		updateVaultStatusBadge(true);
 		return;
 	}
 
-	setStatus(
-		"Siteye döndüğünüzde kullanıcı adı veya e-posta alanına odaklanınca öneri paneli görünecek."
-	);
+	setStatus("Hazır. Bir hesaba tıklayınca aktif sayfadaki boş alanlar doldurulur.");
 	renderSuggestions(payload.suggestions.slice(0, 4));
 	updateVaultStatusBadge(true);
 }
