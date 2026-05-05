@@ -155,6 +155,17 @@ body {
 	padding: 12px;
 }
 
+.suggestion-item {
+	width: 100%;
+	color: var(--text);
+	text-align: left;
+}
+
+.suggestion-item:hover {
+	border-color: rgba(0, 255, 178, 0.35);
+	background: rgba(0, 255, 178, 0.08);
+}
+
 .item-main {
 	display: flex;
 	align-items: start;

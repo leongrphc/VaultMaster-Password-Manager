@@ -18,7 +18,9 @@ const dismissedPanelKeys = new Set();
 const PENDING_AUTOFILL_TTL_MS = 20000;
 const AUTOFILL_SUPPRESSION_TTL_MS = 15000;
 const NEVER_SAVE_HOSTS_KEY = "vaultmasterNeverSaveHosts";
+const SUGGESTION_CACHE_TTL_MS = 5000;
 const autofillSuppressions = new Map();
+const suggestionCache = new Map();
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 	if (!isVaultMasterPage()) {
@@ -139,6 +141,11 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 // Klavye kısayolu dinleyicisi (Ctrl+Shift+V ile tetiklenir)
 if (!isVaultMasterPage()) {
 	chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+		if (message?.type === "FILL_LOGIN_CREDENTIAL") {
+			void fillCredentialFromMessage(message, sendResponse);
+			return true;
+		}
+
 		if (message?.type === "TRIGGER_AUTOFILL") {
 			activeField = getBestAnchorInput();
 			if (activeField) {
@@ -414,8 +421,30 @@ function showSuggestionPanel({ context, panelKey, typedIdentifier, suggestions, 
 	updatePanelPosition();
 }
 
+async function fillCredentialFromMessage(message, sendResponse) {
+	activeField = getBestAnchorInput();
+	const context = getPageLoginContext();
+	if (!context) {
+		sendResponse({ ok: false, message: "Giriş alanı bulunamadı." });
+		return;
+	}
+
+	const itemId = message.itemId;
+	if (!itemId) {
+		sendResponse({ ok: false, message: "Kayıt seçilmedi." });
+		return;
+	}
+
+	const result = await fillCredentialIntoContext(itemId, context, { forceFill: false });
+	if (result.ok) {
+		suppressAutofillForContext(context);
+		removePanel();
+		removeLauncher();
+	}
+	sendResponse(result);
+}
+
 async function handleCredentialFill(itemId, context, panelKey, options = {}) {
-	// Phishing koruması - domain doğrulama
 	if (!options.forceFill) {
 		const isDomainValid = await validateCredentialForDomain(itemId, window.location.href);
 		if (!isDomainValid) {
@@ -424,6 +453,24 @@ async function handleCredentialFill(itemId, context, panelKey, options = {}) {
 		}
 	}
 
+	const result = await fillCredentialIntoContext(itemId, context, options);
+	if (!result.ok) {
+		updatePanelNotice(result.message || "Kayıt alınamadı. VaultMaster sekmesinin açık ve kilitsiz olduğundan emin olun.", true);
+		if (options.fromLauncher) {
+			showLauncherFeedback("Kayit alinamadi");
+		}
+		return;
+	}
+
+	updatePanelNotice(result.message, false);
+	if (options.fromLauncher) {
+		showLauncherFeedback(result.filledFields.includes("identifier") && !result.filledFields.includes("password") ? "Kullanici adi dolduruldu" : "Doldurma tamamlandi");
+	}
+	dismissedPanelKeys.add(panelKey);
+	window.setTimeout(() => removePanel(), result.hasTotp ? 3000 : 1200);
+}
+
+async function fillCredentialIntoContext(itemId, context, options = {}) {
 	const response = await sendRuntimeMessage({
 		type: "GET_LOGIN_CREDENTIAL",
 		itemId,
@@ -432,26 +479,26 @@ async function handleCredentialFill(itemId, context, panelKey, options = {}) {
 
 	const payload = response?.payload;
 	if (!response?.ok || payload?.status !== "ready" || !payload.credential) {
-		updatePanelNotice("Kayıt alınamadı. VaultMaster sekmesinin açık ve kilitsiz olduğundan emin olun.", true);
-		if (options.fromLauncher) {
-			showLauncherFeedback("Kayit alinamadi");
-		}
-		return;
+		return { ok: false, message: "Kayıt alınamadı. VaultMaster sekmesinin açık ve kilitsiz olduğundan emin olun." };
 	}
 
 	const { credential } = payload;
-	const latestContext = getLoginFormContext(activeField) || context;
+	const latestContext = getPageLoginContext() || context;
 	const filledFields = [];
 
-	if (latestContext.usernameInput && credential.username) {
+	if (latestContext.usernameInput && credential.username && (options.forceFill || !latestContext.usernameInput.value.trim())) {
 		setNativeValue(latestContext.usernameInput, credential.username);
 		filledFields.push("identifier");
 	}
 
-	if (latestContext.passwordInput && credential.password) {
+	if (latestContext.passwordInput && credential.password && (options.forceFill || !latestContext.passwordInput.value.trim())) {
 		setNativeValue(latestContext.passwordInput, credential.password);
 		latestContext.passwordInput.focus();
 		filledFields.push("password");
+	}
+
+	if (!filledFields.length) {
+		return { ok: false, message: "Alanlar dolu. Üzerine yazmak için uyarı panelindeki 'Yine de doldur' seçeneğini kullanın." };
 	}
 
 	if (filledFields.includes("identifier") && !filledFields.includes("password") && credential.password) {
@@ -467,10 +514,6 @@ async function handleCredentialFill(itemId, context, panelKey, options = {}) {
 		pageUrl: window.location.href,
 	}).catch(() => null);
 
-	const fillNotice = buildFilledNotice(credential.title, credential.hasTotp, filledFields);
-	updatePanelNotice(fillNotice, false);
-
-	// TOTP desteği - şifre doldurulduktan sonra TOTP kodunu kopyala
 	if (credential.hasTotp && filledFields.includes("password")) {
 		window.setTimeout(async () => {
 			const totpResponse = await sendRuntimeMessage({
@@ -482,22 +525,17 @@ async function handleCredentialFill(itemId, context, panelKey, options = {}) {
 				try {
 					await navigator.clipboard.writeText(totpResponse.payload.totpCode);
 					showTotpCopiedFeedback();
-				} catch {
-					// Clipboard erişimi reddedildi
-				}
+				} catch {}
 			}
 		}, 2000);
 	}
 
-	if (options.fromLauncher) {
-		showLauncherFeedback(
-			filledFields.includes("identifier") && !filledFields.includes("password")
-				? "Kullanici adi dolduruldu"
-				: "Doldurma tamamlandi"
-		);
-	}
-	dismissedPanelKeys.add(panelKey);
-	window.setTimeout(() => removePanel(), credential.hasTotp ? 3000 : 1200);
+	return {
+		ok: true,
+		message: buildFilledNotice(credential.title, credential.hasTotp, filledFields),
+		filledFields,
+		hasTotp: credential.hasTotp,
+	};
 }
 
 // Phishing koruması - domain doğrulama
@@ -899,6 +937,10 @@ function getFallbackLoginFormContext() {
 	return getLoginFormContext(anchorInput);
 }
 
+function getPageLoginContext() {
+	return getLoginFormContext(activeField) || getFallbackLoginFormContext();
+}
+
 function getScopedVisibleInputs(currentInput) {
 	const scopeRoot =
 		currentInput instanceof HTMLElement ? currentInput.closest("form") : null;
@@ -1156,10 +1198,17 @@ function formatStructuredItemSubtitle(item) {
 	return [item.fullName, item.email].filter(Boolean).join(" • ") || "Kimlik bilgisi";
 }
 
-async function fetchSuggestions(identifier) {
+async function fetchSuggestions(identifier, options = {}) {
+	const normalizedIdentifier = normalizeIdentifier(identifier);
+	const cacheKey = `${window.location.origin}${window.location.pathname}|${normalizedIdentifier}`;
+	const cached = suggestionCache.get(cacheKey);
+	if (!options.forceRefresh && cached && cached.expiresAt > Date.now()) {
+		return cached.payload;
+	}
+
 	const response = await sendRuntimeMessage({
 		type: "LIST_LOGIN_SUGGESTIONS",
-		identifier,
+		identifier: normalizedIdentifier,
 		pageUrl: window.location.href,
 	}).catch(() => null);
 
@@ -1168,6 +1217,10 @@ async function fetchSuggestions(identifier) {
 		return null;
 	}
 
+	suggestionCache.set(cacheKey, {
+		payload,
+		expiresAt: Date.now() + SUGGESTION_CACHE_TTL_MS,
+	});
 	return payload;
 }
 

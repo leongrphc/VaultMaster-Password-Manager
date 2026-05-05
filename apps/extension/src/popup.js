@@ -108,24 +108,32 @@ function renderSuggestions(suggestions) {
 	itemsNode.innerHTML = suggestions
 		.map(
 			(suggestion) => `
-		<article class="item">
-			<div class="item-main">
-				<div>
-					<p class="item-title">${escapeHtml(suggestion.title)}</p>
-					<p class="item-meta">${escapeHtml(maskIdentifier(suggestion.username))}</p>
+			<button class="item suggestion-item" type="button" data-item-id="${escapeHtml(suggestion.itemId)}">
+				<div class="item-main">
+					<div>
+						<p class="item-title">${escapeHtml(suggestion.title)}</p>
+						<p class="item-meta">${escapeHtml(maskIdentifier(suggestion.username))}</p>
+					</div>
+					<span class="score">Doldur</span>
 				</div>
-				<span class="score">${suggestion.isPreferred ? "Önerilen" : "Hazır"}</span>
-			</div>
-			<div class="tags">
-				<span class="tag">${escapeHtml(formatHostname(suggestion.url || ""))}</span>
-				${suggestion.isExactIdentifierMatch ? '<span class="tag">Tam eşleşme</span>' : ""}
-				${suggestion.isPreferred ? '<span class="tag">Son kullanılan</span>' : ""}
-			</div>
-			<p class="item-footnote">Kullanıcı adı/mail ve şifre birlikte doldurulur.</p>
-		</article>
-	`
+				<div class="tags">
+					<span class="tag">${escapeHtml(formatHostname(suggestion.url || ""))}</span>
+					${suggestion.isExactIdentifierMatch ? '<span class="tag">Tam eşleşme</span>' : ""}
+					${suggestion.isPreferred ? '<span class="tag">Son kullanılan</span>' : ""}
+				</div>
+				<p class="item-footnote">Tıkla: aktif sayfadaki boş kullanıcı adı/şifre alanlarını doldur.</p>
+			</button>
+		`
 		)
 		.join("");
+
+	itemsNode.querySelectorAll("[data-item-id]").forEach((node) => {
+		node.addEventListener("click", async () => {
+			const itemId = node.getAttribute("data-item-id");
+			if (!itemId) return;
+			await fillActiveTab(itemId);
+		});
+	});
 }
 
 function renderEmptyState(message) {
@@ -147,6 +155,29 @@ function renderEmptyState(message) {
 	`;
 }
 
+async function fillActiveTab(itemId) {
+	const [activeTab] = await queryTabs({ active: true, currentWindow: true });
+	if (!activeTab?.id || !activeTab.url) {
+		setStatus("Aktif sekme bulunamadı.");
+		return;
+	}
+
+	setStatus("Dolduruluyor...");
+	const response = await sendTabMessage(activeTab.id, {
+		type: "FILL_LOGIN_CREDENTIAL",
+		itemId,
+		pageUrl: activeTab.url,
+	}).catch(() => null);
+
+	if (response?.ok) {
+		setStatus(response.message || "Doldurma isteği gönderildi.");
+		window.setTimeout(() => window.close(), 450);
+		return;
+	}
+
+	setStatus(response?.message || "Doldurma yapılamadı. Sayfayı yenileyip tekrar deneyin.");
+}
+
 function setStatus(text) {
 	statusNode.textContent = text;
 }
@@ -160,6 +191,20 @@ function queryTabs(query) {
 function sendRuntimeMessage(payload) {
 	return new Promise((resolve, reject) => {
 		chrome.runtime.sendMessage(payload, (response) => {
+			const runtimeError = chrome.runtime.lastError;
+			if (runtimeError) {
+				reject(new Error(runtimeError.message));
+				return;
+			}
+
+			resolve(response);
+		});
+	});
+}
+
+function sendTabMessage(tabId, payload) {
+	return new Promise((resolve, reject) => {
+		chrome.tabs.sendMessage(tabId, payload, (response) => {
 			const runtimeError = chrome.runtime.lastError;
 			if (runtimeError) {
 				reject(new Error(runtimeError.message));
