@@ -8,10 +8,10 @@ Bu dosya VaultMaster Password Manager icin incelenen gelistirme maddelerini taki
   - [x] CSV export oncesi danger confirmation modal ekle
   - [x] Bulk export'u sifreli hale getir veya plaintext riskini acikca onaylat
   - [x] Export sonrasi kullaniciya dosya guvenligi uyarisi goster
-- [ ] Backend folder ownership kontrolu ekle
-  - [ ] Vault item create sirasinda `folderId` ayni kullaniciya ait mi dogrula
-  - [ ] Vault item update sirasinda `folderId` ayni kullaniciya ait mi dogrula
-  - [ ] Bu davranis icin test ekle veya mevcut test komutuyla dogrula
+- [x] Backend folder ownership kontrolu ekle
+  - [x] Vault item create sirasinda `folderId` ayni kullaniciya ait mi dogrula
+  - [x] Vault item update sirasinda `folderId` ayni kullaniciya ait mi dogrula
+  - [x] Bu davranis icin test ekle veya mevcut test komutuyla dogrula
 - [ ] Refresh token guvenligini artir
   - [ ] Refresh token'i DB'de hashli sakla
   - [ ] Token rotation modelini guclendir

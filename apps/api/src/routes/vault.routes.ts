@@ -20,6 +20,15 @@ async function findOwnedVaultItem(id: string, userId: string) {
   });
 }
 
+async function folderBelongsToUser(folderId: string, userId: string) {
+  const folder = await prisma.folder.findFirst({
+    where: { id: folderId, userId },
+    select: { id: true },
+  });
+
+  return Boolean(folder);
+}
+
 // GET /api/vault
 router.get("/", async (req: Request, res: Response) => {
   const items = await prisma.vaultItem.findMany({
@@ -197,6 +206,11 @@ router.get("/:id", async (req: Request, res: Response) => {
 router.post("/", async (req: Request, res: Response) => {
   const body = createVaultItemSchema.parse(req.body);
 
+  if (body.folderId && !(await folderBelongsToUser(body.folderId, req.user!.userId))) {
+    res.status(404).json({ success: false, error: "Klasör bulunamadı" });
+    return;
+  }
+
   const item = await prisma.vaultItem.create({
     data: {
       userId: req.user!.userId,
@@ -227,6 +241,11 @@ router.put("/:id", async (req: Request, res: Response) => {
   const existing = await findOwnedVaultItem(id, req.user!.userId);
   if (!existing) {
     res.status(404).json({ success: false, error: "Öğe bulunamadı" });
+    return;
+  }
+
+  if (body.folderId && !(await folderBelongsToUser(body.folderId, req.user!.userId))) {
+    res.status(404).json({ success: false, error: "Klasör bulunamadı" });
     return;
   }
 
