@@ -21,10 +21,10 @@ Bu dosya VaultMaster Password Manager icin incelenen gelistirme maddelerini taki
   - [x] Recovery code regenerate endpoint'i
   - [x] Change password/delete account endpoint'leri
   - [x] Refresh endpoint'i
-- [ ] Extension sifre maruziyetini azalt
-  - [ ] Sifre prefetch/cache davranisini azalt veya kaldir
-  - [ ] Pending autofill icinde sifre yerine `itemId + nonce` kullan
-  - [ ] TOTP/CVV gibi yuksek hassasiyetli alanlari prefetch disinda tut
+- [x] Extension sifre maruziyetini azalt
+  - [x] Sifre prefetch/cache davranisini azalt veya kaldir
+  - [x] Pending autofill icinde sifre yerine `itemId + nonce` kullan
+  - [x] TOTP/CVV gibi yuksek hassasiyetli alanlari prefetch disinda tut
 - [ ] Extension bridge guvenligini artir
   - [ ] `window.postMessage(..., "*")` yerine origin-bound hedef kullan
   - [ ] Cevaplarda `event.origin` kontrolu ekle

@@ -339,8 +339,9 @@ async function setPendingAutofill(message, sender, sendResponse) {
 		return;
 	}
 
+	const { password, totp, totpCode, cvv, ...safePendingAutofill } = message.pendingAutofill;
 	const stored = await getPendingAutofillMap();
-	stored[String(tabId)] = message.pendingAutofill;
+	stored[String(tabId)] = safePendingAutofill;
 	await chrome.storage.session.set({
 		[PENDING_AUTOFILL_KEY]: stored,
 	});

@@ -29,6 +29,7 @@ const CREDENTIAL_CACHE_TTL_MS = 30000;
 const autofillSuppressions = new Map();
 const suggestionCache = new Map();
 const credentialCache = new Map();
+const pendingCredentialNonces = new Map();
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 	if (!isVaultMasterPage()) {
@@ -276,9 +277,6 @@ async function prewarmPageAutofillState() {
 
 	const identifier = context.usernameInput?.value.trim() || "";
 	const payload = await fetchSuggestions(identifier);
-	if (payload?.suggestions?.length) {
-		void prefetchSuggestionCredentials(payload.suggestions.slice(0, 4));
-	}
 
 	pageAutofillState = {
 		status: payload?.suggestions?.length ? "ready" : "no_match",
@@ -356,7 +354,6 @@ async function evaluateAutofillOpportunity() {
 		identifier: context?.usernameInput?.value.trim() || "",
 		updatedAt: Date.now(),
 	};
-	void prefetchSuggestionCredentials(suggestionsPayload.suggestions.slice(0, 4));
 	ensureLauncher(suggestionsPayload.suggestions);
 
 	if (!context) {
@@ -569,34 +566,12 @@ async function fillCredentialIntoContext(itemId, context, options = {}) {
 		pageUrl: window.location.href,
 	}).catch(() => null);
 
-	if (credential.hasTotp && filledFields.includes("password")) {
-		window.setTimeout(async () => {
-			const totpResponse = await sendRuntimeMessage({
-				type: "GET_TOTP_CODE",
-				itemId: credential.itemId,
-			}).catch(() => null);
-
-			if (totpResponse?.ok && totpResponse?.payload?.totpCode) {
-				try {
-					await navigator.clipboard.writeText(totpResponse.payload.totpCode);
-					showTotpCopiedFeedback();
-				} catch {}
-			}
-		}, 2000);
-	}
-
 	return {
 		ok: true,
 		message: buildFilledNotice(credential.title, credential.hasTotp, filledFields),
 		filledFields,
 		hasTotp: credential.hasTotp,
 	};
-}
-
-async function prefetchSuggestionCredentials(suggestions) {
-	await Promise.allSettled(
-		suggestions.map((suggestion) => getCachedCredential(suggestion.itemId))
-	);
 }
 
 async function getCachedCredential(itemId) {
@@ -1127,15 +1102,29 @@ function normalizeIdentifier(value) {
 	return String(value || "").trim().toLowerCase();
 }
 
+function generatePendingNonce() {
+	const values = new Uint32Array(4);
+	crypto.getRandomValues(values);
+	return Array.from(values, (value) => value.toString(16).padStart(8, "0")).join("");
+}
+
 async function rememberPendingAutofill(credential) {
+	const nonce = generatePendingNonce();
+	const expiresAt = Date.now() + PENDING_AUTOFILL_TTL_MS;
+	pendingCredentialNonces.set(nonce, {
+		itemId: credential.itemId,
+		password: credential.password,
+		expiresAt,
+	});
+
 	const pendingAutofill = {
 		itemId: credential.itemId,
+		nonce,
 		title: credential.title,
 		username: credential.username,
-		password: credential.password,
 		hasTotp: credential.hasTotp,
 		hostname: window.location.hostname,
-		expiresAt: Date.now() + PENDING_AUTOFILL_TTL_MS,
+		expiresAt,
 	};
 
 	await sendRuntimeMessage({
@@ -1173,17 +1162,30 @@ async function clearPendingAutofill() {
 
 async function tryApplyPendingAutofill(context) {
 	const pending = await getPendingAutofill();
-	if (!pending || !context?.passwordInput || !pending.password) {
+	const pendingCredential = pending?.nonce ? pendingCredentialNonces.get(pending.nonce) : null;
+	if (
+		!pending ||
+		!context?.passwordInput ||
+		!pendingCredential ||
+		pendingCredential.itemId !== pending.itemId ||
+		pendingCredential.expiresAt <= Date.now()
+	) {
+		if (pending?.nonce) {
+			pendingCredentialNonces.delete(pending.nonce);
+			await clearPendingAutofill();
+		}
 		return false;
 	}
 
 	if (context.passwordInput.value.trim()) {
+		pendingCredentialNonces.delete(pending.nonce);
 		await clearPendingAutofill();
 		return false;
 	}
 
-	setNativeValue(context.passwordInput, pending.password);
+	setNativeValue(context.passwordInput, pendingCredential.password);
 	context.passwordInput.focus();
+	pendingCredentialNonces.delete(pending.nonce);
 	await clearPendingAutofill();
 	suppressAutofillForContext(context);
 	updatePanelNotice(buildFilledNotice(pending.title, pending.hasTotp, ["password"]), false);
@@ -1254,7 +1256,6 @@ async function fillCreditCard(itemId, context) {
 
 	if (context.cardNumberInput) setNativeValue(context.cardNumberInput, card.cardNumber);
 	if (context.cardholderNameInput) setNativeValue(context.cardholderNameInput, card.cardholderName);
-	if (context.cvvInput) setNativeValue(context.cvvInput, card.cvv);
 	if (context.expMonthInput) setNativeValue(context.expMonthInput, card.expMonth);
 	if (context.expYearInput) setNativeValue(context.expYearInput, card.expYear);
 	if (context.expiryInput) setNativeValue(context.expiryInput, `${card.expMonth}/${String(card.expYear).slice(-2)}`);
