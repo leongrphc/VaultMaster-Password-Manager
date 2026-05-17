@@ -57,8 +57,8 @@ Bu dosya VaultMaster Password Manager icin incelenen gelistirme maddelerini taki
   - [x] Kodlari kaydettim onayi
   - [x] Recovery code indirme secenegi
   - [x] Kodlar tekrar gosterilemiyorsa acik uyari
-- [ ] Reduced motion destegi ekle
-  - [ ] `prefers-reduced-motion` global CSS kurali
+- [x] Reduced motion destegi ekle
+  - [x] `prefers-reduced-motion` global CSS kurali
 - [ ] Clipboard auto-clear feedback ekle
   - [ ] Kopyalama toast'inda temizleme suresi
   - [ ] Temizleme basarisiz olursa non-blocking uyari
