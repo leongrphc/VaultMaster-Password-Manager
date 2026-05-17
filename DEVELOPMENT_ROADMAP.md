@@ -70,12 +70,12 @@ Bu dosya VaultMaster Password Manager icin incelenen gelistirme maddelerini taki
   - [x] `test`
   - [x] `test:coverage` veya kapsam stratejisi
   - [x] `ci`
-- [ ] GitHub Actions CI ekle
-  - [ ] Frozen install
-  - [ ] Build
-  - [ ] Lint
-  - [ ] Typecheck
-  - [ ] Test
+- [x] GitHub Actions CI ekle
+  - [x] Frozen install
+  - [x] Build
+  - [x] Lint
+  - [x] Typecheck
+  - [x] Test
 - [ ] API integration testlerini genislet
   - [ ] Auth register/login
   - [ ] 2FA enable/verify/disable
