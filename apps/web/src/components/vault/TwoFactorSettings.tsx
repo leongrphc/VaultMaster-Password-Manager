@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Image from "next/image";
-import { Shield, Check, Loader2, RefreshCcw, Copy } from "lucide-react";
+import { Shield, Check, Loader2, RefreshCcw, Copy, Download, AlertTriangle } from "lucide-react";
 import { api, getErrorMessage } from "@/lib/api";
 import { copyWithAutoClear } from "@/lib/clipboard";
 import { notify } from "@/lib/notify";
@@ -44,6 +44,7 @@ export default function TwoFactorSettings() {
   const [setupData, setSetupData] = useState<{ qrCode: string; secret: string } | null>(null);
   const [showRecoveryCodes, setShowRecoveryCodes] = useState(false);
   const [recoveryCodes, setRecoveryCodes] = useState<string[]>([]);
+  const [recoveryCodesSaved, setRecoveryCodesSaved] = useState(false);
   const [code, setCode] = useState("");
   const [recoveryCodeInput, setRecoveryCodeInput] = useState("");
   const [setupError, setSetupError] = useState("");
@@ -101,6 +102,7 @@ export default function TwoFactorSettings() {
         api.auth.twoFactorVerify({ code }, accessToken)
       )) as RecoveryCodesResponse;
       setRecoveryCodes(response.data.recoveryCodes);
+      setRecoveryCodesSaved(false);
       setShowRecoveryCodes(true);
       setShowSetup(false);
       setCode("");
@@ -159,6 +161,7 @@ export default function TwoFactorSettings() {
       )) as RecoveryCodesResponse;
 
       setRecoveryCodes(response.data.recoveryCodes);
+      setRecoveryCodesSaved(false);
       setShowRecoveryCodes(true);
       setCode("");
       setRecoveryCodeInput("");
@@ -171,8 +174,48 @@ export default function TwoFactorSettings() {
   };
 
   const copyRecoveryCodes = async () => {
+    if (recoveryCodes.length === 0) {
+      return;
+    }
+
     await copyWithAutoClear(recoveryCodes.join("\n"));
     notify.copied("Recovery code'lar");
+  };
+
+  const downloadRecoveryCodes = () => {
+    if (recoveryCodes.length === 0) {
+      return;
+    }
+
+    const generatedAt = new Date();
+    const content = [
+      "VaultMaster Recovery Codes",
+      `Olusturulma zamani: ${generatedAt.toISOString()}`,
+      "",
+      "Bu kodlari guvenli bir yerde saklayin. Her kod yalnizca bir kez kullanilabilir.",
+      "Bu pencere kapatilir, sayfa yenilenir veya uygulama yeniden yuklenirse bu kodlar tekrar gosterilemez.",
+      "",
+      ...recoveryCodes,
+      "",
+    ].join("\n");
+
+    const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `vaultmaster-recovery-codes-${generatedAt.toISOString().split("T")[0]}.txt`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+    notify.success("Recovery code'lar indirildi");
+  };
+
+  const closeRecoveryCodesModal = () => {
+    if (recoveryCodes.length > 0 && !recoveryCodesSaved) {
+      notify.warning("Devam etmeden önce recovery code'ları kaydettiğinizi onaylayın.");
+      return;
+    }
+
+    setShowRecoveryCodes(false);
   };
 
   if (loading) {
@@ -341,41 +384,88 @@ export default function TwoFactorSettings() {
 
       {showRecoveryCodes && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-midnight/80 backdrop-blur-sm" onClick={() => setShowRecoveryCodes(false)} />
+          <div className="absolute inset-0 bg-midnight/80 backdrop-blur-sm" onClick={closeRecoveryCodesModal} />
 
           <div className="relative glass rounded-2xl w-full max-w-lg p-6">
-            <div className="flex items-start justify-between gap-3 mb-4">
+            <div className="flex flex-col gap-4 mb-4 sm:flex-row sm:items-start sm:justify-between">
               <div>
                 <h3 className="text-lg font-bold">Recovery Codes</h3>
                 <p className="text-sm text-text-secondary mt-1">
                   Bunları güvenli bir yere kaydedin. Her biri yalnızca bir kez kullanılabilir.
                 </p>
               </div>
-              <button
-                onClick={() => void copyRecoveryCodes()}
-                className="inline-flex items-center gap-2 rounded-xl border border-border px-3 py-2 text-sm text-text-secondary hover:text-text-primary hover:bg-surface"
-              >
-                <Copy className="w-4 h-4" />
-                Kopyala
-              </button>
+              {recoveryCodes.length > 0 && (
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => void copyRecoveryCodes()}
+                    className="inline-flex items-center gap-2 rounded-xl border border-border px-3 py-2 text-sm text-text-secondary hover:text-text-primary hover:bg-surface"
+                  >
+                    <Copy className="w-4 h-4" />
+                    Kopyala
+                  </button>
+                  <button
+                    type="button"
+                    onClick={downloadRecoveryCodes}
+                    className="inline-flex items-center gap-2 rounded-xl border border-border px-3 py-2 text-sm text-text-secondary hover:text-text-primary hover:bg-surface"
+                  >
+                    <Download className="w-4 h-4" />
+                    İndir
+                  </button>
+                </div>
+              )}
+            </div>
+
+            <div className="mb-4 rounded-xl border border-warning/20 bg-warning/5 px-4 py-3 text-sm text-warning">
+              <div className="flex items-start gap-2">
+                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                <span>
+                  {"Bu recovery code'lar yalnızca oluşturuldukları anda gösterilir. Bu pencere kapatılır, sayfa yenilenir veya uygulama yeniden yüklenirse mevcut kodlar tekrar görüntülenemez."}
+                </span>
+              </div>
             </div>
 
             {recoveryCodes.length > 0 ? (
-              <div className="grid gap-2 sm:grid-cols-2">
-                {recoveryCodes.map((entry) => (
-                  <div
-                    key={entry}
-                    className="rounded-xl border border-border bg-surface px-4 py-3 font-[family-name:var(--font-mono)] text-sm text-text-primary"
-                  >
-                    {entry}
-                  </div>
-                ))}
-              </div>
+              <>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {recoveryCodes.map((entry) => (
+                    <div
+                      key={entry}
+                      className="rounded-xl border border-border bg-surface px-4 py-3 font-[family-name:var(--font-mono)] text-sm text-text-primary"
+                    >
+                      {entry}
+                    </div>
+                  ))}
+                </div>
+
+                <label className="mt-4 flex items-start gap-3 rounded-xl border border-border bg-surface px-4 py-3 text-sm text-text-secondary">
+                  <input
+                    type="checkbox"
+                    checked={recoveryCodesSaved}
+                    onChange={(event) => setRecoveryCodesSaved(event.target.checked)}
+                    className="mt-1 accent-accent"
+                  />
+                  <span>
+                    {"Recovery code'ları güvenli bir yere kaydettiğimi ve bu kodların tekrar gösterilemeyeceğini anlıyorum."}
+                  </span>
+                </label>
+              </>
             ) : (
               <div className="rounded-xl border border-border bg-surface px-4 py-5 text-sm text-text-secondary">
-                Son üretilen recovery code seti burada görünür. Yeni kod üretmek için üstteki yenileme akışını kullanın.
+                {"Recovery code'lar güvenlik nedeniyle yalnızca oluşturuldukları anda gösterilir. Bu sayfa yenilendiyse veya pencere kapatıldıysa mevcut kodlar tekrar görüntülenemez. Yeni bir set oluşturmak için yukarıdaki yenileme akışını kullanın."}
               </div>
             )}
+
+            <div className="mt-5 flex justify-end">
+              <button
+                type="button"
+                onClick={closeRecoveryCodesModal}
+                disabled={recoveryCodes.length > 0 && !recoveryCodesSaved}
+                className="rounded-xl bg-accent px-4 py-2.5 text-sm font-semibold text-midnight transition-all hover:bg-accent-dim disabled:opacity-50"
+              >
+                Tamam
+              </button>
+            </div>
           </div>
         </div>
       )}

@@ -53,10 +53,10 @@ Bu dosya VaultMaster Password Manager icin incelenen gelistirme maddelerini taki
   - [x] Strength meter veya guclu parola rehberi
   - [x] Kurtarma yok onay checkbox'i
   - [x] Caps Lock uyarisi
-- [ ] 2FA recovery code akisini guclendir
-  - [ ] Kodlari kaydettim onayi
-  - [ ] Recovery code indirme secenegi
-  - [ ] Kodlar tekrar gosterilemiyorsa acik uyari
+- [x] 2FA recovery code akisini guclendir
+  - [x] Kodlari kaydettim onayi
+  - [x] Recovery code indirme secenegi
+  - [x] Kodlar tekrar gosterilemiyorsa acik uyari
 - [ ] Reduced motion destegi ekle
   - [ ] `prefers-reduced-motion` global CSS kurali
 - [ ] Clipboard auto-clear feedback ekle
