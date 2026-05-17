@@ -7,12 +7,15 @@ interface TagInputProps {
   tags: string[];
   onChange: (tags: string[]) => void;
   suggestions?: string[];
+  idPrefix?: string;
 }
 
-export default function TagInput({ tags, onChange, suggestions = [] }: TagInputProps) {
+export default function TagInput({ tags, onChange, suggestions = [], idPrefix = "tag-input" }: TagInputProps) {
   const [input, setInput] = useState("");
   const [showSuggestions, setShowSuggestions] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  const inputId = `${idPrefix}-input`;
 
   const filteredSuggestions = suggestions.filter(
     (s) =>
@@ -74,7 +77,7 @@ export default function TagInput({ tags, onChange, suggestions = [] }: TagInputP
 
   return (
     <div>
-      <label className="flex items-center gap-1.5 text-sm text-text-secondary mb-2">
+      <label htmlFor={inputId} className="flex items-center gap-1.5 text-sm text-text-secondary mb-2">
         <Tag className="w-3.5 h-3.5" />
         Etiketler
       </label>
@@ -90,12 +93,14 @@ export default function TagInput({ tags, onChange, suggestions = [] }: TagInputP
                 type="button"
                 onClick={() => removeTag(tag)}
                 className="hover:opacity-70 transition-opacity"
+                aria-label={`Etiketi kaldır: ${tag}`}
               >
                 <X className="w-3 h-3" />
               </button>
             </span>
           ))}
           <input
+            id={inputId}
             ref={inputRef}
             value={input}
             onChange={(e) => {

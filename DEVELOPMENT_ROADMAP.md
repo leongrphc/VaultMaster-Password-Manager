@@ -43,9 +43,9 @@ Bu dosya VaultMaster Password Manager icin incelenen gelistirme maddelerini taki
   - [x] Mobilde main margin'i sifirla
   - [x] Sidebar'i mobil drawer/overlay olarak calistir
   - [x] Overlay, Escape ve scroll lock davranisini dogrula
-- [ ] Form label ve aria baglantilarini guclendir
-  - [ ] Input/select/textarea icin `id` + `htmlFor`
-  - [ ] Hata mesajlari icin `aria-describedby`
+- [x] Form label ve aria baglantilarini guclendir
+  - [x] Input/select/textarea icin `id` + `htmlFor`
+  - [x] Hata mesajlari icin `aria-describedby`
 - [ ] Ikon-only butonlara erisilebilir isim ekle
   - [ ] `aria-label`
   - [ ] Toggle butonlarda `aria-pressed`

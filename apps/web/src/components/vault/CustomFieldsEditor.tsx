@@ -6,6 +6,7 @@ import type { VaultItemCustomField } from "@vaultmaster/shared";
 interface CustomFieldsEditorProps {
   fields: VaultItemCustomField[];
   onChange: (fields: VaultItemCustomField[]) => void;
+  idPrefix?: string;
 }
 
 function createField(): VaultItemCustomField {
@@ -23,6 +24,7 @@ function createField(): VaultItemCustomField {
 export default function CustomFieldsEditor({
   fields,
   onChange,
+  idPrefix = "custom-fields",
 }: CustomFieldsEditorProps) {
   const updateField = (
     id: string,
@@ -60,16 +62,24 @@ export default function CustomFieldsEditor({
         </div>
       ) : (
         <div className="space-y-3">
-          {fields.map((field) => (
+          {fields.map((field) => {
+            const labelInputId = `${idPrefix}-${field.id}-label`;
+            const valueInputId = `${idPrefix}-${field.id}-value`;
+
+            return (
             <div key={field.id} className="rounded-xl border border-border bg-surface p-3">
               <div className="grid gap-3 sm:grid-cols-[1fr_1.4fr_auto]">
+                <label htmlFor={labelInputId} className="sr-only">Alan adı</label>
                 <input
+                  id={labelInputId}
                   value={field.label}
                   onChange={(e) => updateField(field.id, "label", e.target.value)}
                   className="w-full bg-abyss border border-border rounded-xl py-2.5 px-4 text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent/50 transition-colors"
                   placeholder="Alan adı"
                 />
+                <label htmlFor={valueInputId} className="sr-only">Alan değeri</label>
                 <input
+                  id={valueInputId}
                   type={field.concealed ? "password" : "text"}
                   value={field.value}
                   onChange={(e) => updateField(field.id, "value", e.target.value)}
@@ -84,6 +94,7 @@ export default function CustomFieldsEditor({
                     }
                     className="p-2.5 rounded-xl border border-border text-text-muted hover:text-text-primary transition-colors"
                     title={field.concealed ? "Değeri göster" : "Değeri gizle"}
+                    aria-label={field.concealed ? "Özel alan değerini göster" : "Özel alan değerini gizle"}
                   >
                     {field.concealed ? (
                       <EyeOff className="w-4 h-4" />
@@ -96,13 +107,15 @@ export default function CustomFieldsEditor({
                     onClick={() => removeField(field.id)}
                     className="p-2.5 rounded-xl border border-danger/20 text-danger hover:bg-danger/10 transition-colors"
                     title="Alanı sil"
+                    aria-label="Özel alanı sil"
                   >
                     <Trash2 className="w-4 h-4" />
                   </button>
                 </div>
               </div>
             </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>

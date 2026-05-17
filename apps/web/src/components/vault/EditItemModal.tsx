@@ -94,7 +94,6 @@ export default function EditItemModal({ item, onClose }: EditItemModalProps) {
     setSaving(true);
     try {
       let data: VaultItemData;
-      const type = item.data.type;
       const sanitizedCustomFields = customFields
         .map((field) => ({
           ...field,
@@ -165,6 +164,8 @@ export default function EditItemModal({ item, onClose }: EditItemModalProps) {
     }
   };
 
+  const fieldId = (name: string) => `edit-item-${name}`;
+
   const type = item.data.type;
 
   const typeLabels = {
@@ -191,7 +192,9 @@ export default function EditItemModal({ item, onClose }: EditItemModalProps) {
             </h2>
           </div>
           <button
+            type="button"
             onClick={onClose}
+            aria-label="Düzenleme modalını kapat"
             className="p-2 rounded-lg hover:bg-surface text-text-muted hover:text-text-primary transition-colors"
           >
             <X className="w-5 h-5" />
@@ -200,8 +203,9 @@ export default function EditItemModal({ item, onClose }: EditItemModalProps) {
 
         <form onSubmit={handleSubmit} className="p-5 space-y-5">
           <div>
-            <label className="block text-sm text-text-secondary mb-2">Başlık</label>
+            <label htmlFor={fieldId("title")} className="block text-sm text-text-secondary mb-2">Başlık</label>
             <input
+              id={fieldId("title")}
               required
               value={title}
               onChange={(e) => setTitle(e.target.value)}
@@ -211,8 +215,9 @@ export default function EditItemModal({ item, onClose }: EditItemModalProps) {
 
           {folders.length > 0 && (
             <div>
-              <label className="block text-sm text-text-secondary mb-2">Klasör</label>
+              <label htmlFor={fieldId("folder")} className="block text-sm text-text-secondary mb-2">Klasör</label>
               <select
+                id={fieldId("folder")}
                 value={folderId || ""}
                 onChange={(e) => setFolderId(e.target.value || null)}
                 className="w-full bg-abyss border border-border rounded-xl py-2.5 px-4 text-sm text-text-primary focus:outline-none focus:border-accent/50 transition-colors"
@@ -226,21 +231,23 @@ export default function EditItemModal({ item, onClose }: EditItemModalProps) {
           )}
 
           {/* Tags */}
-          <TagInput tags={tags} onChange={setTags} suggestions={allTags} />
+          <TagInput tags={tags} onChange={setTags} suggestions={allTags} idPrefix="edit-item-tags" />
 
           {type === "login" && (
             <>
               <div>
-                <label className="block text-sm text-text-secondary mb-2">URL</label>
+                <label htmlFor={fieldId("login-url")} className="block text-sm text-text-secondary mb-2">URL</label>
                 <input
+                  id={fieldId("login-url")}
                   value={url}
                   onChange={(e) => setUrl(e.target.value)}
                   className="w-full bg-abyss border border-border rounded-xl py-2.5 px-4 text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent/50 transition-colors"
                 />
               </div>
               <div>
-                <label className="block text-sm text-text-secondary mb-2">Kullanıcı Adı</label>
+                <label htmlFor={fieldId("login-username")} className="block text-sm text-text-secondary mb-2">Kullanıcı Adı</label>
                 <input
+                  id={fieldId("login-username")}
                   required
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
@@ -248,10 +255,11 @@ export default function EditItemModal({ item, onClose }: EditItemModalProps) {
                 />
               </div>
               <div>
-                <label className="block text-sm text-text-secondary mb-2">Şifre</label>
+                <label htmlFor={fieldId("login-password")} className="block text-sm text-text-secondary mb-2">Şifre</label>
                 <div className="flex gap-2">
                   <div className="relative flex-1">
                     <input
+                      id={fieldId("login-password")}
                       required
                       type={showPassword ? "text" : "password"}
                       value={password}
@@ -262,6 +270,7 @@ export default function EditItemModal({ item, onClose }: EditItemModalProps) {
                       type="button"
                       onClick={() => setShowPassword(!showPassword)}
                       className="absolute right-3 top-1/2 -translate-y-1/2 text-text-muted hover:text-text-primary"
+                      aria-label={showPassword ? "Şifreyi gizle" : "Şifreyi göster"}
                     >
                       {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                     </button>
@@ -271,16 +280,18 @@ export default function EditItemModal({ item, onClose }: EditItemModalProps) {
                     onClick={() => { setPassword(generatePassword({ length: 20 })); setShowPassword(true); }}
                     className="p-2.5 rounded-xl bg-accent/10 hover:bg-accent/20 text-accent border border-accent/20 transition-all shrink-0"
                     title="Yeni şifre üret"
+                    aria-label="Yeni şifre üret"
                   >
                     <Wand2 className="w-4 h-4" />
                   </button>
                 </div>
               </div>
               <div>
-                <label className="block text-sm text-text-secondary mb-2">
+                <label htmlFor={fieldId("login-totp")} className="block text-sm text-text-secondary mb-2">
                   TOTP Secret / otpauth URI
                 </label>
                 <input
+                  id={fieldId("login-totp")}
                   value={totpSecret}
                   onChange={(e) => setTotpSecret(e.target.value)}
                   className="w-full bg-abyss border border-border rounded-xl py-2.5 px-4 text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent/50 transition-colors font-[family-name:var(--font-mono)]"
@@ -288,8 +299,9 @@ export default function EditItemModal({ item, onClose }: EditItemModalProps) {
                 />
               </div>
               <div>
-                <label className="block text-sm text-text-secondary mb-2">Notlar</label>
+                <label htmlFor={fieldId("login-notes")} className="block text-sm text-text-secondary mb-2">Notlar</label>
                 <textarea
+                  id={fieldId("login-notes")}
                   value={notes}
                   onChange={(e) => setNotes(e.target.value)}
                   rows={3}
@@ -301,8 +313,9 @@ export default function EditItemModal({ item, onClose }: EditItemModalProps) {
 
           {type === "secure_note" && (
             <div>
-              <label className="block text-sm text-text-secondary mb-2">Not İçeriği</label>
+              <label htmlFor={fieldId("secure-note-content")} className="block text-sm text-text-secondary mb-2">Not İçeriği</label>
               <textarea
+                id={fieldId("secure-note-content")}
                 required
                 value={noteContent}
                 onChange={(e) => setNoteContent(e.target.value)}
@@ -315,30 +328,31 @@ export default function EditItemModal({ item, onClose }: EditItemModalProps) {
           {type === "credit_card" && (
             <>
               <div>
-                <label className="block text-sm text-text-secondary mb-2">Kart Sahibi</label>
-                <input required value={cardholderName} onChange={(e) => setCardholderName(e.target.value)} className="w-full bg-abyss border border-border rounded-xl py-2.5 px-4 text-sm text-text-primary focus:outline-none focus:border-accent/50 transition-colors" />
+                <label htmlFor={fieldId("cardholder-name")} className="block text-sm text-text-secondary mb-2">Kart Sahibi</label>
+                <input id={fieldId("cardholder-name")} required value={cardholderName} onChange={(e) => setCardholderName(e.target.value)} className="w-full bg-abyss border border-border rounded-xl py-2.5 px-4 text-sm text-text-primary focus:outline-none focus:border-accent/50 transition-colors" />
               </div>
               <div>
-                <label className="block text-sm text-text-secondary mb-2">Kart Numarası</label>
-                <input required value={cardNumber} onChange={(e) => setCardNumber(e.target.value.replace(/\D/g, ""))} maxLength={16} className="w-full bg-abyss border border-border rounded-xl py-2.5 px-4 text-sm text-text-primary focus:outline-none focus:border-accent/50 transition-colors font-[family-name:var(--font-mono)]" />
+                <label htmlFor={fieldId("card-number")} className="block text-sm text-text-secondary mb-2">Kart Numarası</label>
+                <input id={fieldId("card-number")} required value={cardNumber} onChange={(e) => setCardNumber(e.target.value.replace(/\D/g, ""))} maxLength={16} className="w-full bg-abyss border border-border rounded-xl py-2.5 px-4 text-sm text-text-primary focus:outline-none focus:border-accent/50 transition-colors font-[family-name:var(--font-mono)]" />
               </div>
               <div className="grid grid-cols-3 gap-3">
                 <div>
-                  <label className="block text-sm text-text-secondary mb-2">Ay</label>
-                  <input required value={expMonth} onChange={(e) => setExpMonth(e.target.value.replace(/\D/g, ""))} maxLength={2} className="w-full bg-abyss border border-border rounded-xl py-2.5 px-4 text-sm text-text-primary focus:outline-none focus:border-accent/50 transition-colors text-center" />
+                  <label htmlFor={fieldId("card-exp-month")} className="block text-sm text-text-secondary mb-2">Ay</label>
+                  <input id={fieldId("card-exp-month")} required value={expMonth} onChange={(e) => setExpMonth(e.target.value.replace(/\D/g, ""))} maxLength={2} className="w-full bg-abyss border border-border rounded-xl py-2.5 px-4 text-sm text-text-primary focus:outline-none focus:border-accent/50 transition-colors text-center" />
                 </div>
                 <div>
-                  <label className="block text-sm text-text-secondary mb-2">Yıl</label>
-                  <input required value={expYear} onChange={(e) => setExpYear(e.target.value.replace(/\D/g, ""))} maxLength={4} className="w-full bg-abyss border border-border rounded-xl py-2.5 px-4 text-sm text-text-primary focus:outline-none focus:border-accent/50 transition-colors text-center" />
+                  <label htmlFor={fieldId("card-exp-year")} className="block text-sm text-text-secondary mb-2">Yıl</label>
+                  <input id={fieldId("card-exp-year")} required value={expYear} onChange={(e) => setExpYear(e.target.value.replace(/\D/g, ""))} maxLength={4} className="w-full bg-abyss border border-border rounded-xl py-2.5 px-4 text-sm text-text-primary focus:outline-none focus:border-accent/50 transition-colors text-center" />
                 </div>
                 <div>
-                  <label className="block text-sm text-text-secondary mb-2">CVV</label>
-                  <input required type="password" value={cvv} onChange={(e) => setCvv(e.target.value.replace(/\D/g, ""))} maxLength={4} className="w-full bg-abyss border border-border rounded-xl py-2.5 px-4 text-sm text-text-primary focus:outline-none focus:border-accent/50 transition-colors text-center" />
+                  <label htmlFor={fieldId("card-cvv")} className="block text-sm text-text-secondary mb-2">CVV</label>
+                  <input id={fieldId("card-cvv")} required type="password" value={cvv} onChange={(e) => setCvv(e.target.value.replace(/\D/g, ""))} maxLength={4} className="w-full bg-abyss border border-border rounded-xl py-2.5 px-4 text-sm text-text-primary focus:outline-none focus:border-accent/50 transition-colors text-center" />
                 </div>
               </div>
               <div>
-                <label className="block text-sm text-text-secondary mb-2">Notlar</label>
+                <label htmlFor={fieldId("card-notes")} className="block text-sm text-text-secondary mb-2">Notlar</label>
                 <textarea
+                  id={fieldId("card-notes")}
                   value={notes}
                   onChange={(e) => setNotes(e.target.value)}
                   rows={3}
@@ -351,8 +365,9 @@ export default function EditItemModal({ item, onClose }: EditItemModalProps) {
           {type === "identity" && (
             <>
               <div>
-                <label className="block text-sm text-text-secondary mb-2">Tam Ad</label>
+                <label htmlFor={fieldId("identity-full-name")} className="block text-sm text-text-secondary mb-2">Tam Ad</label>
                 <input
+                  id={fieldId("identity-full-name")}
                   required
                   value={fullName}
                   onChange={(e) => setFullName(e.target.value)}
@@ -361,16 +376,18 @@ export default function EditItemModal({ item, onClose }: EditItemModalProps) {
               </div>
               <div className="grid gap-3 sm:grid-cols-2">
                 <div>
-                  <label className="block text-sm text-text-secondary mb-2">E-posta</label>
+                  <label htmlFor={fieldId("identity-email")} className="block text-sm text-text-secondary mb-2">E-posta</label>
                   <input
+                    id={fieldId("identity-email")}
                     value={identityEmail}
                     onChange={(e) => setIdentityEmail(e.target.value)}
                     className="w-full bg-abyss border border-border rounded-xl py-2.5 px-4 text-sm text-text-primary focus:outline-none focus:border-accent/50 transition-colors"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm text-text-secondary mb-2">Telefon</label>
+                  <label htmlFor={fieldId("identity-phone")} className="block text-sm text-text-secondary mb-2">Telefon</label>
                   <input
+                    id={fieldId("identity-phone")}
                     value={phone}
                     onChange={(e) => setPhone(e.target.value)}
                     className="w-full bg-abyss border border-border rounded-xl py-2.5 px-4 text-sm text-text-primary focus:outline-none focus:border-accent/50 transition-colors"
@@ -378,16 +395,18 @@ export default function EditItemModal({ item, onClose }: EditItemModalProps) {
                 </div>
               </div>
               <div>
-                <label className="block text-sm text-text-secondary mb-2">Kurum / Şirket</label>
+                <label htmlFor={fieldId("identity-organization")} className="block text-sm text-text-secondary mb-2">Kurum / Şirket</label>
                 <input
+                  id={fieldId("identity-organization")}
                   value={organization}
                   onChange={(e) => setOrganization(e.target.value)}
                   className="w-full bg-abyss border border-border rounded-xl py-2.5 px-4 text-sm text-text-primary focus:outline-none focus:border-accent/50 transition-colors"
                 />
               </div>
               <div>
-                <label className="block text-sm text-text-secondary mb-2">Adres</label>
+                <label htmlFor={fieldId("identity-address")} className="block text-sm text-text-secondary mb-2">Adres</label>
                 <textarea
+                  id={fieldId("identity-address")}
                   value={address}
                   onChange={(e) => setAddress(e.target.value)}
                   rows={3}
@@ -395,8 +414,9 @@ export default function EditItemModal({ item, onClose }: EditItemModalProps) {
                 />
               </div>
               <div>
-                <label className="block text-sm text-text-secondary mb-2">Notlar</label>
+                <label htmlFor={fieldId("identity-notes")} className="block text-sm text-text-secondary mb-2">Notlar</label>
                 <textarea
+                  id={fieldId("identity-notes")}
                   value={identityNotes}
                   onChange={(e) => setIdentityNotes(e.target.value)}
                   rows={3}
@@ -406,7 +426,7 @@ export default function EditItemModal({ item, onClose }: EditItemModalProps) {
             </>
           )}
 
-          <CustomFieldsEditor fields={customFields} onChange={setCustomFields} />
+          <CustomFieldsEditor fields={customFields} onChange={setCustomFields} idPrefix="edit-item-custom-field" />
 
           <div className="flex gap-3 pt-2">
             <button type="button" onClick={onClose} className="flex-1 py-2.5 rounded-xl border border-border text-text-secondary hover:text-text-primary hover:bg-surface transition-all text-sm">
