@@ -425,6 +425,34 @@ router.post("/refresh", async (req: Request, res: Response) => {
     });
 
     if (!device || device.userId !== payload.userId) {
+      const reusedDevice = await prisma.device.findFirst({
+        where: {
+          userId: payload.userId,
+          previousRefreshTokenHash: refreshTokenHash,
+        },
+      });
+
+      if (reusedDevice) {
+        await prisma.device.update({
+          where: { id: reusedDevice.id },
+          data: {
+            refreshTokenHash: null,
+            previousRefreshTokenHash: null,
+            refreshTokenReusedAt: new Date(),
+          },
+        });
+
+        await logAuditEvent({
+          userId: payload.userId,
+          deviceId: reusedDevice.id,
+          action: "auth.refresh.reuse_detected",
+          status: "failure",
+          ipAddress: getRequestIp(req),
+          userAgent: getRequestUserAgent(req),
+          metadata: { reason: "previous_refresh_token_reused" },
+        });
+      }
+
       res.status(401).json({ success: false, error: "Geçersiz refresh token" });
       return;
     }
@@ -441,7 +469,11 @@ router.post("/refresh", async (req: Request, res: Response) => {
 
     const rotated = await prisma.device.updateMany({
       where: { id: device.id, refreshTokenHash },
-      data: { refreshTokenHash: newRefreshTokenHash, lastActive: new Date() },
+      data: {
+        previousRefreshTokenHash: refreshTokenHash,
+        refreshTokenHash: newRefreshTokenHash,
+        lastActive: new Date(),
+      },
     });
 
     if (rotated.count !== 1) {

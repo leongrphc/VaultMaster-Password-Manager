@@ -84,10 +84,12 @@ model Device {
   user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   deviceName   String
   deviceType   String
-  createdAt    DateTime @default(now())
-  lastActive   DateTime @default(now())
-  refreshTokenHash String? @unique
-  auditEvents  AuditEvent[]
+  createdAt                DateTime @default(now())
+  lastActive               DateTime @default(now())
+  refreshTokenHash         String? @unique
+  previousRefreshTokenHash String? @unique
+  refreshTokenReusedAt     DateTime?
+  auditEvents              AuditEvent[]
 
   @@index([userId])
   @@map("devices")

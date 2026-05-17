@@ -12,10 +12,10 @@ Bu dosya VaultMaster Password Manager icin incelenen gelistirme maddelerini taki
   - [x] Vault item create sirasinda `folderId` ayni kullaniciya ait mi dogrula
   - [x] Vault item update sirasinda `folderId` ayni kullaniciya ait mi dogrula
   - [x] Bu davranis icin test ekle veya mevcut test komutuyla dogrula
-- [ ] Refresh token guvenligini artir
+- [x] Refresh token guvenligini artir
   - [x] Refresh token'i DB'de hashli sakla
   - [x] Token rotation modelini guclendir
-  - [ ] Reuse detection stratejisini ekle
+  - [x] Reuse detection stratejisini ekle
 - [ ] Hassas endpoint'lere ozel rate limit ekle
   - [ ] 2FA verify/disable endpoint'leri
   - [ ] Recovery code regenerate endpoint'i

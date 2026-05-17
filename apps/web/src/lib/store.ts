@@ -141,6 +141,8 @@ function sortFoldersByName(folders: FolderResponse[]): FolderResponse[] {
 
 const SESSION_MASTER_KEY = "vaultmaster-session-master-key";
 
+let refreshInFlight: Promise<AuthTokens | null> | null = null;
+
 function readSessionMasterKey(): string | null {
   if (typeof window === "undefined") {
     return null;
@@ -262,26 +264,36 @@ export const useStore = create<AppStore>()(
         }),
 
       refreshAuthTokens: async () => {
+        if (refreshInFlight) {
+          return refreshInFlight;
+        }
+
         const currentTokens = get().tokens;
         if (!currentTokens) {
           return null;
         }
 
-        try {
-          const response = (await api.auth.refresh(currentTokens.refreshToken)) as {
-            data: { tokens: AuthTokens; deviceId?: string | null };
-          };
-          set({
-            tokens: response.data.tokens,
-            currentDeviceId: response.data.deviceId ?? get().currentDeviceId,
-          });
-          return response.data.tokens;
-        } catch (error) {
-          console.error("Token yenileme hatası:", error);
-          notify.sessionExpired();
-          get().logout();
-          return null;
-        }
+        refreshInFlight = (async () => {
+          try {
+            const response = (await api.auth.refresh(currentTokens.refreshToken)) as {
+              data: { tokens: AuthTokens; deviceId?: string | null };
+            };
+            set({
+              tokens: response.data.tokens,
+              currentDeviceId: response.data.deviceId ?? get().currentDeviceId,
+            });
+            return response.data.tokens;
+          } catch (error) {
+            console.error("Token yenileme hatası:", error);
+            notify.sessionExpired();
+            get().logout();
+            return null;
+          } finally {
+            refreshInFlight = null;
+          }
+        })();
+
+        return refreshInFlight;
       },
 
       runWithValidAccessToken: async <T>(
