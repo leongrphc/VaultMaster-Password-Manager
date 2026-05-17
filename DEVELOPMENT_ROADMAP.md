@@ -76,13 +76,13 @@ Bu dosya VaultMaster Password Manager icin incelenen gelistirme maddelerini taki
   - [x] Lint
   - [x] Typecheck
   - [x] Test
-- [ ] API integration testlerini genislet
-  - [ ] Auth register/login
-  - [ ] 2FA enable/verify/disable
-  - [ ] Vault CRUD
-  - [ ] Folder ownership
-  - [ ] Refresh token rotation
-  - [ ] Rate limit davranisi
+- [x] API integration testlerini genislet
+  - [x] Auth register/login
+  - [x] 2FA enable/verify/disable
+  - [x] Vault CRUD
+  - [x] Folder ownership
+  - [x] Refresh token rotation
+  - [x] Rate limit davranisi
 - [ ] Web testlerini ekle
   - [ ] Login/register flow
   - [ ] Vault lock/unlock

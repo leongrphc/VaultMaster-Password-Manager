@@ -30,6 +30,11 @@ import {
 
 const router: Router = Router();
 
+const passwordHashOptions =
+  process.env.NODE_ENV === "test"
+    ? { type: argon2.argon2id, memoryCost: 4096, timeCost: 2, parallelism: 1 }
+    : { type: argon2.argon2id, memoryCost: 65536, timeCost: 3, parallelism: 4 };
+
 function readRecoveryCodeHashes(value: unknown): string[] {
   return Array.isArray(value)
     ? value.filter((entry): entry is string => typeof entry === "string")
@@ -54,12 +59,7 @@ router.post("/register", async (req: Request, res: Response) => {
     }
 
     // Client'tan gelen authHash'i Argon2 ile hash'le
-    const serverHash = await argon2.hash(body.authHash, {
-      type: argon2.argon2id,
-      memoryCost: 65536,
-      timeCost: 3,
-      parallelism: 4,
-    });
+    const serverHash = await argon2.hash(body.authHash, passwordHashOptions);
 
     const user = await prisma.user.create({
       data: {
@@ -288,12 +288,7 @@ router.post("/change-password", authMiddleware, async (req: Request, res: Respon
     }
   }
 
-  const nextServerHash = await argon2.hash(body.newAuthHash, {
-    type: argon2.argon2id,
-    memoryCost: 65536,
-    timeCost: 3,
-    parallelism: 4,
-  });
+  const nextServerHash = await argon2.hash(body.newAuthHash, passwordHashOptions);
 
   await prisma.$transaction(async (tx) => {
     for (const currentItem of currentItems) {
