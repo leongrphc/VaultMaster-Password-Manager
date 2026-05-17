@@ -39,10 +39,10 @@ Bu dosya VaultMaster Password Manager icin incelenen gelistirme maddelerini taki
 - [x] Vault kartlarini klavye ile erisilebilir yap
   - [x] Kart secimi icin semantic button veya `role`, `tabIndex`, Enter/Space destegi
   - [x] Nested button event davranisini dogrula
-- [ ] Mobil sidebar/layout davranisini duzelt
-  - [ ] Mobilde main margin'i sifirla
-  - [ ] Sidebar'i mobil drawer/overlay olarak calistir
-  - [ ] Overlay, Escape ve scroll lock davranisini dogrula
+- [x] Mobil sidebar/layout davranisini duzelt
+  - [x] Mobilde main margin'i sifirla
+  - [x] Sidebar'i mobil drawer/overlay olarak calistir
+  - [x] Overlay, Escape ve scroll lock davranisini dogrula
 - [ ] Form label ve aria baglantilarini guclendir
   - [ ] Input/select/textarea icin `id` + `htmlFor`
   - [ ] Hata mesajlari icin `aria-describedby`

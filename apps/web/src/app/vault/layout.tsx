@@ -42,6 +42,7 @@ export default function DashboardLayout({
   const [mounted, setMounted] = useState(false);
   const [sessionReady, setSessionReady] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const bootstrappedRef = useRef(false);
 
@@ -133,6 +134,27 @@ export default function DashboardLayout({
     },
   ]);
 
+  useEffect(() => {
+    if (!mobileSidebarOpen) {
+      return;
+    }
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setMobileSidebarOpen(false);
+      }
+    };
+
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [mobileSidebarOpen]);
+
   if (!mounted || !sessionReady || !isAuthenticated) {
     return (
       <div className="min-h-screen bg-midnight flex items-center justify-center">
@@ -149,9 +171,17 @@ export default function DashboardLayout({
     <div className="min-h-screen bg-midnight flex">
       <BrowserExtensionBridge />
       <CommandPalette isOpen={commandPaletteOpen} onClose={() => setCommandPaletteOpen(false)} />
-      <Sidebar isOpen={sidebarOpen} onToggle={() => setSidebarOpen((open) => !open)} />
-      <main className={`flex-1 transition-all duration-300 ${sidebarOpen ? "ml-72" : "ml-16"}`}>
-        <VaultHeader onMenuToggle={() => setSidebarOpen((open) => !open)} />
+      <Sidebar
+        isOpen={sidebarOpen}
+        isMobileOpen={mobileSidebarOpen}
+        onToggle={() => setSidebarOpen((open) => !open)}
+        onMobileClose={() => setMobileSidebarOpen(false)}
+      />
+      <main className={`ml-0 flex-1 transition-all duration-300 ${sidebarOpen ? "lg:ml-72" : "lg:ml-16"}`}>
+        <VaultHeader
+          isMenuOpen={mobileSidebarOpen}
+          onMenuToggle={() => setMobileSidebarOpen(true)}
+        />
         <ErrorBoundary>
           <div className="p-6 animate-fade-in">{children}</div>
         </ErrorBoundary>

@@ -5,10 +5,11 @@ import { useStore } from "@/lib/store";
 import { useShallow } from "zustand/shallow";
 
 interface VaultHeaderProps {
+  isMenuOpen: boolean;
   onMenuToggle: () => void;
 }
 
-export default function VaultHeader({ onMenuToggle }: VaultHeaderProps) {
+export default function VaultHeader({ isMenuOpen, onMenuToggle }: VaultHeaderProps) {
   const { userEmail, items, isUsingOfflineData, lastSyncedAt } = useStore(
     useShallow((state) => ({
       userEmail: state.userEmail,
@@ -31,7 +32,10 @@ export default function VaultHeader({ onMenuToggle }: VaultHeaderProps) {
     <header className="h-16 border-b border-border flex items-center justify-between px-6 bg-abyss/50 backdrop-blur-sm sticky top-0 z-20">
       <div className="flex items-center gap-4">
         <button
+          type="button"
           onClick={onMenuToggle}
+          aria-label="Menüyü aç"
+          aria-expanded={isMenuOpen}
           className="p-2 rounded-lg hover:bg-surface text-text-muted hover:text-text-primary transition-colors lg:hidden"
         >
           <Menu className="w-5 h-5" />

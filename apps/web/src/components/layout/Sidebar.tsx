@@ -24,10 +24,12 @@ import { useShallow } from "zustand/shallow";
 
 interface SidebarProps {
   isOpen: boolean;
+  isMobileOpen: boolean;
   onToggle: () => void;
+  onMobileClose: () => void;
 }
 
-export default function Sidebar({ isOpen, onToggle }: SidebarProps) {
+export default function Sidebar({ isOpen, isMobileOpen, onToggle, onMobileClose }: SidebarProps) {
   const pathname = usePathname();
   const {
     folders,
@@ -116,6 +118,11 @@ export default function Sidebar({ isOpen, onToggle }: SidebarProps) {
     [items]
   );
 
+  const closeMobileSidebar = () => {
+    onMobileClose();
+  };
+  const showExpandedSidebar = isOpen || isMobileOpen;
+
   const navItems = [
     {
       label: "Tüm Öğeler",
@@ -169,14 +176,21 @@ export default function Sidebar({ isOpen, onToggle }: SidebarProps) {
   ];
 
   return (
-    <aside
-      className={`fixed top-0 left-0 h-screen bg-abyss border-r border-border z-30 transition-all duration-300 flex flex-col ${
-        isOpen ? "w-72" : "w-16"
+    <div
+      className={`fixed inset-0 z-30 bg-midnight/70 backdrop-blur-sm transition-opacity duration-300 lg:bg-transparent lg:backdrop-blur-none ${
+        isMobileOpen ? "pointer-events-auto opacity-100" : "pointer-events-none opacity-0 lg:pointer-events-auto lg:opacity-100"
       }`}
+      onMouseDown={onMobileClose}
     >
+      <aside
+        className={`fixed left-0 top-0 flex h-screen flex-col border-r border-border bg-abyss transition-all duration-300 ${
+          isMobileOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"
+        } ${showExpandedSidebar ? "w-72" : "w-72 lg:w-16"}`}
+        onMouseDown={(event) => event.stopPropagation()}
+      >
       {/* Header */}
       <div className="p-4 flex items-center justify-between border-b border-border">
-        {isOpen && (
+        {showExpandedSidebar && (
           <div className="flex items-center gap-3 animate-fade-in">
             <div className="w-9 h-9 rounded-xl bg-accent/10 flex items-center justify-center">
               <Shield className="w-5 h-5 text-accent" />
@@ -206,7 +220,10 @@ export default function Sidebar({ isOpen, onToggle }: SidebarProps) {
           <Link
             key={item.label}
             href={item.href}
-            onClick={item.onClick}
+            onClick={() => {
+              item.onClick();
+              closeMobileSidebar();
+            }}
             className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm transition-all ${
               item.active
                 ? "bg-accent/10 text-accent"
@@ -215,7 +232,7 @@ export default function Sidebar({ isOpen, onToggle }: SidebarProps) {
             title={!isOpen ? item.label : undefined}
           >
             <item.icon className="w-4.5 h-4.5 shrink-0" />
-            {isOpen && (
+            {showExpandedSidebar && (
               <>
                 <span className="flex-1 text-left">{item.label}</span>
                 {item.count !== undefined && (
@@ -229,7 +246,7 @@ export default function Sidebar({ isOpen, onToggle }: SidebarProps) {
         ))}
 
         {/* Folders */}
-        {isOpen && (
+        {showExpandedSidebar && (
           <div className="mt-6">
             <div className="flex items-center justify-between px-3 mb-2">
               <span className="text-xs font-medium text-text-muted uppercase tracking-wider">
@@ -266,6 +283,7 @@ export default function Sidebar({ isOpen, onToggle }: SidebarProps) {
                     setSelectedFolderId(
                       selectedFolderId === folder.id ? null : folder.id
                     );
+                    closeMobileSidebar();
                   }}
                   className={`w-full flex items-center gap-3 px-3 py-2 rounded-xl text-sm transition-all ${
                     selectedFolderId === folder.id
@@ -303,7 +321,7 @@ export default function Sidebar({ isOpen, onToggle }: SidebarProps) {
           title={!isOpen ? "Kasayı Kilitle" : undefined}
         >
           <Lock className="w-4.5 h-4.5 shrink-0" />
-          {isOpen && <span>Kasayı Kilitle</span>}
+          {showExpandedSidebar && <span>Kasayı Kilitle</span>}
         </button>
         <button
           onClick={handleLogout}
@@ -311,9 +329,10 @@ export default function Sidebar({ isOpen, onToggle }: SidebarProps) {
           title={!isOpen ? "Çıkış Yap" : undefined}
         >
           <LogOut className="w-4.5 h-4.5 shrink-0" />
-          {isOpen && <span>Çıkış Yap</span>}
+          {showExpandedSidebar && <span>Çıkış Yap</span>}
         </button>
       </div>
-    </aside>
+      </aside>
+    </div>
   );
 }
