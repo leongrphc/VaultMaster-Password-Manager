@@ -6,6 +6,55 @@ const PENDING_AUTOFILL_KEY = "vaultmasterPendingAutofill";
 // Badge güncelleme periyodu (ms)
 const BADGE_UPDATE_INTERVAL = 5000;
 
+function isObject(value) {
+	return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function isString(value) {
+	return typeof value === "string" && value.trim().length > 0;
+}
+
+function isOptionalString(value) {
+	return value === undefined || typeof value === "string";
+}
+
+function isHttpUrlString(value) {
+	if (typeof value !== "string") {
+		return false;
+	}
+
+	try {
+		const url = new URL(value);
+		return url.protocol === "http:" || url.protocol === "https:";
+	} catch {
+		return false;
+	}
+}
+
+function isLoginCredentialPayload(value) {
+	return (
+		isObject(value) &&
+		isOptionalString(value.title) &&
+		isHttpUrlString(value.url) &&
+		isString(value.username) &&
+		isString(value.password)
+	);
+}
+
+function isPendingAutofillPayload(value) {
+	return (
+		isObject(value) &&
+		isString(value.itemId) &&
+		isString(value.nonce) &&
+		isString(value.hostname) &&
+		typeof value.expiresAt === "number"
+	);
+}
+
+function rejectInvalidPayload(sendResponse) {
+	sendResponse({ ok: false, error: "Invalid message payload" });
+}
+
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 	if (message?.type === "OPEN_VAULTMASTER") {
 		void openVaultMaster(sendResponse);
@@ -217,6 +266,11 @@ async function getExtensionStatus(sendResponse) {
 }
 
 async function lookupPasswordSuggestion(message, sender, sendResponse) {
+	if (!isOptionalString(message.identifier) || !isHttpUrlString(message.pageUrl)) {
+		rejectInvalidPayload(sendResponse);
+		return;
+	}
+
 	const response = await requestVaultTab("VM_LOOKUP_PASSWORD_REQUEST", {
 		identifier: message.identifier,
 		pageUrl: message.pageUrl,
@@ -227,6 +281,11 @@ async function lookupPasswordSuggestion(message, sender, sendResponse) {
 }
 
 async function resolvePasswordForFill(message, sender, sendResponse) {
+	if (!isString(message.itemId) || !isOptionalString(message.identifier) || !isHttpUrlString(message.pageUrl)) {
+		rejectInvalidPayload(sendResponse);
+		return;
+	}
+
 	const response = await requestVaultTab("VM_GET_PASSWORD_REQUEST", {
 		itemId: message.itemId,
 		identifier: message.identifier,
@@ -238,6 +297,11 @@ async function resolvePasswordForFill(message, sender, sendResponse) {
 }
 
 async function listLoginSuggestions(message, sender, sendResponse) {
+	if (!isOptionalString(message.identifier) || !isHttpUrlString(message.pageUrl)) {
+		rejectInvalidPayload(sendResponse);
+		return;
+	}
+
 	const response = await requestVaultTab("VM_LIST_LOGIN_SUGGESTIONS_REQUEST", {
 		identifier: message.identifier || "",
 		pageUrl: message.pageUrl,
@@ -264,6 +328,11 @@ async function listLoginSuggestions(message, sender, sendResponse) {
 }
 
 async function getLoginCredential(message, sender, sendResponse) {
+	if (!isString(message.itemId) || !isHttpUrlString(message.pageUrl)) {
+		rejectInvalidPayload(sendResponse);
+		return;
+	}
+
 	const response = await requestVaultTab("VM_GET_LOGIN_CREDENTIAL_REQUEST", {
 		itemId: message.itemId,
 		pageUrl: message.pageUrl,
@@ -282,6 +351,11 @@ async function listCreditCards(sender, sendResponse) {
 }
 
 async function getCreditCard(message, sender, sendResponse) {
+	if (!isString(message.itemId)) {
+		rejectInvalidPayload(sendResponse);
+		return;
+	}
+
 	const response = await requestVaultTab("VM_GET_CREDIT_CARD_REQUEST", {
 		itemId: message.itemId,
 		sourceTabId: sender.tab?.id ?? null,
@@ -299,6 +373,11 @@ async function listIdentities(sender, sendResponse) {
 }
 
 async function getIdentity(message, sender, sendResponse) {
+	if (!isString(message.itemId)) {
+		rejectInvalidPayload(sendResponse);
+		return;
+	}
+
 	const response = await requestVaultTab("VM_GET_IDENTITY_REQUEST", {
 		itemId: message.itemId,
 		sourceTabId: sender.tab?.id ?? null,
@@ -308,6 +387,11 @@ async function getIdentity(message, sender, sendResponse) {
 }
 
 async function saveLoginCredential(message, sender, sendResponse) {
+	if (!isLoginCredentialPayload(message.credential)) {
+		rejectInvalidPayload(sendResponse);
+		return;
+	}
+
 	const response = await requestVaultTab("VM_SAVE_LOGIN_REQUEST", {
 		credential: message.credential,
 		sourceTabId: sender.tab?.id ?? null,
@@ -317,6 +401,11 @@ async function saveLoginCredential(message, sender, sendResponse) {
 }
 
 async function trackAutofillSelection(message, sendResponse) {
+	if (!isString(message.itemId) || !(isHttpUrlString(message.pageUrl) || isString(message.hostname))) {
+		rejectInvalidPayload(sendResponse);
+		return;
+	}
+
 	const hostname = normalizeHostname(message.pageUrl || message.hostname);
 	if (!hostname || !message.itemId) {
 		sendResponse({ ok: false });
@@ -334,8 +423,8 @@ async function trackAutofillSelection(message, sendResponse) {
 
 async function setPendingAutofill(message, sender, sendResponse) {
 	const tabId = sender.tab?.id;
-	if (!tabId || !message.pendingAutofill) {
-		sendResponse({ ok: false });
+	if (!tabId || !isPendingAutofillPayload(message.pendingAutofill)) {
+		rejectInvalidPayload(sendResponse);
 		return;
 	}
 
@@ -383,6 +472,11 @@ async function clearPendingAutofill(sender, sendResponse) {
 
 // Phishing koruması - domain doğrulama
 async function validateCredentialDomain(message, sender, sendResponse) {
+	if (!isString(message.itemId) || !isHttpUrlString(message.expectedUrl)) {
+		rejectInvalidPayload(sendResponse);
+		return;
+	}
+
 	const response = await requestVaultTab("VM_VALIDATE_CREDENTIAL_DOMAIN_REQUEST", {
 		itemId: message.itemId,
 		pageUrl: message.expectedUrl,
@@ -394,6 +488,11 @@ async function validateCredentialDomain(message, sender, sendResponse) {
 
 // TOTP code isteme
 async function getTotpCode(message, sender, sendResponse) {
+	if (!isString(message.itemId)) {
+		rejectInvalidPayload(sendResponse);
+		return;
+	}
+
 	const response = await requestVaultTab("VM_GET_TOTP_CODE_REQUEST", {
 		itemId: message.itemId,
 		sourceTabId: sender.tab?.id ?? null,

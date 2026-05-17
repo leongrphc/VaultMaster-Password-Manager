@@ -9,6 +9,20 @@ const BRIDGE_CREDENTIAL_RESPONSE = "VM_GET_LOGIN_CREDENTIAL_REQUEST_RESPONSE";
 const BRIDGE_VAULT_STATUS_REQUEST = "VM_GET_VAULT_STATUS_REQUEST";
 const BRIDGE_VAULT_STATUS_RESPONSE = "VM_GET_VAULT_STATUS_RESPONSE";
 const VAULTMASTER_ORIGINS = new Set(["http://localhost:3000", "http://127.0.0.1:3000"]);
+const BRIDGE_REQUEST_TYPES = new Set([
+	BRIDGE_LOOKUP_REQUEST,
+	BRIDGE_SECRET_REQUEST,
+	BRIDGE_LIST_REQUEST,
+	BRIDGE_CREDENTIAL_REQUEST,
+	BRIDGE_VAULT_STATUS_REQUEST,
+	"VM_VALIDATE_CREDENTIAL_DOMAIN_REQUEST",
+	"VM_GET_TOTP_CODE_REQUEST",
+	"VM_LIST_CREDIT_CARDS_REQUEST",
+	"VM_GET_CREDIT_CARD_REQUEST",
+	"VM_LIST_IDENTITIES_REQUEST",
+	"VM_GET_IDENTITY_REQUEST",
+	"VM_SAVE_LOGIN_REQUEST",
+]);
 
 let evaluationTimer = null;
 let prewarmTimer = null;
@@ -36,7 +50,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 		return false;
 	}
 
-	if (typeof message?.type === "string" && message.type.startsWith("VM_") && message.type.endsWith("_REQUEST")) {
+	if (BRIDGE_REQUEST_TYPES.has(message?.type)) {
 		const { type, requestId, ...payload } = message;
 		requestVaultBridge(type, payload, requestId)
 			.then((bridgePayload) => sendResponse({ ok: true, payload: bridgePayload }))
@@ -1367,8 +1381,12 @@ function buildFilledNotice(title, hasTotp, filledFields) {
 	return `${title} hesabı seçildi.`;
 }
 
+function isAllowedVaultMasterOrigin(origin) {
+	return VAULTMASTER_ORIGINS.has(origin);
+}
+
 function isVaultMasterPage() {
-	return VAULTMASTER_ORIGINS.has(window.location.origin);
+	return isAllowedVaultMasterOrigin(window.location.origin);
 }
 
 function requestVaultBridge(type, payload, existingRequestId) {
@@ -1380,7 +1398,7 @@ function requestVaultBridge(type, payload, existingRequestId) {
 		}, 4000);
 
 		function onMessage(event) {
-			if (event.source !== window) {
+			if (event.source !== window || !isAllowedVaultMasterOrigin(event.origin)) {
 				return;
 			}
 
@@ -1406,7 +1424,7 @@ function requestVaultBridge(type, payload, existingRequestId) {
 				requestId,
 				...payload,
 			},
-			"*"
+			window.location.origin
 		);
 	});
 }

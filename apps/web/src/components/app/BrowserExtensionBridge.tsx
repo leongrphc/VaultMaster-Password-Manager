@@ -29,6 +29,11 @@ const GET_IDENTITY_REQUEST = "VM_GET_IDENTITY_REQUEST";
 const GET_IDENTITY_RESPONSE = "VM_GET_IDENTITY_RESPONSE";
 const SAVE_LOGIN_REQUEST = "VM_SAVE_LOGIN_REQUEST";
 const SAVE_LOGIN_RESPONSE = "VM_SAVE_LOGIN_RESPONSE";
+const VAULTMASTER_ORIGINS = new Set(["http://localhost:3000", "http://127.0.0.1:3000"]);
+
+function isAllowedExtensionBridgeOrigin(origin: string) {
+	return VAULTMASTER_ORIGINS.has(origin);
+}
 
 function normalizeUrl(value?: string) {
 	if (!value) {
@@ -143,7 +148,7 @@ export default function BrowserExtensionBridge() {
 
 	useEffect(() => {
 		const onMessage = async (event: MessageEvent) => {
-			if (event.source !== window) {
+			if (event.source !== window || !isAllowedExtensionBridgeOrigin(event.origin)) {
 				return;
 			}
 
@@ -168,7 +173,12 @@ export default function BrowserExtensionBridge() {
 				return;
 			}
 
-			const respond = (type: string, payload: unknown) => {
+			const responseType = resolveResponseType(data.type);
+				if (!responseType) {
+					return;
+				}
+
+				const respond = (type: string, payload: unknown) => {
 				window.postMessage(
 					{
 						source: "vaultmaster-web",
@@ -176,7 +186,7 @@ export default function BrowserExtensionBridge() {
 						requestId: data.requestId,
 						payload,
 					},
-					"*"
+					window.location.origin
 				);
 			};
 
@@ -191,7 +201,7 @@ export default function BrowserExtensionBridge() {
 			}
 
 			if (!isAuthenticated) {
-				respond(resolveResponseType(data.type), {
+				respond(responseType, {
 					status: "logged_out",
 					isAuthenticated,
 					isLocked,
@@ -202,7 +212,7 @@ export default function BrowserExtensionBridge() {
 			}
 
 			if (isLocked) {
-				respond(resolveResponseType(data.type), {
+				respond(responseType, {
 					status: "locked",
 					isAuthenticated,
 					isLocked,
@@ -513,7 +523,7 @@ export default function BrowserExtensionBridge() {
 	return null;
 }
 
-function resolveResponseType(type: string) {
+function resolveResponseType(type: string): string | null {
 	if (type === LOOKUP_REQUEST) {
 		return LOOKUP_RESPONSE;
 	}
@@ -558,5 +568,9 @@ function resolveResponseType(type: string) {
 		return VAULT_STATUS_RESPONSE;
 	}
 
-	return SECRET_RESPONSE;
+	if (type === SECRET_REQUEST) {
+		return SECRET_RESPONSE;
+	}
+
+	return null;
 }

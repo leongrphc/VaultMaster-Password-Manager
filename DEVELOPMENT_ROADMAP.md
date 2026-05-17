@@ -25,10 +25,10 @@ Bu dosya VaultMaster Password Manager icin incelenen gelistirme maddelerini taki
   - [x] Sifre prefetch/cache davranisini azalt veya kaldir
   - [x] Pending autofill icinde sifre yerine `itemId + nonce` kullan
   - [x] TOTP/CVV gibi yuksek hassasiyetli alanlari prefetch disinda tut
-- [ ] Extension bridge guvenligini artir
-  - [ ] `window.postMessage(..., "*")` yerine origin-bound hedef kullan
-  - [ ] Cevaplarda `event.origin` kontrolu ekle
-  - [ ] Runtime message payload validation ekle
+- [x] Extension bridge guvenligini artir
+  - [x] `window.postMessage(..., "*")` yerine origin-bound hedef kullan
+  - [x] Cevaplarda `event.origin` kontrolu ekle
+  - [x] Runtime message payload validation ekle
 
 ## Faz 2 - Web UX ve erisilebilirlik
 
