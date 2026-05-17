@@ -88,10 +88,10 @@ Bu dosya VaultMaster Password Manager icin incelenen gelistirme maddelerini taki
   - [x] Vault lock/unlock
   - [x] Add/edit/delete item
   - [x] Export warning modal
-- [ ] Extension testlerini ekle
-  - [ ] Form detector fixture testleri
-  - [ ] Domain match/phishing warning testleri
-  - [ ] Autofill user-action testleri
+- [x] Extension testlerini ekle
+  - [x] Form detector fixture testleri
+  - [x] Domain match/phishing warning testleri
+  - [x] Autofill user-action testleri
 - [ ] E2E smoke test ekle
   - [ ] Kayit ol, item olustur, cikis/giris yap
   - [ ] Extension autofill smoke

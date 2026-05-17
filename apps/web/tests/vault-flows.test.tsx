@@ -177,7 +177,7 @@ describe("add/edit/delete item flow", () => {
             password: "secret-password",
           },
         }}
-        viewMode="list"
+        viewMode="comfortable"
         isSelected={false}
         isPasswordRevealed={false}
         copiedId={null}
