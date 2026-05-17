@@ -1,3 +1,5 @@
+import { notify } from "@/lib/notify";
+
 const CLIPBOARD_CLEAR_DELAY_MS = 30_000;
 
 let pendingClipboardClear: number | null = null;
@@ -28,6 +30,7 @@ async function clearClipboardIfUnchanged(expectedValue: string) {
     await navigator.clipboard.writeText("");
   } catch (error) {
     console.error("Pano otomatik temizlenemedi:", error);
+    notify.clipboardAutoClearFailed();
   } finally {
     pendingClipboardClear = null;
   }

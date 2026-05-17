@@ -59,9 +59,9 @@ Bu dosya VaultMaster Password Manager icin incelenen gelistirme maddelerini taki
   - [x] Kodlar tekrar gosterilemiyorsa acik uyari
 - [x] Reduced motion destegi ekle
   - [x] `prefers-reduced-motion` global CSS kurali
-- [ ] Clipboard auto-clear feedback ekle
-  - [ ] Kopyalama toast'inda temizleme suresi
-  - [ ] Temizleme basarisiz olursa non-blocking uyari
+- [x] Clipboard auto-clear feedback ekle
+  - [x] Kopyalama toast'inda temizleme suresi
+  - [x] Temizleme basarisiz olursa non-blocking uyari
 
 ## Faz 3 - Test, CI ve kalite kapilari
 

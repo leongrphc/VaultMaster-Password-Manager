@@ -9,6 +9,7 @@ import {
   type PasswordOptions,
 } from "@vaultmaster/crypto";
 import { copyWithAutoClear } from "@/lib/clipboard";
+import { notify } from "@/lib/notify";
 
 function buildPassword(options: PasswordOptions) {
   return generatePassword(options);
@@ -51,6 +52,7 @@ export default function GeneratorPage() {
   const copyToClipboard = async () => {
     await copyWithAutoClear(password);
     setCopied(true);
+    notify.copied("Şifre");
     setTimeout(() => setCopied(false), 2000);
   };
 

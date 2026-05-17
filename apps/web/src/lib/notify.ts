@@ -1,5 +1,7 @@
 import { toast } from "sonner";
 
+const CLIPBOARD_CLEAR_SECONDS = 30;
+
 /**
  * Merkezi bildirim yardımcısı.
  * Tüm uygulama genelinde tutarlı mesajlar ve stil sağlar.
@@ -15,7 +17,14 @@ export const notify = {
 
   /** Panoya kopyalama bildirimi */
   copied: (label?: string) =>
-    toast.success(label ? `${label} panoya kopyalandı` : "Panoya kopyalandı"),
+    toast.success(
+      label
+        ? `${label} panoya kopyalandı. ${CLIPBOARD_CLEAR_SECONDS} saniye sonra temizlenecek.`
+        : `Panoya kopyalandı. ${CLIPBOARD_CLEAR_SECONDS} saniye sonra temizlenecek.`
+    ),
+
+  clipboardAutoClearFailed: () =>
+    toast.warning("Pano otomatik temizlenemedi. Hassas veriyi elle temizleyin."),
 
   /** Öğe silme bildirimi */
   deleted: (label?: string) =>
