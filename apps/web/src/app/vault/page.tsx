@@ -12,6 +12,7 @@ import SearchBar from "@/components/vault/SearchBar";
 import BulkActionsBar from "@/components/vault/BulkActionsBar";
 import BulkMoveModal from "@/components/vault/BulkMoveModal";
 import BulkTagModal from "@/components/vault/BulkTagModal";
+import PlaintextExportConfirmModal from "@/components/vault/PlaintextExportConfirmModal";
 import VaultSkeleton from "@/components/vault/VaultSkeleton";
 import { generateTotpCode } from "@/lib/totp";
 import { searchVaultItems } from "@/lib/search";
@@ -83,6 +84,7 @@ export default function VaultPage() {
   const [historyItem, setHistoryItem] = useState<DecryptedVaultItem | null>(null);
   const [bulkMoveOpen, setBulkMoveOpen] = useState(false);
   const [bulkTagOpen, setBulkTagOpen] = useState(false);
+  const [showPlaintextBulkExportConfirm, setShowPlaintextBulkExportConfirm] = useState(false);
   const [totpState, setTotpState] = useState<{
     itemId: string;
     code: string | null;
@@ -244,7 +246,12 @@ export default function VaultPage() {
     );
   };
 
-  const handleBulkExport = () => {
+  const handleBulkExportRequest = () => {
+    if (selectedItems.length === 0) return;
+    setShowPlaintextBulkExportConfirm(true);
+  };
+
+  const performBulkExport = () => {
     const blob = new Blob([JSON.stringify(selectedItems.map((item) => item.data), null, 2)], {
       type: "application/json",
     });
@@ -254,7 +261,8 @@ export default function VaultPage() {
     anchor.download = `vaultmaster-selected-${new Date().toISOString().slice(0, 10)}.json`;
     anchor.click();
     URL.revokeObjectURL(url);
-    notify.success("Seçili öğeler JSON olarak dışa aktarıldı.");
+    setShowPlaintextBulkExportConfirm(false);
+    notify.success("Seçili öğeler düz metin JSON olarak dışa aktarıldı.");
   };
 
   if (isLoading) {
@@ -381,7 +389,7 @@ export default function VaultPage() {
         onTag={() => setBulkTagOpen(true)}
         onFavorite={() => void handleBulkFavorite()}
         onDelete={() => void handleBulkDelete()}
-        onExport={handleBulkExport}
+        onExport={handleBulkExportRequest}
         onClear={clearSelection}
       />
 
@@ -398,6 +406,15 @@ export default function VaultPage() {
           selectedCount={selectedItems.length}
           onApply={(tags) => void handleBulkTag(tags)}
           onClose={() => setBulkTagOpen(false)}
+        />
+      )}
+      {showPlaintextBulkExportConfirm && (
+        <PlaintextExportConfirmModal
+          format="JSON"
+          itemCount={selectedItems.length}
+          description="Seçili öğelerin tüm kasa verileri şifrelenmeden JSON dosyasına yazılacak. Parolalar, güvenli notlar, kart bilgileri ve özel alanlar okunabilir kalabilir."
+          onConfirm={performBulkExport}
+          onClose={() => setShowPlaintextBulkExportConfirm(false)}
         />
       )}
       {showAddModal && <AddItemModal onClose={() => setShowAddModal(false)} />}

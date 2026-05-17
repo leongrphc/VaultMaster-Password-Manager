@@ -29,6 +29,7 @@ import { api } from "@/lib/api";
 import type { AuditEventResponse, DeviceResponse, VaultItemData } from "@vaultmaster/shared";
 import TwoFactorSettings from "@/components/vault/TwoFactorSettings";
 import AccountSecurityPanel from "@/components/vault/AccountSecurityPanel";
+import PlaintextExportConfirmModal from "@/components/vault/PlaintextExportConfirmModal";
 import { useShallow } from "zustand/shallow";
 
 interface ImportedBackupItem {
@@ -78,6 +79,7 @@ export default function SettingsPage() {
 
   const [activeTab, setActiveTab] = useState<"general" | "security" | "data">("general");
   const [exportStatus, setExportStatus] = useState<string | null>(null);
+  const [showPlaintextCsvConfirm, setShowPlaintextCsvConfirm] = useState(false);
   const [importStatus, setImportStatus] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
   const [devices, setDevices] = useState<DeviceResponse[]>([]);
@@ -148,15 +150,19 @@ export default function SettingsPage() {
     }
   };
 
-  const handleExportCSV = () => {
-    const loginItems = items.filter((i) => i.data.type === "login");
+  const loginItems = items.filter((i) => i.data.type === "login");
 
+  const handleExportCSVRequest = () => {
     if (loginItems.length === 0) {
       setExportStatus("empty");
       setTimeout(() => setExportStatus(null), 3000);
       return;
     }
 
+    setShowPlaintextCsvConfirm(true);
+  };
+
+  const performExportCSV = () => {
     const header = "title,url,username,password,notes";
     const rows = loginItems.map((item) => {
       const d = item.data as Extract<VaultItemData, { type: "login" }>;
@@ -179,6 +185,7 @@ export default function SettingsPage() {
     a.click();
     URL.revokeObjectURL(url);
 
+    setShowPlaintextCsvConfirm(false);
     setExportStatus("success");
     setTimeout(() => setExportStatus(null), 3000);
   };
@@ -1099,18 +1106,18 @@ export default function SettingsPage() {
               </button>
 
               <button
-                onClick={handleExportCSV}
-                className="flex items-center gap-4 p-4 bg-surface rounded-xl border border-border hover:border-accent/30 transition-all group"
+                onClick={handleExportCSVRequest}
+                className="flex items-center gap-4 p-4 bg-surface rounded-xl border border-border hover:border-danger/30 transition-all group"
               >
-                <div className="w-10 h-10 rounded-lg bg-emerald-500/10 flex items-center justify-center shrink-0">
-                  <FileSpreadsheet className="w-5 h-5 text-emerald-400" />
+                <div className="w-10 h-10 rounded-lg bg-danger/10 flex items-center justify-center shrink-0">
+                  <FileSpreadsheet className="w-5 h-5 text-danger" />
                 </div>
                 <div className="text-left flex-1">
-                  <p className="text-sm font-medium group-hover:text-accent transition-colors">
+                  <p className="text-sm font-medium group-hover:text-danger transition-colors">
                     CSV (Düz Metin)
                   </p>
                   <p className="text-xs text-text-muted">
-                    Chrome/Firefox uyumlu format
+                    Parolaları şifrelenmeden indirir
                   </p>
                 </div>
                 <ChevronRight className="w-4 h-4 text-text-muted group-hover:text-accent transition-colors" />
@@ -1278,6 +1285,16 @@ export default function SettingsPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {showPlaintextCsvConfirm && (
+        <PlaintextExportConfirmModal
+          format="CSV"
+          itemCount={loginItems.length}
+          description="Login kayıtlarının başlık, URL, kullanıcı adı, parola ve not alanları düz metin olarak dışa aktarılacak."
+          onConfirm={performExportCSV}
+          onClose={() => setShowPlaintextCsvConfirm(false)}
+        />
       )}
     </div>
   );

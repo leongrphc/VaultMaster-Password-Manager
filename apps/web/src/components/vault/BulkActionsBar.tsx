@@ -42,7 +42,7 @@ export default function BulkActionsBar({
           <BulkButton onClick={onMove} label="Taşı" icon={<FolderInput className="w-4 h-4" />} />
           <BulkButton onClick={onTag} label="Etiketle" icon={<Tag className="w-4 h-4" />} />
           <BulkButton onClick={onFavorite} label="Favori" icon={<Star className="w-4 h-4" />} />
-          <BulkButton onClick={onExport} label="Export" icon={<Download className="w-4 h-4" />} />
+          <BulkButton onClick={onExport} label="Düz Metin" icon={<Download className="w-4 h-4" />} />
           <BulkButton onClick={onDelete} label="Sil" icon={<Trash2 className="w-4 h-4" />} danger />
           <button
             type="button"
