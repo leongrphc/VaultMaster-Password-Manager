@@ -11,6 +11,7 @@ import {
 import { useStore } from "@/lib/store";
 import { api } from "@/lib/api";
 import { useShallow } from "zustand/shallow";
+import PasswordStrengthMeter from "@/components/ui/PasswordStrengthMeter";
 
 export default function AccountSecurityPanel() {
   const {
@@ -37,11 +38,16 @@ export default function AccountSecurityPanel() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [twoFactorCode, setTwoFactorCode] = useState("");
   const [recoveryCode, setRecoveryCode] = useState("");
+  const [capsLockOn, setCapsLockOn] = useState(false);
   const [changeLoading, setChangeLoading] = useState(false);
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [changeError, setChangeError] = useState("");
   const [changeSuccess, setChangeSuccess] = useState("");
   const [deleteError, setDeleteError] = useState("");
+
+  const handlePasswordKeyEvent = (event: React.KeyboardEvent<HTMLInputElement>) => {
+    setCapsLockOn(event.getModifierState("CapsLock"));
+  };
 
   const handleChangePassword = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -176,6 +182,9 @@ export default function AccountSecurityPanel() {
             type="password"
             value={currentPassword}
             onChange={(event) => setCurrentPassword(event.target.value)}
+            onKeyDown={handlePasswordKeyEvent}
+            onKeyUp={handlePasswordKeyEvent}
+            onBlur={() => setCapsLockOn(false)}
             className="w-full bg-abyss border border-border rounded-xl py-3 px-4 text-sm"
             placeholder="Mevcut ana şifre"
           />
@@ -184,6 +193,9 @@ export default function AccountSecurityPanel() {
               type="password"
               value={newPassword}
               onChange={(event) => setNewPassword(event.target.value)}
+              onKeyDown={handlePasswordKeyEvent}
+              onKeyUp={handlePasswordKeyEvent}
+              onBlur={() => setCapsLockOn(false)}
               className="w-full bg-abyss border border-border rounded-xl py-3 px-4 text-sm"
               placeholder="Yeni ana şifre"
             />
@@ -191,10 +203,22 @@ export default function AccountSecurityPanel() {
               type="password"
               value={confirmPassword}
               onChange={(event) => setConfirmPassword(event.target.value)}
+              onKeyDown={handlePasswordKeyEvent}
+              onKeyUp={handlePasswordKeyEvent}
+              onBlur={() => setCapsLockOn(false)}
               className="w-full bg-abyss border border-border rounded-xl py-3 px-4 text-sm"
               placeholder="Yeni ana şifre (tekrar)"
             />
           </div>
+
+          <PasswordStrengthMeter password={newPassword} />
+
+          {capsLockOn && (
+            <div className="flex items-center gap-2 rounded-xl border border-warning/20 bg-warning/5 px-3 py-2 text-xs text-warning">
+              <AlertTriangle className="h-4 w-4 shrink-0" />
+              <span>Caps Lock açık olabilir.</span>
+            </div>
+          )}
 
           {changeError && (
             <div className="rounded-xl border border-danger/20 bg-danger/5 px-4 py-3 text-sm text-danger">
@@ -236,6 +260,9 @@ export default function AccountSecurityPanel() {
             type="password"
             value={currentPassword}
             onChange={(event) => setCurrentPassword(event.target.value)}
+            onKeyDown={handlePasswordKeyEvent}
+            onKeyUp={handlePasswordKeyEvent}
+            onBlur={() => setCapsLockOn(false)}
             className="w-full bg-abyss border border-border rounded-xl py-3 px-4 text-sm"
             placeholder="Ana şifre"
           />

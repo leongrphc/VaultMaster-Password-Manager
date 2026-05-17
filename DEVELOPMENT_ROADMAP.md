@@ -49,10 +49,10 @@ Bu dosya VaultMaster Password Manager icin incelenen gelistirme maddelerini taki
 - [x] Ikon-only butonlara erisilebilir isim ekle
   - [x] `aria-label`
   - [x] Toggle butonlarda `aria-pressed`
-- [ ] Master password kayit UX'ini guclendir
-  - [ ] Strength meter veya guclu parola rehberi
-  - [ ] Kurtarma yok onay checkbox'i
-  - [ ] Caps Lock uyarisi
+- [x] Master password kayit UX'ini guclendir
+  - [x] Strength meter veya guclu parola rehberi
+  - [x] Kurtarma yok onay checkbox'i
+  - [x] Caps Lock uyarisi
 - [ ] 2FA recovery code akisini guclendir
   - [ ] Kodlari kaydettim onayi
   - [ ] Recovery code indirme secenegi

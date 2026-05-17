@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Shield, Eye, EyeOff, ArrowRight, Lock, Mail } from "lucide-react";
+import { Shield, Eye, EyeOff, ArrowRight, Lock, Mail, AlertTriangle } from "lucide-react";
 import {
   deriveMasterKey,
   exportMasterKeyBase64,
@@ -13,6 +13,7 @@ import { api, getErrorMessage } from "@/lib/api";
 import type { LoginResponse } from "@vaultmaster/shared";
 import { useShallow } from "zustand/shallow";
 import { notify } from "@/lib/notify";
+import PasswordStrengthMeter from "@/components/ui/PasswordStrengthMeter";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -30,6 +31,8 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  const [acknowledgedNoRecovery, setAcknowledgedNoRecovery] = useState(false);
+  const [capsLockOn, setCapsLockOn] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [requires2FA, setRequires2FA] = useState(false);
@@ -58,9 +61,18 @@ export default function LoginPage() {
     }
   }, [hydrated, isAuthenticated, router]);
 
+  const handlePasswordKeyEvent = (event: React.KeyboardEvent<HTMLInputElement>) => {
+    setCapsLockOn(event.getModifierState("CapsLock"));
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
+
+    if (isRegister && !acknowledgedNoRecovery) {
+      setError("Devam etmek için kurtarma olmadığını onaylamalısınız");
+      return;
+    }
 
     if (isRegister && password !== confirmPassword) {
       setError("Şifreler eşleşmiyor");
@@ -265,6 +277,9 @@ export default function LoginPage() {
                     required
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
+                    onKeyDown={handlePasswordKeyEvent}
+                    onKeyUp={handlePasswordKeyEvent}
+                    onBlur={() => setCapsLockOn(false)}
                     className="w-full bg-abyss border border-border rounded-xl py-3 pl-10 pr-12 text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent/50 focus:ring-1 focus:ring-accent/20 transition-all font-[family-name:var(--font-mono)]"
                     placeholder="••••••••••••"
                   />
@@ -280,6 +295,13 @@ export default function LoginPage() {
                     )}
                   </button>
                 </div>
+                {capsLockOn && (
+                  <div className="mt-2 flex items-center gap-2 text-xs text-warning">
+                    <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+                    <span>Caps Lock açık olabilir.</span>
+                  </div>
+                )}
+                {isRegister && <PasswordStrengthMeter password={password} className="mt-3" />}
               </div>
 
               {isRegister && (
@@ -298,11 +320,28 @@ export default function LoginPage() {
                       required
                       value={confirmPassword}
                       onChange={(e) => setConfirmPassword(e.target.value)}
+                      onKeyDown={handlePasswordKeyEvent}
+                      onKeyUp={handlePasswordKeyEvent}
+                      onBlur={() => setCapsLockOn(false)}
                       className="w-full bg-abyss border border-border rounded-xl py-3 pl-10 pr-4 text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent/50 focus:ring-1 focus:ring-accent/20 transition-all font-[family-name:var(--font-mono)]"
                       placeholder="••••••••••••"
                     />
                   </div>
                 </div>
+              )}
+
+              {isRegister && (
+                <label className="flex items-start gap-3 rounded-xl border border-warning/20 bg-warning/5 p-3 text-xs text-text-secondary">
+                  <input
+                    type="checkbox"
+                    checked={acknowledgedNoRecovery}
+                    onChange={(event) => setAcknowledgedNoRecovery(event.target.checked)}
+                    className="mt-0.5 accent-accent"
+                  />
+                  <span>
+                    Ana şifremi unutursam VaultMaster’ın kasamı kurtaramayacağını ve verilerime erişemeyeceğimi anlıyorum.
+                  </span>
+                </label>
               )}
               </>
               ) : (
@@ -374,6 +413,8 @@ export default function LoginPage() {
                     setUseRecoveryCode(false);
                     return;
                   }
+                  setAcknowledgedNoRecovery(false);
+                  setCapsLockOn(false);
                   setIsRegister(!isRegister);
                 }}
                 className="text-text-secondary hover:text-accent text-sm transition-colors"
