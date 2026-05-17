@@ -32,10 +32,10 @@ Bu dosya VaultMaster Password Manager icin incelenen gelistirme maddelerini taki
 
 ## Faz 2 - Web UX ve erisilebilirlik
 
-- [ ] Ortak modal/danger modal altyapisi kur
-  - [ ] `role="dialog"`, `aria-modal`, `aria-labelledby` destegi
-  - [ ] Focus trap, Escape ile kapatma, focus return
-  - [ ] Dirty form kapanisinda veri kaybi onleme
+- [x] Ortak modal/danger modal altyapisi kur
+  - [x] `role="dialog"`, `aria-modal`, `aria-labelledby` destegi
+  - [x] Focus trap, Escape ile kapatma, focus return
+  - [x] Dirty form kapanisinda veri kaybi onleme
 - [ ] Vault kartlarini klavye ile erisilebilir yap
   - [ ] Kart secimi icin semantic button veya `role`, `tabIndex`, Enter/Space destegi
   - [ ] Nested button event davranisini dogrula
