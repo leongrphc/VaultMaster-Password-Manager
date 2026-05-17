@@ -14,7 +14,9 @@
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
-    "test": "node --test --experimental-test-isolation=none tests/*.test.mjs"
+    "typecheck": "tsc --noEmit",
+    "test": "node --test --experimental-test-isolation=none tests/*.test.mjs",
+    "test:coverage": "node --test --experimental-test-coverage --experimental-test-isolation=none tests/*.test.mjs"
   },
   "devDependencies": {
     "typescript": "^5.7.0"

@@ -65,11 +65,11 @@ Bu dosya VaultMaster Password Manager icin incelenen gelistirme maddelerini taki
 
 ## Faz 3 - Test, CI ve kalite kapilari
 
-- [ ] Root kalite scriptlerini ekle
-  - [ ] `typecheck`
-  - [ ] `test`
-  - [ ] `test:coverage` veya kapsam stratejisi
-  - [ ] `ci`
+- [x] Root kalite scriptlerini ekle
+  - [x] `typecheck`
+  - [x] `test`
+  - [x] `test:coverage` veya kapsam stratejisi
+  - [x] `ci`
 - [ ] GitHub Actions CI ekle
   - [ ] Frozen install
   - [ ] Build
