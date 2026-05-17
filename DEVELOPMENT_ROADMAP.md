@@ -83,11 +83,11 @@ Bu dosya VaultMaster Password Manager icin incelenen gelistirme maddelerini taki
   - [x] Folder ownership
   - [x] Refresh token rotation
   - [x] Rate limit davranisi
-- [ ] Web testlerini ekle
-  - [ ] Login/register flow
-  - [ ] Vault lock/unlock
-  - [ ] Add/edit/delete item
-  - [ ] Export warning modal
+- [x] Web testlerini ekle
+  - [x] Login/register flow
+  - [x] Vault lock/unlock
+  - [x] Add/edit/delete item
+  - [x] Export warning modal
 - [ ] Extension testlerini ekle
   - [ ] Form detector fixture testleri
   - [ ] Domain match/phishing warning testleri

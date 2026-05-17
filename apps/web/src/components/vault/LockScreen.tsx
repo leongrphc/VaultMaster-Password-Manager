@@ -62,12 +62,16 @@ export default function LockScreen() {
         <div className="glass rounded-2xl p-6">
           <form onSubmit={handleUnlock} className="space-y-4">
             <div>
-              <label className="block text-xs text-text-muted mb-1.5 uppercase tracking-wider">
+              <label
+                htmlFor="lock-screen-password"
+                className="block text-xs text-text-muted mb-1.5 uppercase tracking-wider"
+              >
                 Ana Şifre
               </label>
               <div className="relative">
                 <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" />
                 <input
+                  id="lock-screen-password"
                   autoFocus
                   type="password"
                   required
