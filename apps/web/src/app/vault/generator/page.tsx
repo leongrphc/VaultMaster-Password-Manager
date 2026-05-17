@@ -81,9 +81,11 @@ export default function GeneratorPage() {
           </div>
 
           <button
+            type="button"
             onClick={copyToClipboard}
             className="p-3 rounded-xl bg-surface hover:bg-surface-hover border border-border transition-all shrink-0"
             title="Kopyala"
+            aria-label={copied ? "Şifre kopyalandı" : "Şifreyi kopyala"}
           >
             {copied ? (
               <Check className="w-5 h-5 text-accent" />
@@ -93,9 +95,11 @@ export default function GeneratorPage() {
           </button>
 
           <button
+            type="button"
             onClick={generate}
             className="p-3 rounded-xl bg-accent/10 hover:bg-accent/20 text-accent border border-accent/20 transition-all shrink-0"
             title="Yenile"
+            aria-label="Yeni şifre oluştur"
           >
             <RefreshCw className="w-5 h-5" />
           </button>

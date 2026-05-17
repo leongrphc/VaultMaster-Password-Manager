@@ -166,6 +166,7 @@ export default function VaultItemCard({
           <IconButton
             onClick={onToggleFavorite}
             label={item.favorite ? "Favoriden çıkar" : "Favoriye ekle"}
+            pressed={item.favorite}
             className={item.favorite ? "text-warning" : ""}
           >
             <Star className="w-4 h-4" fill={item.favorite ? "currentColor" : "none"} />
@@ -193,11 +194,13 @@ function IconButton({
   children,
   label,
   className = "",
+  pressed,
   onClick,
 }: {
   children: React.ReactNode;
   label: string;
   className?: string;
+  pressed?: boolean;
   onClick: () => void;
 }) {
   return (
@@ -210,6 +213,7 @@ function IconButton({
       className={`p-2 rounded-lg hover:bg-surface text-text-muted hover:text-text-primary transition-colors ${className}`}
       title={label}
       aria-label={label}
+      aria-pressed={pressed}
     >
       {children}
     </button>

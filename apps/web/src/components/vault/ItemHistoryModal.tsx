@@ -129,7 +129,9 @@ export default function ItemHistoryModal({
             <p className="text-sm text-text-secondary mt-1">{title}</p>
           </div>
           <button
+            type="button"
             onClick={onClose}
+            aria-label="Sürüm geçmişi modalını kapat"
             className="rounded-xl p-2 text-text-muted transition-colors hover:bg-surface hover:text-text-primary"
           >
             <X className="w-5 h-5" />

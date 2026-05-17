@@ -201,7 +201,10 @@ export default function Sidebar({ isOpen, isMobileOpen, onToggle, onMobileClose 
           </div>
         )}
         <button
+          type="button"
           onClick={onToggle}
+          aria-label={isOpen ? "Kenar çubuğunu daralt" : "Kenar çubuğunu genişlet"}
+          aria-expanded={isOpen}
           className={`p-2 rounded-lg hover:bg-surface transition-colors text-text-muted hover:text-text-primary ${
             !isOpen ? "mx-auto" : ""
           }`}
@@ -253,7 +256,9 @@ export default function Sidebar({ isOpen, isMobileOpen, onToggle, onMobileClose 
                 Klasörler
               </span>
               <button
+                type="button"
                 onClick={() => setShowNewFolder(true)}
+                aria-label="Yeni klasör oluştur"
                 className="p-1 rounded hover:bg-surface text-text-muted hover:text-accent transition-colors"
               >
                 <FolderPlus className="w-3.5 h-3.5" />
@@ -304,6 +309,7 @@ export default function Sidebar({ isOpen, isMobileOpen, onToggle, onMobileClose 
                   onClick={(event) => void handleDeleteFolder(event, folder)}
                   className="absolute right-2 top-1/2 -translate-y-1/2 rounded-lg p-1.5 text-text-muted opacity-0 transition-all hover:bg-danger/10 hover:text-danger group-hover:opacity-100"
                   title={`${folder.name} klasörünü sil`}
+                  aria-label={`${folder.name} klasörünü sil`}
                 >
                   <Trash2 className="w-3.5 h-3.5" />
                 </button>

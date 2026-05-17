@@ -46,9 +46,9 @@ Bu dosya VaultMaster Password Manager icin incelenen gelistirme maddelerini taki
 - [x] Form label ve aria baglantilarini guclendir
   - [x] Input/select/textarea icin `id` + `htmlFor`
   - [x] Hata mesajlari icin `aria-describedby`
-- [ ] Ikon-only butonlara erisilebilir isim ekle
-  - [ ] `aria-label`
-  - [ ] Toggle butonlarda `aria-pressed`
+- [x] Ikon-only butonlara erisilebilir isim ekle
+  - [x] `aria-label`
+  - [x] Toggle butonlarda `aria-pressed`
 - [ ] Master password kayit UX'ini guclendir
   - [ ] Strength meter veya guclu parola rehberi
   - [ ] Kurtarma yok onay checkbox'i

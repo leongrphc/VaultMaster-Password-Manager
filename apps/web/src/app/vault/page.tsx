@@ -286,6 +286,7 @@ export default function VaultPage() {
           <button
             type="button"
             onClick={() => setSelectionMode(!isSelectionMode)}
+            aria-pressed={isSelectionMode}
             className={`rounded-xl border px-4 py-2.5 text-sm font-semibold transition-all ${
               isSelectionMode
                 ? "border-accent/40 bg-accent/10 text-accent"
@@ -325,7 +326,9 @@ export default function VaultPage() {
           {allTags.map((tag) => (
             <button
               key={tag}
+              type="button"
               onClick={() => setActiveTag(activeTag === tag ? null : tag)}
+              aria-pressed={activeTag === tag}
               className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium transition-all whitespace-nowrap border ${
                 activeTag === tag
                   ? "bg-accent/15 text-accent border-accent/40"
