@@ -513,10 +513,6 @@ router.post("/logout", authMiddleware, async (req: Request, res: Response) => {
         select: { id: true },
       });
 
-      await prisma.device.deleteMany({
-        where: { refreshTokenHash, userId: req.user!.userId },
-      });
-
       for (const device of devices) {
         await logAuditEvent({
           userId: req.user!.userId,
@@ -527,6 +523,10 @@ router.post("/logout", authMiddleware, async (req: Request, res: Response) => {
           userAgent: getRequestUserAgent(req),
         });
       }
+
+      await prisma.device.deleteMany({
+        where: { refreshTokenHash, userId: req.user!.userId },
+      });
     }
   }
 

@@ -178,12 +178,12 @@ export default function Sidebar({ isOpen, isMobileOpen, onToggle, onMobileClose 
   return (
     <div
       className={`fixed inset-0 z-30 bg-midnight/70 backdrop-blur-sm transition-opacity duration-300 lg:bg-transparent lg:backdrop-blur-none ${
-        isMobileOpen ? "pointer-events-auto opacity-100" : "pointer-events-none opacity-0 lg:pointer-events-auto lg:opacity-100"
+        isMobileOpen ? "pointer-events-auto opacity-100" : "pointer-events-none opacity-0 lg:pointer-events-none lg:opacity-100"
       }`}
       onMouseDown={onMobileClose}
     >
       <aside
-        className={`fixed left-0 top-0 flex h-screen flex-col border-r border-border bg-abyss transition-all duration-300 ${
+        className={`pointer-events-auto fixed left-0 top-0 flex h-screen flex-col border-r border-border bg-abyss transition-all duration-300 ${
           isMobileOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"
         } ${showExpandedSidebar ? "w-72" : "w-72 lg:w-16"}`}
         onMouseDown={(event) => event.stopPropagation()}

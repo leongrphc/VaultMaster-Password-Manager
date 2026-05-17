@@ -92,10 +92,10 @@ Bu dosya VaultMaster Password Manager icin incelenen gelistirme maddelerini taki
   - [x] Form detector fixture testleri
   - [x] Domain match/phishing warning testleri
   - [x] Autofill user-action testleri
-- [ ] E2E smoke test ekle
-  - [ ] Kayit ol, item olustur, cikis/giris yap
-  - [ ] Extension autofill smoke
-  - [ ] Export/import smoke
+- [x] E2E smoke test ekle
+  - [x] Kayit ol, item olustur, cikis/giris yap
+  - [x] Extension autofill smoke
+  - [x] Export/import smoke
 
 ## Faz 4 - Urun polish
 

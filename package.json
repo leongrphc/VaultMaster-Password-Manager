@@ -8,6 +8,8 @@
     "typecheck": "turbo typecheck",
     "test": "turbo test",
     "test:coverage": "turbo test:coverage",
+    "test:e2e": "playwright test",
+    "test:e2e:headed": "playwright test --headed",
     "ci": "pnpm lint && pnpm typecheck && pnpm test && pnpm build",
     "dev:api": "turbo dev --filter=@vaultmaster/api",
     "dev:web": "turbo dev --filter=@vaultmaster/web",
@@ -17,6 +19,7 @@
     "db:seed": "turbo db:seed --filter=@vaultmaster/api"
   },
   "devDependencies": {
+    "@playwright/test": "^1.60.0",
     "turbo": "^2.4.0",
     "typescript": "^5.7.0"
   },
