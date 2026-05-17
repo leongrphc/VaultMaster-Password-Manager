@@ -36,9 +36,9 @@ Bu dosya VaultMaster Password Manager icin incelenen gelistirme maddelerini taki
   - [x] `role="dialog"`, `aria-modal`, `aria-labelledby` destegi
   - [x] Focus trap, Escape ile kapatma, focus return
   - [x] Dirty form kapanisinda veri kaybi onleme
-- [ ] Vault kartlarini klavye ile erisilebilir yap
-  - [ ] Kart secimi icin semantic button veya `role`, `tabIndex`, Enter/Space destegi
-  - [ ] Nested button event davranisini dogrula
+- [x] Vault kartlarini klavye ile erisilebilir yap
+  - [x] Kart secimi icin semantic button veya `role`, `tabIndex`, Enter/Space destegi
+  - [x] Nested button event davranisini dogrula
 - [ ] Mobil sidebar/layout davranisini duzelt
   - [ ] Mobilde main margin'i sifirla
   - [ ] Sidebar'i mobil drawer/overlay olarak calistir

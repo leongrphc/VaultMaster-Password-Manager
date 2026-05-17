@@ -65,13 +65,29 @@ export default function VaultItemCard({
   const isGrid = viewMode === "grid";
   const isCompact = viewMode === "compact";
 
+  const handleCardKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (event.currentTarget !== event.target) {
+      return;
+    }
+
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      onSelect();
+    }
+  };
+
   return (
     <div
-      className={`glass rounded-xl hover:bg-surface-hover transition-all duration-200 group animate-slide-up cursor-pointer focus-within:ring-2 focus-within:ring-accent/30 ${
+      role="button"
+      tabIndex={0}
+      aria-expanded={isSelected}
+      aria-label={`${item.data.title} detaylarını ${isSelected ? "kapat" : "aç"}`}
+      className={`glass rounded-xl hover:bg-surface-hover transition-all duration-200 group animate-slide-up cursor-pointer focus-within:ring-2 focus-within:ring-accent/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50 ${
         isGrid ? "p-4 min-h-48" : isCompact ? "p-3" : "p-4"
       }`}
       style={{ animationDelay: `${Math.min(index, 12) * 25}ms` }}
       onClick={onSelect}
+      onKeyDown={handleCardKeyDown}
     >
       <div className={`flex gap-4 ${isGrid ? "items-start" : "items-center"}`}>
         {selectionMode && (
