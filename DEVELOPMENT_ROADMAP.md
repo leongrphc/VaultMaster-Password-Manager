@@ -16,11 +16,11 @@ Bu dosya VaultMaster Password Manager icin incelenen gelistirme maddelerini taki
   - [x] Refresh token'i DB'de hashli sakla
   - [x] Token rotation modelini guclendir
   - [x] Reuse detection stratejisini ekle
-- [ ] Hassas endpoint'lere ozel rate limit ekle
-  - [ ] 2FA verify/disable endpoint'leri
-  - [ ] Recovery code regenerate endpoint'i
-  - [ ] Change password/delete account endpoint'leri
-  - [ ] Refresh endpoint'i
+- [x] Hassas endpoint'lere ozel rate limit ekle
+  - [x] 2FA verify/disable endpoint'leri
+  - [x] Recovery code regenerate endpoint'i
+  - [x] Change password/delete account endpoint'leri
+  - [x] Refresh endpoint'i
 - [ ] Extension sifre maruziyetini azalt
   - [ ] Sifre prefetch/cache davranisini azalt veya kaldir
   - [ ] Pending autofill icinde sifre yerine `itemId + nonce` kullan

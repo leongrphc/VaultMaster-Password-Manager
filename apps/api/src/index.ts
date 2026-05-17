@@ -70,9 +70,49 @@ const authLimiter = rateLimit({
   },
 });
 
+const twoFactorSensitiveLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: getAuthThrottleKey,
+  message: {
+    success: false,
+    error: "Çok fazla 2FA doğrulama denemesi yapıldı. Lütfen bekleyin",
+  },
+});
+
+const accountSensitiveLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    success: false,
+    error: "Çok fazla hassas hesap işlemi denemesi yapıldı. Lütfen bekleyin",
+  },
+});
+
+const refreshLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    success: false,
+    error: "Çok fazla oturum yenileme denemesi yapıldı. Lütfen bekleyin",
+  },
+});
+
 app.use("/api", limiter);
 app.use("/api/auth/login", authLimiter);
 app.use("/api/auth/register", authLimiter);
+app.use("/api/auth/2fa/verify", twoFactorSensitiveLimiter);
+app.use("/api/auth/2fa/disable", accountSensitiveLimiter);
+app.use("/api/auth/2fa/recovery-codes/regenerate", accountSensitiveLimiter);
+app.use("/api/auth/change-password", accountSensitiveLimiter);
+app.use("/api/auth/delete-account", accountSensitiveLimiter);
+app.use("/api/auth/refresh", refreshLimiter);
 
 app.use("/api/health", healthRoutes);
 app.use("/api/auth", authRoutes);
