@@ -12,6 +12,7 @@ import { prisma } from "../config/prisma.js";
 import {
   generateAccessToken,
   generateRefreshToken,
+  hashRefreshToken,
   verifyRefreshToken,
 } from "../utils/jwt.js";
 import { authMiddleware } from "../middleware/auth.js";
@@ -78,7 +79,7 @@ router.post("/register", async (req: Request, res: Response) => {
         userId: user.id,
         deviceName: userAgent?.slice(0, 100) ?? "Unknown",
         deviceType: inferDeviceType(userAgent),
-        refreshToken,
+        refreshTokenHash: hashRefreshToken(refreshToken),
       },
     });
 
@@ -213,7 +214,7 @@ router.post("/login", async (req: Request, res: Response) => {
         userId: user.id,
         deviceName: userAgent?.slice(0, 100) ?? "Unknown",
         deviceType: inferDeviceType(userAgent),
-        refreshToken,
+        refreshTokenHash: hashRefreshToken(refreshToken),
       },
     });
 
@@ -417,12 +418,13 @@ router.post("/refresh", async (req: Request, res: Response) => {
     const { refreshToken } = refreshTokenSchema.parse(req.body);
 
     const payload = verifyRefreshToken(refreshToken);
+    const refreshTokenHash = hashRefreshToken(refreshToken);
 
     const device = await prisma.device.findUnique({
-      where: { refreshToken },
+      where: { refreshTokenHash },
     });
 
-    if (!device) {
+    if (!device || device.userId !== payload.userId) {
       res.status(401).json({ success: false, error: "Geçersiz refresh token" });
       return;
     }
@@ -435,11 +437,17 @@ router.post("/refresh", async (req: Request, res: Response) => {
       userId: payload.userId,
       email: payload.email,
     });
+    const newRefreshTokenHash = hashRefreshToken(newRefreshToken);
 
-    await prisma.device.update({
-      where: { id: device.id },
-      data: { refreshToken: newRefreshToken, lastActive: new Date() },
+    const rotated = await prisma.device.updateMany({
+      where: { id: device.id, refreshTokenHash },
+      data: { refreshTokenHash: newRefreshTokenHash, lastActive: new Date() },
     });
+
+    if (rotated.count !== 1) {
+      res.status(401).json({ success: false, error: "Geçersiz refresh token" });
+      return;
+    }
 
     await logAuditEvent({
       userId: payload.userId,
@@ -472,13 +480,14 @@ router.post("/logout", authMiddleware, async (req: Request, res: Response) => {
     // Refresh token'ı da body'den al
     const { refreshToken } = req.body as { refreshToken?: string };
     if (refreshToken) {
+      const refreshTokenHash = hashRefreshToken(refreshToken);
       const devices = await prisma.device.findMany({
-        where: { refreshToken, userId: req.user!.userId },
+        where: { refreshTokenHash, userId: req.user!.userId },
         select: { id: true },
       });
 
       await prisma.device.deleteMany({
-        where: { refreshToken, userId: req.user!.userId },
+        where: { refreshTokenHash, userId: req.user!.userId },
       });
 
       for (const device of devices) {

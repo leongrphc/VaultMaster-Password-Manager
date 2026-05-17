@@ -86,7 +86,7 @@ model Device {
   deviceType   String
   createdAt    DateTime @default(now())
   lastActive   DateTime @default(now())
-  refreshToken String?  @unique
+  refreshTokenHash String? @unique
   auditEvents  AuditEvent[]
 
   @@index([userId])

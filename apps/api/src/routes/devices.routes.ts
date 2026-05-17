@@ -17,6 +17,14 @@ router.get("/", async (req: Request, res: Response) => {
   const devices = await prisma.device.findMany({
     where: { userId: req.user!.userId },
     orderBy: [{ lastActive: "desc" }, { createdAt: "desc" }],
+    select: {
+      id: true,
+      userId: true,
+      deviceName: true,
+      deviceType: true,
+      createdAt: true,
+      lastActive: true,
+    },
   });
 
   res.json({

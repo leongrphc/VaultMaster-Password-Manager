@@ -1,3 +1,4 @@
+import { createHmac } from "node:crypto";
 import jwt, { type SignOptions } from "jsonwebtoken";
 import { env } from "../config/env.js";
 
@@ -24,4 +25,8 @@ export function verifyAccessToken(token: string): TokenPayload {
 
 export function verifyRefreshToken(token: string): TokenPayload {
   return jwt.verify(token, env.JWT_REFRESH_SECRET) as TokenPayload;
+}
+
+export function hashRefreshToken(token: string): string {
+  return createHmac("sha256", env.JWT_REFRESH_SECRET).update(token).digest("hex");
 }
