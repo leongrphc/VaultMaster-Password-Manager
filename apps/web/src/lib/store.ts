@@ -32,6 +32,13 @@ import {
   readOfflineVaultSnapshot,
   verifyLockVerifier,
 } from "./offline-cache";
+import {
+  clearLocalUnlock,
+  getLocalUnlockStatus,
+  setupLocalUnlock,
+  unlockWithLocalAuthenticator,
+  type LocalUnlockStatus,
+} from "./local-unlock";
 
 interface DecryptedAttachment {
   id: string;
@@ -201,6 +208,10 @@ interface AppStore extends AuthState, VaultState {
 
   lockVault: () => void;
   unlockVault: (password: string, email: string) => Promise<boolean>;
+  unlockVaultLocally: () => Promise<boolean>;
+  getLocalUnlockStatus: () => LocalUnlockStatus;
+  setupLocalUnlock: () => Promise<LocalUnlockStatus>;
+  clearLocalUnlock: () => void;
   touchActivity: () => void;
   setLockTimeout: (minutes: number) => void;
 }
@@ -354,6 +365,7 @@ export const useStore = create<AppStore>()(
           writeSessionMasterKey(null);
           clearOfflineVaultSnapshot();
           clearLockVerifier();
+          clearLocalUnlock();
 
           return {
             isAuthenticated: false,
@@ -1023,6 +1035,46 @@ export const useStore = create<AppStore>()(
           return false;
         }
       },
+
+      unlockVaultLocally: async () => {
+        try {
+          const keyBase64 = await unlockWithLocalAuthenticator();
+          const verifierMatches = await verifyLockVerifier(keyBase64);
+          const offlineSnapshot = verifierMatches
+            ? null
+            : await readOfflineVaultSnapshot(keyBase64);
+
+          if (!verifierMatches && !offlineSnapshot) {
+            clearLocalUnlock();
+            return false;
+          }
+
+          await persistLockVerifier(keyBase64);
+          writeSessionMasterKey(keyBase64);
+          set({
+            isLocked: false,
+            masterKeyBase64: keyBase64,
+            lastActivity: Date.now(),
+          });
+          await get().loadVault();
+          return true;
+        } catch {
+          return false;
+        }
+      },
+
+      getLocalUnlockStatus,
+
+      setupLocalUnlock: async () => {
+        const { masterKeyBase64, userEmail, userId } = get();
+        if (!masterKeyBase64 || !userEmail || !userId) {
+          throw new Error("Yerel kilit açma için kilidi açık bir oturum gerekir");
+        }
+
+        return setupLocalUnlock({ masterKeyBase64, userEmail, userId });
+      },
+
+      clearLocalUnlock,
 
       touchActivity: () =>
         set((state) => {

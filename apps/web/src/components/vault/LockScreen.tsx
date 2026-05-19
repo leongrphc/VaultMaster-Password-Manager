@@ -1,21 +1,25 @@
 "use client";
 
 import { useState } from "react";
-import { Lock, ArrowRight, Shield } from "lucide-react";
+import { Fingerprint, Lock, ArrowRight, Shield } from "lucide-react";
 import { useStore } from "@/lib/store";
 import { useShallow } from "zustand/shallow";
 
 export default function LockScreen() {
-  const { userEmail, unlockVault, logout } = useStore(
+  const { userEmail, unlockVault, unlockVaultLocally, getLocalUnlockStatus, logout } = useStore(
     useShallow((state) => ({
       userEmail: state.userEmail,
       unlockVault: state.unlockVault,
+      unlockVaultLocally: state.unlockVaultLocally,
+      getLocalUnlockStatus: state.getLocalUnlockStatus,
       logout: state.logout,
     }))
   );
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [localUnlockLoading, setLocalUnlockLoading] = useState(false);
+  const localUnlockEnabled = getLocalUnlockStatus().enabled;
 
   const handleUnlock = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -29,6 +33,17 @@ export default function LockScreen() {
       setError("Yanlış ana şifre");
     }
     setLoading(false);
+  };
+
+  const handleLocalUnlock = async () => {
+    setLocalUnlockLoading(true);
+    setError("");
+
+    const success = await unlockVaultLocally();
+    if (!success) {
+      setError("Yerel doğrulama başarısız. Ana şifre ile kilidi açın.");
+    }
+    setLocalUnlockLoading(false);
   };
 
   return (
@@ -89,16 +104,34 @@ export default function LockScreen() {
               </div>
             )}
 
+            {localUnlockEnabled && (
+              <button
+                type="button"
+                onClick={handleLocalUnlock}
+                disabled={localUnlockLoading || loading}
+                className="w-full bg-surface hover:bg-accent/10 text-text-primary border border-border hover:border-accent/30 font-semibold py-3 rounded-xl flex items-center justify-center gap-2 transition-all disabled:opacity-50"
+              >
+                {localUnlockLoading ? (
+                  <div className="w-5 h-5 border-2 border-accent/30 border-t-accent rounded-full animate-spin" />
+                ) : (
+                  <>
+                    <Fingerprint className="w-4 h-4" />
+                    Platform doğrulayıcı ile aç
+                  </>
+                )}
+              </button>
+            )}
+
             <button
               type="submit"
-              disabled={loading}
+              disabled={loading || localUnlockLoading}
               className="w-full bg-accent hover:bg-accent-dim text-midnight font-semibold py-3 rounded-xl flex items-center justify-center gap-2 transition-all disabled:opacity-50"
             >
               {loading ? (
                 <div className="w-5 h-5 border-2 border-midnight/30 border-t-midnight rounded-full animate-spin" />
               ) : (
                 <>
-                  Kilidi Aç
+                  Ana şifre ile kilidi aç
                   <ArrowRight className="w-4 h-4" />
                 </>
               )}

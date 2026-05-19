@@ -24,6 +24,8 @@ import {
   Pencil,
   Users,
   Trash2,
+  Fingerprint,
+  KeyRound,
 } from "lucide-react";
 import { useStore } from "@/lib/store";
 import { CsvImportError, parseVaultCsv } from "@/lib/csv-import";
@@ -84,6 +86,9 @@ export default function SettingsPage() {
     rejectEmergencyAccessRequest,
     cancelEmergencyAccessGrant,
     releaseEmergencyAccessKey,
+    getLocalUnlockStatus,
+    setupLocalUnlock,
+    clearLocalUnlock,
   } = useStore(
     useShallow((state) => ({
       userEmail: state.userEmail,
@@ -120,6 +125,9 @@ export default function SettingsPage() {
       rejectEmergencyAccessRequest: state.rejectEmergencyAccessRequest,
       cancelEmergencyAccessGrant: state.cancelEmergencyAccessGrant,
       releaseEmergencyAccessKey: state.releaseEmergencyAccessKey,
+      getLocalUnlockStatus: state.getLocalUnlockStatus,
+      setupLocalUnlock: state.setupLocalUnlock,
+      clearLocalUnlock: state.clearLocalUnlock,
     }))
   );
 
@@ -172,6 +180,10 @@ export default function SettingsPage() {
     encryptedAccessIv: "",
   });
   const [releasedEmergencyKey, setReleasedEmergencyKey] = useState<EmergencyAccessGrantResponse | null>(null);
+  const [localUnlockStatus, setLocalUnlockStatus] = useState(() => getLocalUnlockStatus());
+  const [localUnlockLoading, setLocalUnlockLoading] = useState(false);
+  const [localUnlockMessage, setLocalUnlockMessage] = useState<string | null>(null);
+  const [localUnlockError, setLocalUnlockError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const timeoutOptions = [
@@ -378,6 +390,29 @@ export default function SettingsPage() {
     }
 
     e.target.value = "";
+  };
+
+  const handleSetupLocalUnlock = async () => {
+    setLocalUnlockLoading(true);
+    setLocalUnlockMessage(null);
+    setLocalUnlockError(null);
+
+    try {
+      const status = await setupLocalUnlock();
+      setLocalUnlockStatus(status);
+      setLocalUnlockMessage("Yerel kilit açma bu cihaz için etkinleştirildi");
+    } catch (error) {
+      setLocalUnlockError(error instanceof Error ? error.message : "Yerel kilit açma ayarlanamadı");
+    } finally {
+      setLocalUnlockLoading(false);
+    }
+  };
+
+  const handleClearLocalUnlock = () => {
+    clearLocalUnlock();
+    setLocalUnlockStatus(getLocalUnlockStatus());
+    setLocalUnlockMessage("Yerel kilit açma bu cihazdan kaldırıldı");
+    setLocalUnlockError(null);
   };
 
   const tabs = [
@@ -1034,6 +1069,77 @@ export default function SettingsPage() {
           <TwoFactorSettings />
           <WebAuthnSettings />
           <AccountSecurityPanel />
+
+          <div className="glass rounded-2xl p-6">
+            <div className="flex items-center justify-between gap-3 mb-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-accent/10 flex items-center justify-center">
+                  <Fingerprint className="w-5 h-5 text-accent" />
+                </div>
+                <div>
+                  <h3 className="font-semibold">Yerel Platform Doğrulayıcı</h3>
+                  <p className="text-sm text-text-secondary">
+                    Windows Hello, Touch ID veya cihaz biyometrisi ile yalnızca bu cihazda kilit açma
+                  </p>
+                </div>
+              </div>
+              <span className={`text-xs px-2.5 py-1 rounded-lg font-medium ${
+                localUnlockStatus.enabled ? "bg-accent/10 text-accent" : "bg-warning/10 text-warning"
+              }`}>
+                {localUnlockStatus.enabled ? "Etkin" : "Kapalı"}
+              </span>
+            </div>
+
+            <div className="rounded-xl border border-border bg-surface/60 p-4 text-sm text-text-secondary space-y-2">
+              <div className="flex items-start gap-2">
+                <KeyRound className="mt-0.5 h-4 w-4 shrink-0 text-accent" />
+                <p>
+                  Kurulum, master key'i WebAuthn PRF ile üretilen cihaz-yerel bir anahtarla localStorage içinde şifreler. Master şifre, master key ve biyometrik sır sunucuya gönderilmez.
+                </p>
+              </div>
+              <p className="text-xs text-text-muted">
+                Ana şifre fallback'i her zaman zorunludur; cihaz veya tarayıcı desteği kaybolursa ana şifre ile açmaya devam edebilirsiniz.
+              </p>
+              {localUnlockStatus.createdAt && (
+                <p className="text-xs text-text-muted">
+                  Kurulum zamanı: {formatDateTime(localUnlockStatus.createdAt)}
+                </p>
+              )}
+            </div>
+
+            {localUnlockMessage && (
+              <div className="mt-4 flex items-center gap-2 p-3 rounded-xl bg-accent/5 border border-accent/20 text-accent text-sm">
+                <Check className="w-4 h-4" />
+                {localUnlockMessage}
+              </div>
+            )}
+
+            {localUnlockError && (
+              <div className="mt-4 flex items-center gap-2 p-3 rounded-xl bg-danger/5 border border-danger/20 text-danger text-sm">
+                <AlertTriangle className="w-4 h-4" />
+                {localUnlockError}
+              </div>
+            )}
+
+            <div className="mt-4 flex flex-wrap gap-2">
+              <button
+                onClick={handleSetupLocalUnlock}
+                disabled={localUnlockLoading || !masterKeyBase64 || !userEmail}
+                className="inline-flex items-center gap-2 rounded-xl bg-accent px-4 py-2 text-sm font-semibold text-midnight hover:bg-accent-dim disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                {localUnlockLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Fingerprint className="w-4 h-4" />}
+                {localUnlockStatus.enabled ? "Yeniden Kur" : "Bu Cihazda Etkinleştir"}
+              </button>
+              <button
+                onClick={handleClearLocalUnlock}
+                disabled={!localUnlockStatus.enabled || localUnlockLoading}
+                className="inline-flex items-center gap-2 rounded-xl bg-surface px-4 py-2 text-sm font-medium text-text-secondary hover:text-danger disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                <Trash2 className="w-4 h-4" />
+                Kaldır
+              </button>
+            </div>
+          </div>
 
           <div className="glass rounded-2xl p-6">
             <div className="flex items-center gap-3 mb-4">
