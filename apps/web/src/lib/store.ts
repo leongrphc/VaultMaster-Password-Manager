@@ -8,6 +8,8 @@ import type {
   VaultItemData,
   AuthTokens,
   AttachmentResponse,
+  SharedVaultMemberResponse,
+  SharedVaultResponse,
 } from "@vaultmaster/shared";
 import {
   deriveMasterKey,
@@ -85,6 +87,8 @@ interface VaultState {
   lastSyncedAt: string | null;
   lockTimeoutMinutes: number;
   lastActivity: number;
+  sharedVaults: SharedVaultResponse[];
+  sharedVaultMembers: Record<string, SharedVaultMemberResponse[]>;
 }
 
 interface AppStore extends AuthState, VaultState {
@@ -146,6 +150,25 @@ interface AppStore extends AuthState, VaultState {
   deleteAttachment: (itemId: string, attachmentId: string) => Promise<void>;
   deleteVaultItem: (id: string) => Promise<void>;
   toggleFavorite: (id: string) => Promise<void>;
+
+  loadSharedVaults: () => Promise<void>;
+  createSharedVault: (body: {
+    encryptedMetadata: string;
+    metadataIv: string;
+    encryptedVaultKey: string;
+    encryptedVaultKeyIv: string;
+  }) => Promise<SharedVaultResponse>;
+  loadSharedVaultMembers: (sharedVaultId: string) => Promise<void>;
+  inviteSharedVaultMember: (
+    sharedVaultId: string,
+    body: {
+      email: string;
+      role: "viewer" | "editor" | "admin";
+      encryptedVaultKey: string;
+      encryptedVaultKeyIv: string;
+    }
+  ) => Promise<SharedVaultMemberResponse>;
+  removeSharedVaultMember: (sharedVaultId: string, memberId: string) => Promise<void>;
 
   lockVault: () => void;
   unlockVault: (password: string, email: string) => Promise<boolean>;
@@ -244,6 +267,8 @@ export const useStore = create<AppStore>()(
       lastSyncedAt: null,
       lockTimeoutMinutes: 5,
       lastActivity: Date.now(),
+          sharedVaults: [],
+          sharedVaultMembers: {},
 
       setAuth: (tokens, email, userId, deviceId = null) =>
         set({
@@ -314,6 +339,8 @@ export const useStore = create<AppStore>()(
             isLocked: false,
             isUsingOfflineData: false,
             lastSyncedAt: null,
+            sharedVaults: [],
+            sharedVaultMembers: {},
           };
         }),
 
@@ -713,6 +740,68 @@ export const useStore = create<AppStore>()(
           api.vault.update(id, { favorite: !item.favorite }, accessToken)
         );
         get().updateItem(id, { favorite: !item.favorite });
+      },
+
+      loadSharedVaults: async () => {
+        const response = (await get().runWithValidAccessToken((accessToken) =>
+          api.sharedVaults.getAll(accessToken) as Promise<{ data: SharedVaultResponse[] }>
+        )) as { data: SharedVaultResponse[] };
+
+        set({ sharedVaults: response.data });
+      },
+
+      createSharedVault: async (body) => {
+        const response = (await get().runWithValidAccessToken((accessToken) =>
+          api.sharedVaults.create(body, accessToken) as Promise<{ data: SharedVaultResponse }>
+        )) as { data: SharedVaultResponse };
+
+        set((state) => ({ sharedVaults: [response.data, ...state.sharedVaults] }));
+        return response.data;
+      },
+
+      loadSharedVaultMembers: async (sharedVaultId) => {
+        const response = (await get().runWithValidAccessToken((accessToken) =>
+          api.sharedVaults.getMembers(sharedVaultId, accessToken) as Promise<{ data: SharedVaultMemberResponse[] }>
+        )) as { data: SharedVaultMemberResponse[] };
+
+        set((state) => ({
+          sharedVaultMembers: {
+            ...state.sharedVaultMembers,
+            [sharedVaultId]: response.data,
+          },
+        }));
+      },
+
+      inviteSharedVaultMember: async (sharedVaultId, body) => {
+        const response = (await get().runWithValidAccessToken((accessToken) =>
+          api.sharedVaults.invite(sharedVaultId, body, accessToken) as Promise<{ data: SharedVaultMemberResponse }>
+        )) as { data: SharedVaultMemberResponse };
+
+        set((state) => ({
+          sharedVaultMembers: {
+            ...state.sharedVaultMembers,
+            [sharedVaultId]: [
+              ...(state.sharedVaultMembers[sharedVaultId] ?? []),
+              response.data,
+            ],
+          },
+        }));
+        return response.data;
+      },
+
+      removeSharedVaultMember: async (sharedVaultId, memberId) => {
+        await get().runWithValidAccessToken((accessToken) =>
+          api.sharedVaults.removeMember(sharedVaultId, memberId, accessToken)
+        );
+
+        set((state) => ({
+          sharedVaultMembers: {
+            ...state.sharedVaultMembers,
+            [sharedVaultId]: (state.sharedVaultMembers[sharedVaultId] ?? []).filter(
+              (member) => member.id !== memberId
+            ),
+          },
+        }));
       },
 
       lockVault: () =>

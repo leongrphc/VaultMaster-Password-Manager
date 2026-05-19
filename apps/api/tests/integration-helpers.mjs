@@ -175,3 +175,23 @@ export function attachmentPayload(overrides = {}) {
     ...overrides,
   };
 }
+
+export function sharedVaultPayload(overrides = {}) {
+  return {
+    encryptedMetadata: "encrypted-shared-metadata",
+    metadataIv: "shared-metadata-iv",
+    encryptedVaultKey: "owner-wrapped-vault-key",
+    encryptedVaultKeyIv: "owner-wrapped-vault-key-iv",
+    ...overrides,
+  };
+}
+
+export function sharedVaultInvitePayload(overrides = {}) {
+  return {
+    email: uniqueEmail("invitee"),
+    role: "viewer",
+    encryptedVaultKey: "recipient-wrapped-vault-key",
+    encryptedVaultKeyIv: "recipient-wrapped-vault-key-iv",
+    ...overrides,
+  };
+}

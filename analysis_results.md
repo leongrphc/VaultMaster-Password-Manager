@@ -173,6 +173,6 @@ Kalan büyük özellikler güvenlik-kritik olduğu için bağımlılık sırası
 
 ### Dalga 3 ve Sonrası — Bağımlı Özellikler
 *   **Biometric Local Unlock:** WebAuthn/platform authenticator altyapısı oturduktan sonra.
-*   **Shared Vaults:** Public key ve per-recipient key wrapping modeli tamamlandıktan sonra.
+*   **Shared Vaults:** ✅ Davet/key-wrapping temeli tamamlandı: API owner/admin/member rol semantiğiyle paylaşımlı kasa oluşturma, listeleme, encryptedVaultKey daveti ve üye kaldırma destekliyor; web ayarlarında açık şifreli metadata/key input akışı var. Gerçek public key üretimi ve paylaşımlı item erişimi takip işi olarak kaldı.
 *   **Emergency Access:** Shared vault/key wrapping temeli üzerine kurulacak.
 *   **Extension Passkey Interception:** ⚠️ Kısmi — Extension artık page-world `navigator.credentials.create/get` çağrılarını güvenli bir inject script ile algılıyor, content/background hattında sender origin, page origin ve rpId doğrulaması yapıyor ve kullanıcıya açık rıza/uyarı mesajı gösteriyor. Otomatik credential oluşturma, imzalama veya passkey private-key kullanımı bilerek uygulanmadı; tarayıcının yerel WebAuthn akışı devam ediyor.

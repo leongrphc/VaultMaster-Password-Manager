@@ -171,6 +171,7 @@ export interface SharedVaultResponse {
   ownerId: string;
   encryptedMetadata: string;
   metadataIv: string;
+  currentUserMembership?: SharedVaultMemberResponse | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -179,6 +180,7 @@ export interface SharedVaultMemberResponse {
   id: string;
   sharedVaultId: string;
   userId: string;
+  email?: string;
   role: string;
   encryptedVaultKey: string;
   encryptedVaultKeyIv: string;

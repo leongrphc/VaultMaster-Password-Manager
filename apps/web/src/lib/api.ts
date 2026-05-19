@@ -137,6 +137,37 @@ export const api = {
     ) => request("/auth/delete-account", { method: "POST", body, token }),
   },
 
+  sharedVaults: {
+    getAll: (token: string) => request("/shared-vaults", { token }),
+
+    create: (
+      body: {
+        encryptedMetadata: string;
+        metadataIv: string;
+        encryptedVaultKey: string;
+        encryptedVaultKeyIv: string;
+      },
+      token: string
+    ) => request("/shared-vaults", { method: "POST", body, token }),
+
+    getMembers: (id: string, token: string) =>
+      request(`/shared-vaults/${id}/members`, { token }),
+
+    invite: (
+      id: string,
+      body: {
+        email: string;
+        role: "viewer" | "editor" | "admin";
+        encryptedVaultKey: string;
+        encryptedVaultKeyIv: string;
+      },
+      token: string
+    ) => request(`/shared-vaults/${id}/invite`, { method: "POST", body, token }),
+
+    removeMember: (id: string, memberId: string, token: string) =>
+      request(`/shared-vaults/${id}/members/${memberId}`, { method: "DELETE", token }),
+  },
+
   vault: {
     getAll: (token: string) => request("/vault", { token }),
 

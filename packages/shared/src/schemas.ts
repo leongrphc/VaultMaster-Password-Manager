@@ -126,6 +126,8 @@ export const webAuthnCredentialNameSchema = z.object({
 export const sharedVaultCreateSchema = z.object({
   encryptedMetadata: z.string().min(1),
   metadataIv: z.string().min(1),
+  encryptedVaultKey: z.string().min(1),
+  encryptedVaultKeyIv: z.string().min(1),
 });
 
 export const sharedVaultInviteSchema = z.object({

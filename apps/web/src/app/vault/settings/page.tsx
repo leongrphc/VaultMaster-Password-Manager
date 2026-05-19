@@ -22,12 +22,14 @@ import {
   Smartphone,
   RefreshCcw,
   Pencil,
+  Users,
+  Trash2,
 } from "lucide-react";
 import { useStore } from "@/lib/store";
 import { CsvImportError, parseVaultCsv } from "@/lib/csv-import";
 import { importMasterKey, encryptJSON, decryptJSON } from "@vaultmaster/crypto";
 import { api } from "@/lib/api";
-import type { AuditEventResponse, DeviceResponse, VaultItemData } from "@vaultmaster/shared";
+import type { AuditEventResponse, DeviceResponse, SharedVaultMemberResponse, VaultItemData } from "@vaultmaster/shared";
 import TwoFactorSettings from "@/components/vault/TwoFactorSettings";
 import AccountSecurityPanel from "@/components/vault/AccountSecurityPanel";
 import PlaintextExportConfirmModal from "@/components/vault/PlaintextExportConfirmModal";
@@ -60,6 +62,13 @@ export default function SettingsPage() {
     createVaultItem,
     currentDeviceId,
     runWithValidAccessToken,
+    sharedVaults,
+    sharedVaultMembers,
+    loadSharedVaults,
+    createSharedVault,
+    loadSharedVaultMembers,
+    inviteSharedVaultMember,
+    removeSharedVaultMember,
   } = useStore(
     useShallow((state) => ({
       userEmail: state.userEmail,
@@ -75,10 +84,17 @@ export default function SettingsPage() {
       createVaultItem: state.createVaultItem,
       currentDeviceId: state.currentDeviceId,
       runWithValidAccessToken: state.runWithValidAccessToken,
+      sharedVaults: state.sharedVaults,
+      sharedVaultMembers: state.sharedVaultMembers,
+      loadSharedVaults: state.loadSharedVaults,
+      createSharedVault: state.createSharedVault,
+      loadSharedVaultMembers: state.loadSharedVaultMembers,
+      inviteSharedVaultMember: state.inviteSharedVaultMember,
+      removeSharedVaultMember: state.removeSharedVaultMember,
     }))
   );
 
-  const [activeTab, setActiveTab] = useState<"general" | "security" | "data">("general");
+  const [activeTab, setActiveTab] = useState<"general" | "security" | "data" | "sharing">("general");
   const [exportStatus, setExportStatus] = useState<string | null>(null);
   const [showPlaintextCsvConfirm, setShowPlaintextCsvConfirm] = useState(false);
   const [importStatus, setImportStatus] = useState<string | null>(null);
@@ -94,6 +110,23 @@ export default function SettingsPage() {
   const [editingDeviceId, setEditingDeviceId] = useState<string | null>(null);
   const [deviceNameDraft, setDeviceNameDraft] = useState("");
   const [securityReloadKey, setSecurityReloadKey] = useState(0);
+  const [sharingStatus, setSharingStatus] = useState<string | null>(null);
+  const [sharingError, setSharingError] = useState<string | null>(null);
+  const [sharingLoading, setSharingLoading] = useState(false);
+  const [selectedSharedVaultId, setSelectedSharedVaultId] = useState<string | null>(null);
+  const [sharedVaultForm, setSharedVaultForm] = useState({
+    encryptedMetadata: "",
+    metadataIv: "",
+    encryptedVaultKey: "",
+    encryptedVaultKeyIv: "",
+  });
+  const [inviteForm, setInviteForm] = useState({
+    email: "",
+    role: "viewer" as "viewer" | "editor" | "admin",
+    encryptedVaultKey: "",
+    encryptedVaultKeyIv: "",
+  });
+  const [removingMemberId, setRemovingMemberId] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const timeoutOptions = [
@@ -306,6 +339,7 @@ export default function SettingsPage() {
     { id: "general" as const, label: "Genel", icon: Settings },
     { id: "security" as const, label: "Güvenlik", icon: Shield },
     { id: "data" as const, label: "Veri Yönetimi", icon: Download },
+    { id: "sharing" as const, label: "Paylaşım", icon: Users },
   ];
 
   useEffect(() => {
@@ -360,6 +394,128 @@ export default function SettingsPage() {
       cancelled = true;
     };
   }, [activeTab, tokens, securityReloadKey, runWithValidAccessToken]);
+
+  useEffect(() => {
+    if (activeTab !== "sharing" || !tokens) {
+      return;
+    }
+
+    setSharingLoading(true);
+    setSharingError(null);
+    loadSharedVaults()
+      .catch((error) => {
+        console.error("Paylaşımlı kasalar yüklenemedi:", error);
+        setSharingError(error instanceof Error ? error.message : "Paylaşımlı kasalar yüklenemedi");
+      })
+      .finally(() => setSharingLoading(false));
+  }, [activeTab, tokens, loadSharedVaults]);
+
+  const selectedSharedVault = sharedVaults.find((vault) => vault.id === selectedSharedVaultId) ?? null;
+  const selectedMembers = selectedSharedVaultId
+    ? sharedVaultMembers[selectedSharedVaultId] ?? []
+    : [];
+
+  const handleCreateSharedVault = async () => {
+    setSharingError(null);
+    setSharingStatus(null);
+    if (
+      !sharedVaultForm.encryptedMetadata.trim() ||
+      !sharedVaultForm.metadataIv.trim() ||
+      !sharedVaultForm.encryptedVaultKey.trim() ||
+      !sharedVaultForm.encryptedVaultKeyIv.trim()
+    ) {
+      setSharingError("Tüm şifreli alanlar gereklidir");
+      return;
+    }
+
+    setSharingLoading(true);
+    try {
+      const created = await createSharedVault({
+        encryptedMetadata: sharedVaultForm.encryptedMetadata.trim(),
+        metadataIv: sharedVaultForm.metadataIv.trim(),
+        encryptedVaultKey: sharedVaultForm.encryptedVaultKey.trim(),
+        encryptedVaultKeyIv: sharedVaultForm.encryptedVaultKeyIv.trim(),
+      });
+      setSelectedSharedVaultId(created.id);
+      setSharedVaultForm({ encryptedMetadata: "", metadataIv: "", encryptedVaultKey: "", encryptedVaultKeyIv: "" });
+      setSharingStatus("Paylaşımlı kasa kaydı oluşturuldu");
+    } catch (error) {
+      console.error("Paylaşımlı kasa oluşturulamadı:", error);
+      setSharingError(error instanceof Error ? error.message : "Paylaşımlı kasa oluşturulamadı");
+    } finally {
+      setSharingLoading(false);
+    }
+  };
+
+  const handleLoadSharedVaultMembers = async (sharedVaultId: string) => {
+    setSelectedSharedVaultId(sharedVaultId);
+    setSharingError(null);
+    try {
+      await loadSharedVaultMembers(sharedVaultId);
+    } catch (error) {
+      console.error("Üyeler yüklenemedi:", error);
+      setSharingError(error instanceof Error ? error.message : "Üyeler yüklenemedi");
+    }
+  };
+
+  const handleInviteSharedVaultMember = async () => {
+    if (!selectedSharedVaultId) {
+      setSharingError("Önce bir paylaşımlı kasa seçin");
+      return;
+    }
+
+    setSharingError(null);
+    setSharingStatus(null);
+    if (
+      !inviteForm.email.trim() ||
+      !inviteForm.encryptedVaultKey.trim() ||
+      !inviteForm.encryptedVaultKeyIv.trim()
+    ) {
+      setSharingError("E-posta ve şifreli anahtar alanları gereklidir");
+      return;
+    }
+
+    setSharingLoading(true);
+    try {
+      await inviteSharedVaultMember(selectedSharedVaultId, {
+        email: inviteForm.email.trim(),
+        role: inviteForm.role,
+        encryptedVaultKey: inviteForm.encryptedVaultKey.trim(),
+        encryptedVaultKeyIv: inviteForm.encryptedVaultKeyIv.trim(),
+      });
+      setInviteForm({ email: "", role: "viewer", encryptedVaultKey: "", encryptedVaultKeyIv: "" });
+      setSharingStatus("Üye şifreli anahtar materyaliyle davet edildi");
+    } catch (error) {
+      console.error("Üye davet edilemedi:", error);
+      setSharingError(error instanceof Error ? error.message : "Üye davet edilemedi");
+    } finally {
+      setSharingLoading(false);
+    }
+  };
+
+  const handleRemoveSharedVaultMember = async (member: SharedVaultMemberResponse) => {
+    if (!selectedSharedVaultId) {
+      return;
+    }
+
+    const confirmed = window.confirm("Bu üyeyi paylaşımlı kasadan kaldırmak istiyor musunuz?");
+    if (!confirmed) {
+      return;
+    }
+
+    setRemovingMemberId(member.id);
+    setSharingError(null);
+    setSharingStatus(null);
+    try {
+      await removeSharedVaultMember(selectedSharedVaultId, member.id);
+      setSharingStatus("Üye kaldırıldı");
+    } catch (error) {
+      console.error("Üye kaldırılamadı:", error);
+      setSharingError(error instanceof Error ? error.message : "Üye kaldırılamadı");
+    } finally {
+      setRemovingMemberId(null);
+    }
+  };
 
   const handleRevokeDevice = async (deviceId: string) => {
     if (!tokens || deviceId === currentDeviceId) {
@@ -1210,6 +1366,113 @@ export default function SettingsPage() {
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {activeTab === "sharing" && (
+        <div className="space-y-4 animate-fade-in">
+          <div className="glass rounded-2xl p-6">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 rounded-xl bg-accent/10 flex items-center justify-center">
+                <Users className="w-5 h-5 text-accent" />
+              </div>
+              <div>
+                <h3 className="font-semibold">Paylaşımlı Kasa Temeli</h3>
+                <p className="text-sm text-text-secondary">
+                  Sunucu yalnızca şifreli metadata ve alıcıya sarılmış kasa anahtarlarını saklar.
+                </p>
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-warning/20 bg-warning/5 p-4 text-sm text-warning/90 mb-5">
+              Bu ilk sürüm anahtar üretmez veya düz metin anahtar kabul etmez. Metadata ve vault key istemcide şifrelenmiş/sarılmış olarak hazırlanıp buraya yapıştırılmalıdır.
+            </div>
+
+            {(sharingError || sharingStatus) && (
+              <div className={`mb-4 flex items-center gap-2 p-3 rounded-xl text-sm ${sharingError ? "bg-danger/5 border border-danger/20 text-danger" : "bg-accent/5 border border-accent/20 text-accent"}`}>
+                {sharingError ? <AlertTriangle className="w-4 h-4" /> : <Check className="w-4 h-4" />}
+                {sharingError ?? sharingStatus}
+              </div>
+            )}
+
+            <div className="grid gap-3 sm:grid-cols-2">
+              <input value={sharedVaultForm.encryptedMetadata} onChange={(event) => setSharedVaultForm((form) => ({ ...form, encryptedMetadata: event.target.value }))} placeholder="encryptedMetadata" className="rounded-xl border border-border bg-surface px-4 py-3 text-sm text-text-primary outline-none focus:border-accent/60" />
+              <input value={sharedVaultForm.metadataIv} onChange={(event) => setSharedVaultForm((form) => ({ ...form, metadataIv: event.target.value }))} placeholder="metadataIv" className="rounded-xl border border-border bg-surface px-4 py-3 text-sm text-text-primary outline-none focus:border-accent/60" />
+              <input value={sharedVaultForm.encryptedVaultKey} onChange={(event) => setSharedVaultForm((form) => ({ ...form, encryptedVaultKey: event.target.value }))} placeholder="owner encryptedVaultKey" className="rounded-xl border border-border bg-surface px-4 py-3 text-sm text-text-primary outline-none focus:border-accent/60" />
+              <input value={sharedVaultForm.encryptedVaultKeyIv} onChange={(event) => setSharedVaultForm((form) => ({ ...form, encryptedVaultKeyIv: event.target.value }))} placeholder="owner encryptedVaultKeyIv" className="rounded-xl border border-border bg-surface px-4 py-3 text-sm text-text-primary outline-none focus:border-accent/60" />
+            </div>
+
+            <button onClick={handleCreateSharedVault} disabled={sharingLoading} className="mt-4 rounded-xl bg-accent/10 px-4 py-2 text-sm font-medium text-accent hover:bg-accent/20 disabled:opacity-50">
+              {sharingLoading ? "Kaydediliyor..." : "Paylaşımlı Kasa Kaydı Oluştur"}
+            </button>
+          </div>
+
+          <div className="glass rounded-2xl p-6">
+            <div className="flex items-center justify-between gap-3 mb-4">
+              <div>
+                <h3 className="font-semibold">Kasalar ve Üyeler</h3>
+                <p className="text-sm text-text-secondary">Davet ve üye yönetimi şifreli key wrapping alanlarıyla yapılır.</p>
+              </div>
+              <button onClick={() => void loadSharedVaults()} className="rounded-xl bg-surface px-3 py-2 text-sm text-text-secondary hover:text-text-primary">Yenile</button>
+            </div>
+
+            {sharingLoading && sharedVaults.length === 0 ? (
+              <div className="py-8 text-center text-sm text-text-secondary bg-surface rounded-xl">Yükleniyor...</div>
+            ) : sharedVaults.length === 0 ? (
+              <div className="py-8 text-center text-sm text-text-secondary bg-surface rounded-xl">Henüz paylaşımlı kasa yok.</div>
+            ) : (
+              <div className="space-y-3">
+                {sharedVaults.map((vault) => (
+                  <button key={vault.id} onClick={() => void handleLoadSharedVaultMembers(vault.id)} className={`w-full rounded-2xl border p-4 text-left transition-all ${selectedSharedVaultId === vault.id ? "border-accent/40 bg-accent/5" : "border-border bg-surface/60 hover:border-accent/20"}`}>
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                      <div className="min-w-0">
+                        <p className="truncate font-[family-name:var(--font-mono)] text-xs text-text-primary">{vault.id}</p>
+                        <p className="mt-1 text-xs text-text-muted">Owner: {vault.ownerId}</p>
+                      </div>
+                      <span className="rounded-lg bg-abyss px-2.5 py-1 text-xs text-accent">{vault.currentUserMembership?.role ?? "owner"}</span>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {selectedSharedVault && (
+            <div className="glass rounded-2xl p-6">
+              <h3 className="font-semibold mb-4">Seçili Kasa Üyeleri</h3>
+              <div className="grid gap-3 sm:grid-cols-2 mb-4">
+                <input value={inviteForm.email} onChange={(event) => setInviteForm((form) => ({ ...form, email: event.target.value }))} placeholder="Üye e-postası" className="rounded-xl border border-border bg-surface px-4 py-3 text-sm text-text-primary outline-none focus:border-accent/60" />
+                <select value={inviteForm.role} onChange={(event) => setInviteForm((form) => ({ ...form, role: event.target.value as "viewer" | "editor" | "admin" }))} className="rounded-xl border border-border bg-surface px-4 py-3 text-sm text-text-primary outline-none focus:border-accent/60">
+                  <option value="viewer">viewer</option>
+                  <option value="editor">editor</option>
+                  <option value="admin">admin</option>
+                </select>
+                <input value={inviteForm.encryptedVaultKey} onChange={(event) => setInviteForm((form) => ({ ...form, encryptedVaultKey: event.target.value }))} placeholder="recipient encryptedVaultKey" className="rounded-xl border border-border bg-surface px-4 py-3 text-sm text-text-primary outline-none focus:border-accent/60" />
+                <input value={inviteForm.encryptedVaultKeyIv} onChange={(event) => setInviteForm((form) => ({ ...form, encryptedVaultKeyIv: event.target.value }))} placeholder="recipient encryptedVaultKeyIv" className="rounded-xl border border-border bg-surface px-4 py-3 text-sm text-text-primary outline-none focus:border-accent/60" />
+              </div>
+              <button onClick={handleInviteSharedVaultMember} disabled={sharingLoading} className="mb-5 rounded-xl bg-accent/10 px-4 py-2 text-sm font-medium text-accent hover:bg-accent/20 disabled:opacity-50">Üye Davet Et</button>
+
+              <div className="space-y-3">
+                {selectedMembers.length === 0 ? (
+                  <div className="py-6 text-center text-sm text-text-secondary bg-surface rounded-xl">Üyeler yüklenmedi veya bulunamadı.</div>
+                ) : selectedMembers.map((member) => (
+                  <div key={member.id} className="rounded-2xl border border-border bg-surface/60 p-4">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium text-text-primary">{member.email ?? member.userId}</p>
+                        <p className="mt-1 truncate font-[family-name:var(--font-mono)] text-xs text-text-muted">{member.encryptedVaultKey}</p>
+                        <div className="mt-2 flex gap-2 text-xs"><span className="rounded-lg bg-abyss px-2.5 py-1 text-accent">{member.role}</span><span className="rounded-lg bg-abyss px-2.5 py-1 text-text-secondary">{member.status}</span></div>
+                      </div>
+                      <button onClick={() => void handleRemoveSharedVaultMember(member)} disabled={removingMemberId === member.id || member.role === "owner"} className="inline-flex items-center gap-2 rounded-xl bg-danger/10 px-4 py-2 text-sm font-medium text-danger hover:bg-danger/20 disabled:opacity-40">
+                        <Trash2 className="h-4 w-4" />
+                        {removingMemberId === member.id ? "Kaldırılıyor..." : "Kaldır"}
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
 
