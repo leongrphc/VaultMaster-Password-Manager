@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  attachmentPayload,
   authHeaders,
   cleanupIntegrationUsers,
   disconnectPrisma,
@@ -93,6 +94,74 @@ test("vault CRUD covers history, trash, restore, and purge", async () => {
 
   const missing = await request(baseUrl, `/api/vault/${itemId}`, { headers });
   assert.equal(missing.status, 404);
+});
+
+test("vault attachments store encrypted payloads and enforce item ownership", async () => {
+  const owner = await registerUser(baseUrl);
+  const other = await registerUser(baseUrl);
+
+  const created = await request(baseUrl, "/api/vault", {
+    method: "POST",
+    headers: authHeaders(owner.accessToken),
+    body: vaultPayload(),
+  });
+  assert.equal(created.status, 201);
+  const itemId = created.body.data.id;
+
+  const ownerHeaders = authHeaders(owner.accessToken);
+  const uploaded = await request(baseUrl, `/api/vault/${itemId}/attachments`, {
+    method: "POST",
+    headers: ownerHeaders,
+    body: attachmentPayload(),
+  });
+  assert.equal(uploaded.status, 201);
+  assert.equal(uploaded.body.data.vaultItemId, itemId);
+  assert.equal(uploaded.body.data.encryptedMetadata, "encrypted-metadata");
+  assert.equal(uploaded.body.data.encryptedBlob, "encrypted-file-blob");
+  assert.equal(uploaded.body.data.userId, owner.data.user.id);
+  const attachmentId = uploaded.body.data.id;
+
+  const listed = await request(baseUrl, `/api/vault/${itemId}/attachments`, {
+    headers: ownerHeaders,
+  });
+  assert.equal(listed.status, 200);
+  assert.equal(listed.body.data.length, 1);
+  assert.equal(listed.body.data[0].id, attachmentId);
+
+  const downloaded = await request(baseUrl, `/api/vault/${itemId}/attachments/${attachmentId}`, {
+    headers: ownerHeaders,
+  });
+  assert.equal(downloaded.status, 200);
+  assert.equal(downloaded.body.data.encryptedBlob, "encrypted-file-blob");
+
+  const otherHeaders = authHeaders(other.accessToken);
+  const crossUserList = await request(baseUrl, `/api/vault/${itemId}/attachments`, {
+    headers: otherHeaders,
+  });
+  assert.equal(crossUserList.status, 404);
+
+  const crossUserDownload = await request(baseUrl, `/api/vault/${itemId}/attachments/${attachmentId}`, {
+    headers: otherHeaders,
+  });
+  assert.equal(crossUserDownload.status, 404);
+
+  const crossUserDelete = await request(baseUrl, `/api/vault/${itemId}/attachments/${attachmentId}`, {
+    method: "DELETE",
+    headers: otherHeaders,
+  });
+  assert.equal(crossUserDelete.status, 404);
+
+  const deleted = await request(baseUrl, `/api/vault/${itemId}/attachments/${attachmentId}`, {
+    method: "DELETE",
+    headers: ownerHeaders,
+  });
+  assert.equal(deleted.status, 200);
+
+  const emptyList = await request(baseUrl, `/api/vault/${itemId}/attachments`, {
+    headers: ownerHeaders,
+  });
+  assert.equal(emptyList.status, 200);
+  assert.deepEqual(emptyList.body.data, []);
 });
 
 test("vault item ids are not accessible across users", async () => {

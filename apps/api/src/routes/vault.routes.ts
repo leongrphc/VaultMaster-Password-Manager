@@ -1,5 +1,6 @@
 import { Router, type Request, type Response } from "express";
 import {
+  attachmentCreateSchema,
   createVaultItemSchema,
   updateVaultItemSchema,
   vaultItemIdSchema,
@@ -29,6 +30,14 @@ async function folderBelongsToUser(folderId: string, userId: string) {
   return Boolean(folder);
 }
 
+function serializeAttachment<T extends { createdAt: Date; updatedAt: Date }>(attachment: T) {
+  return {
+    ...attachment,
+    createdAt: attachment.createdAt.toISOString(),
+    updatedAt: attachment.updatedAt.toISOString(),
+  };
+}
+
 // GET /api/vault
 router.get("/", async (req: Request, res: Response) => {
   const items = await prisma.vaultItem.findMany({
@@ -50,6 +59,116 @@ router.get("/trash", async (req: Request, res: Response) => {
   });
 
   res.json({ success: true, data: items });
+});
+
+// GET /api/vault/:id/attachments
+router.get("/:id/attachments", async (req: Request, res: Response) => {
+  const { id } = vaultItemIdSchema.parse({ id: req.params.id });
+
+  const item = await findOwnedVaultItem(id, req.user!.userId);
+  if (!item) {
+    res.status(404).json({ success: false, error: "Öğe bulunamadı" });
+    return;
+  }
+
+  const attachments = await prisma.attachment.findMany({
+    where: { vaultItemId: item.id, userId: req.user!.userId },
+    orderBy: { createdAt: "desc" },
+  });
+
+  res.json({ success: true, data: attachments.map(serializeAttachment) });
+});
+
+// POST /api/vault/:id/attachments
+router.post("/:id/attachments", async (req: Request, res: Response) => {
+  const { id } = vaultItemIdSchema.parse({ id: req.params.id });
+  const body = attachmentCreateSchema.parse({ ...req.body, vaultItemId: id });
+
+  const item = await findOwnedVaultItem(id, req.user!.userId);
+  if (!item) {
+    res.status(404).json({ success: false, error: "Öğe bulunamadı" });
+    return;
+  }
+
+  const attachment = await prisma.attachment.create({
+    data: {
+      vaultItemId: item.id,
+      userId: req.user!.userId,
+      encryptedMetadata: body.encryptedMetadata,
+      metadataIv: body.metadataIv,
+      encryptedBlob: body.encryptedBlob,
+      blobIv: body.blobIv,
+      size: body.size,
+    },
+  });
+
+  await logAuditEvent({
+    userId: req.user!.userId,
+    action: "vault.attachment.create",
+    status: "success",
+    ipAddress: getRequestIp(req),
+    userAgent: getRequestUserAgent(req),
+    metadata: { itemId: item.id, attachmentId: attachment.id, size: attachment.size },
+  });
+
+  res.status(201).json({ success: true, data: serializeAttachment(attachment) });
+});
+
+// GET /api/vault/:id/attachments/:attachmentId
+router.get("/:id/attachments/:attachmentId", async (req: Request, res: Response) => {
+  const { id } = vaultItemIdSchema.parse({ id: req.params.id });
+  const { id: attachmentId } = vaultItemIdSchema.parse({ id: req.params.attachmentId });
+
+  const item = await findOwnedVaultItem(id, req.user!.userId);
+  if (!item) {
+    res.status(404).json({ success: false, error: "Öğe bulunamadı" });
+    return;
+  }
+
+  const attachment = await prisma.attachment.findFirst({
+    where: { id: attachmentId, vaultItemId: item.id, userId: req.user!.userId },
+  });
+
+  if (!attachment) {
+    res.status(404).json({ success: false, error: "Ek bulunamadı" });
+    return;
+  }
+
+  res.json({ success: true, data: serializeAttachment(attachment) });
+});
+
+// DELETE /api/vault/:id/attachments/:attachmentId
+router.delete("/:id/attachments/:attachmentId", async (req: Request, res: Response) => {
+  const { id } = vaultItemIdSchema.parse({ id: req.params.id });
+  const { id: attachmentId } = vaultItemIdSchema.parse({ id: req.params.attachmentId });
+
+  const item = await findOwnedVaultItem(id, req.user!.userId);
+  if (!item) {
+    res.status(404).json({ success: false, error: "Öğe bulunamadı" });
+    return;
+  }
+
+  const attachment = await prisma.attachment.findFirst({
+    where: { id: attachmentId, vaultItemId: item.id, userId: req.user!.userId },
+  });
+
+  if (!attachment) {
+    res.status(404).json({ success: false, error: "Ek bulunamadı" });
+    return;
+  }
+
+  await prisma.attachment.delete({ where: { id: attachment.id } });
+
+  await logAuditEvent({
+    userId: req.user!.userId,
+    action: "vault.attachment.delete",
+    status: "success",
+    ipAddress: getRequestIp(req),
+    userAgent: getRequestUserAgent(req),
+    metadata: { itemId: item.id, attachmentId: attachment.id },
+  });
+
+  res.json({ success: true, data: { message: "Ek silindi" } });
 });
 
 // GET /api/vault/:id/history

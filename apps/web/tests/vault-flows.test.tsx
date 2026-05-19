@@ -9,6 +9,10 @@ import VaultItemCard from "../src/components/vault/VaultItemCard";
 
 const createVaultItem = vi.fn();
 const updateVaultItemFull = vi.fn();
+const loadAttachments = vi.fn();
+const uploadAttachment = vi.fn();
+const downloadAttachment = vi.fn();
+const deleteAttachment = vi.fn();
 const unlockVault = vi.fn();
 const logout = vi.fn();
 
@@ -18,6 +22,10 @@ const storeState = {
   logout,
   createVaultItem,
   updateVaultItemFull,
+  loadAttachments,
+  uploadAttachment,
+  downloadAttachment,
+  deleteAttachment,
   folders: [],
   items: [],
   selectedFolderId: null,
@@ -29,6 +37,7 @@ vi.mock("../src/lib/store", () => ({
 
 vi.mock("../src/lib/notify", () => ({
   notify: {
+    success: vi.fn(),
     saved: vi.fn(),
     error: vi.fn(),
   },
@@ -46,6 +55,11 @@ vi.mock("@vaultmaster/crypto", () => ({
 beforeEach(() => {
   createVaultItem.mockReset();
   updateVaultItemFull.mockReset();
+  loadAttachments.mockReset();
+  loadAttachments.mockResolvedValue(undefined);
+  uploadAttachment.mockReset();
+  downloadAttachment.mockReset();
+  deleteAttachment.mockReset();
   unlockVault.mockReset();
   logout.mockReset();
   storeState.userEmail = "user@example.com";
@@ -195,6 +209,36 @@ describe("add/edit/delete item flow", () => {
       null
     ));
     expect(onClose).toHaveBeenCalled();
+  });
+
+  test("uploads encrypted attachments from the edit modal", async () => {
+    const onClose = vi.fn();
+    uploadAttachment.mockResolvedValue(undefined);
+    const user = userEvent.setup();
+    render(
+      <EditItemModal
+        onClose={onClose}
+        item={{
+          id: "item-attachment-1",
+          folderId: null,
+          favorite: false,
+          createdAt: "2026-05-17T00:00:00.000Z",
+          updatedAt: "2026-05-17T00:00:00.000Z",
+          attachments: [],
+          data: {
+            type: "secure_note",
+            title: "Private docs",
+            content: "encrypted item",
+          },
+        }}
+      />
+    );
+
+    const file = new File(["secret bytes"], "passport.pdf", { type: "application/pdf" });
+    await user.upload(screen.getByLabelText("Dosya ekle"), file);
+
+    await waitFor(() => expect(uploadAttachment).toHaveBeenCalledWith("item-attachment-1", file));
+    expect(screen.getByText(/sunucu yalnızca ciphertext saklar/i)).toBeInTheDocument();
   });
 
   test("updates an existing passkey item", async () => {

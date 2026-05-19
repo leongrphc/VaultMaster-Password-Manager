@@ -7,11 +7,14 @@ import type {
   FolderResponse,
   VaultItemData,
   AuthTokens,
+  AttachmentResponse,
 } from "@vaultmaster/shared";
 import {
   deriveMasterKey,
   exportMasterKeyBase64,
   importMasterKey,
+  encryptBinary,
+  decryptBinary,
   encryptJSON,
   decryptJSON,
 } from "@vaultmaster/crypto";
@@ -26,11 +29,22 @@ import {
   verifyLockVerifier,
 } from "./offline-cache";
 
+interface DecryptedAttachment {
+  id: string;
+  vaultItemId: string;
+  name: string;
+  type: string;
+  size: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
 interface DecryptedVaultItem {
   id: string;
   folderId: string | null;
   favorite: boolean;
   data: VaultItemData;
+  attachments?: DecryptedAttachment[];
   createdAt: string;
   updatedAt: string;
 }
@@ -126,6 +140,10 @@ interface AppStore extends AuthState, VaultState {
     data: VaultItemData,
     folderId?: string | null
   ) => Promise<void>;
+  loadAttachments: (itemId: string) => Promise<void>;
+  uploadAttachment: (itemId: string, file: File) => Promise<void>;
+  downloadAttachment: (itemId: string, attachmentId: string) => Promise<void>;
+  deleteAttachment: (itemId: string, attachmentId: string) => Promise<void>;
   deleteVaultItem: (id: string) => Promise<void>;
   toggleFavorite: (id: string) => Promise<void>;
 
@@ -142,6 +160,42 @@ function sortFoldersByName(folders: FolderResponse[]): FolderResponse[] {
 const SESSION_MASTER_KEY = "vaultmaster-session-master-key";
 
 let refreshInFlight: Promise<AuthTokens | null> | null = null;
+
+function safeFileName(name: string) {
+  return name.replace(/[\\/:*?"<>|]/g, "_") || "attachment";
+}
+
+async function decryptAttachmentMetadata(
+  attachment: AttachmentResponse,
+  masterKey: CryptoKey
+): Promise<DecryptedAttachment> {
+  const metadata = await decryptJSON<{ name?: string; type?: string }>(
+    attachment.encryptedMetadata,
+    attachment.metadataIv,
+    masterKey
+  );
+
+  return {
+    id: attachment.id,
+    vaultItemId: attachment.vaultItemId,
+    name: typeof metadata.name === "string" && metadata.name ? metadata.name : "attachment",
+    type: typeof metadata.type === "string" ? metadata.type : "application/octet-stream",
+    size: attachment.size,
+    createdAt: attachment.createdAt,
+    updatedAt: attachment.updatedAt,
+  };
+}
+
+function downloadBlob(data: Blob, fileName: string) {
+  const url = URL.createObjectURL(data);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = safeFileName(fileName);
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
 
 function readSessionMasterKey(): string | null {
   if (typeof window === "undefined") {
@@ -549,6 +603,95 @@ export const useStore = create<AppStore>()(
           data,
           folderId: response.data.folderId,
           updatedAt: response.data.updatedAt,
+        });
+      },
+
+      loadAttachments: async (itemId) => {
+        const { masterKeyBase64 } = get();
+        if (!masterKeyBase64) {
+          return;
+        }
+
+        const masterKey = await importMasterKey(masterKeyBase64);
+        const response = (await get().runWithValidAccessToken((accessToken) =>
+          api.vault.getAttachments(itemId, accessToken) as Promise<{ data: AttachmentResponse[] }>
+        )) as { data: AttachmentResponse[] };
+
+        const attachments: DecryptedAttachment[] = [];
+        for (const attachment of response.data) {
+          try {
+            attachments.push(await decryptAttachmentMetadata(attachment, masterKey));
+          } catch (error) {
+            console.error("Ek metadata çözme hatası:", attachment.id, error);
+          }
+        }
+
+        get().updateItem(itemId, { attachments });
+      },
+
+      uploadAttachment: async (itemId, file) => {
+        const { masterKeyBase64 } = get();
+        if (!masterKeyBase64) {
+          return;
+        }
+
+        const masterKey = await importMasterKey(masterKeyBase64);
+        const [metadata, encryptedFile] = await Promise.all([
+          encryptJSON({ name: file.name, type: file.type || "application/octet-stream" }, masterKey),
+          encryptBinary(await file.arrayBuffer(), masterKey),
+        ]);
+
+        const response = (await get().runWithValidAccessToken((accessToken) =>
+          api.vault.createAttachment(
+            itemId,
+            {
+              encryptedMetadata: metadata.ciphertext,
+              metadataIv: metadata.iv,
+              encryptedBlob: encryptedFile.ciphertext,
+              blobIv: encryptedFile.iv,
+              size: file.size,
+            },
+            accessToken
+          ) as Promise<{ data: AttachmentResponse }>
+        )) as { data: AttachmentResponse };
+
+        const attachment = await decryptAttachmentMetadata(response.data, masterKey);
+        get().updateItem(itemId, {
+          attachments: [
+            attachment,
+            ...(get().items.find((item) => item.id === itemId)?.attachments ?? []),
+          ],
+        });
+      },
+
+      downloadAttachment: async (itemId, attachmentId) => {
+        const { masterKeyBase64 } = get();
+        if (!masterKeyBase64) {
+          return;
+        }
+
+        const masterKey = await importMasterKey(masterKeyBase64);
+        const response = (await get().runWithValidAccessToken((accessToken) =>
+          api.vault.getAttachment(itemId, attachmentId, accessToken) as Promise<{ data: AttachmentResponse }>
+        )) as { data: AttachmentResponse };
+
+        const [metadata, data] = await Promise.all([
+          decryptAttachmentMetadata(response.data, masterKey),
+          decryptBinary(response.data.encryptedBlob, response.data.blobIv, masterKey),
+        ]);
+
+        downloadBlob(new Blob([data], { type: metadata.type }), metadata.name);
+      },
+
+      deleteAttachment: async (itemId, attachmentId) => {
+        await get().runWithValidAccessToken((accessToken) =>
+          api.vault.deleteAttachment(itemId, attachmentId, accessToken)
+        );
+
+        get().updateItem(itemId, {
+          attachments: (get().items.find((item) => item.id === itemId)?.attachments ?? []).filter(
+            (attachment) => attachment.id !== attachmentId
+          ),
         });
       },
 

@@ -10,6 +10,7 @@ import {
   Globe,
   History,
   KeyRound,
+  Paperclip,
   Pencil,
   Star,
   Trash2,
@@ -124,6 +125,12 @@ export default function VaultItemCard({
                   </span>
                 )}
               </div>
+            )}
+            {item.attachments && item.attachments.length > 0 && !isCompact && (
+              <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded bg-surface text-text-muted border border-border">
+                <Paperclip className="w-3 h-3" />
+                {item.attachments.length}
+              </span>
             )}
           </div>
         </div>
@@ -266,6 +273,7 @@ function renderItemDetails(
         )}
         {item.data.notes && <NotesBlock label="Notlar" value={item.data.notes} />}
         {renderCustomFields(item, onCopy)}
+        {renderAttachments(item)}
       </div>
     );
   }
@@ -275,6 +283,7 @@ function renderItemDetails(
       <div className="space-y-3">
         <NotesBlock value={item.data.content} />
         {renderCustomFields(item, onCopy)}
+        {renderAttachments(item)}
       </div>
     );
   }
@@ -291,6 +300,7 @@ function renderItemDetails(
         <DetailRow label="Son Kullanma" value={`${item.data.expMonth}/${item.data.expYear}`} />
         {item.data.notes && <NotesBlock label="Notlar" value={item.data.notes} />}
         {renderCustomFields(item, onCopy)}
+        {renderAttachments(item)}
       </div>
     );
   }
@@ -310,6 +320,7 @@ function renderItemDetails(
         )}
         {item.data.notes && <NotesBlock label="Notlar" value={item.data.notes} />}
         {renderCustomFields(item, onCopy)}
+        {renderAttachments(item)}
       </div>
     );
   }
@@ -381,6 +392,20 @@ function TotpBlock({
           </>
         )}
       </div>
+    </div>
+  );
+}
+
+function renderAttachments(item: DecryptedVaultItem) {
+  const attachments = item.attachments || [];
+  if (attachments.length === 0) {
+    return null;
+  }
+
+  return (
+    <div className="flex items-center gap-2 rounded-lg bg-abyss px-3 py-2 text-xs text-text-muted">
+      <Paperclip className="h-3.5 w-3.5 text-accent" />
+      <span>{attachments.length} şifreli ek</span>
     </div>
   );
 }

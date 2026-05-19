@@ -146,6 +146,27 @@ export const api = {
 
     getHistory: (id: string, token: string) => request(`/vault/${id}/history`, { token }),
 
+    getAttachments: (id: string, token: string) =>
+      request(`/vault/${id}/attachments`, { token }),
+
+    createAttachment: (
+      id: string,
+      body: {
+        encryptedMetadata: string;
+        metadataIv: string;
+        encryptedBlob: string;
+        blobIv: string;
+        size: number;
+      },
+      token: string
+    ) => request(`/vault/${id}/attachments`, { method: "POST", body, token }),
+
+    getAttachment: (id: string, attachmentId: string, token: string) =>
+      request(`/vault/${id}/attachments/${attachmentId}`, { token }),
+
+    deleteAttachment: (id: string, attachmentId: string, token: string) =>
+      request(`/vault/${id}/attachments/${attachmentId}`, { method: "DELETE", token }),
+
     create: (
       body: { encryptedData: string; iv: string; folderId?: string | null; favorite?: boolean },
       token: string

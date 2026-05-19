@@ -164,3 +164,14 @@ export function vaultPayload(overrides = {}) {
     ...overrides,
   };
 }
+
+export function attachmentPayload(overrides = {}) {
+  return {
+    encryptedMetadata: "encrypted-metadata",
+    metadataIv: "metadata-iv",
+    encryptedBlob: "encrypted-file-blob",
+    blobIv: "blob-iv",
+    size: 512,
+    ...overrides,
+  };
+}

@@ -14,6 +14,11 @@ export interface EncryptedPayload {
   iv: string; // base64
 }
 
+export interface EncryptedBinaryPayload {
+  ciphertext: string; // base64
+  iv: string; // base64
+}
+
 /**
  * AES-256-GCM ile plaintext'i şifreler.
  * IV her şifreleme için benzersiz üretilir.
@@ -23,10 +28,16 @@ export async function encrypt(
   plaintext: string,
   key: CryptoKey
 ): Promise<EncryptedPayload> {
+  return encryptBinary(stringToArrayBuffer(plaintext), key);
+}
+
+export async function encryptBinary(
+  data: ArrayBuffer,
+  key: CryptoKey
+): Promise<EncryptedBinaryPayload> {
   const ivBytes = generateRandomBytes(IV_LENGTH);
   const ivArray = new Uint8Array(IV_LENGTH);
   ivArray.set(ivBytes);
-  const data = stringToArrayBuffer(plaintext);
 
   const encrypted = await crypto.subtle.encrypt(
     { name: "AES-GCM", iv: ivArray as Uint8Array<ArrayBuffer>, tagLength: TAG_LENGTH },
@@ -49,17 +60,24 @@ export async function decrypt(
   iv: string,
   key: CryptoKey
 ): Promise<string> {
+  const decrypted = await decryptBinary(ciphertext, iv, key);
+  return arrayBufferToString(decrypted);
+}
+
+export async function decryptBinary(
+  ciphertext: string,
+  iv: string,
+  key: CryptoKey
+): Promise<ArrayBuffer> {
   const encryptedData = base64ToArrayBuffer(ciphertext);
   const rawIv = base64ToArrayBuffer(iv);
   const ivBuffer = new Uint8Array(rawIv);
 
-  const decrypted = await crypto.subtle.decrypt(
+  return crypto.subtle.decrypt(
     { name: "AES-GCM", iv: ivBuffer as Uint8Array<ArrayBuffer>, tagLength: TAG_LENGTH },
     key,
     encryptedData
   );
-
-  return arrayBufferToString(decrypted);
 }
 
 /**

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { X, Globe, FileText, CreditCard, User, Eye, EyeOff, Wand2, KeyRound } from "lucide-react";
+import { X, Globe, FileText, CreditCard, User, Eye, EyeOff, Wand2, KeyRound, Paperclip, Download, Trash2 } from "lucide-react";
 import { useStore, type DecryptedVaultItem } from "@/lib/store";
 import { generatePassword } from "@vaultmaster/crypto";
 import type { VaultItemCustomField, VaultItemData } from "@vaultmaster/shared";
@@ -16,16 +16,31 @@ interface EditItemModalProps {
   onClose: () => void;
 }
 
+function formatBytes(size: number) {
+  if (size < 1024) {
+    return `${size} B`;
+  }
+  if (size < 1024 * 1024) {
+    return `${(size / 1024).toFixed(1)} KB`;
+  }
+  return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+}
+
 export default function EditItemModal({ item, onClose }: EditItemModalProps) {
-  const { updateVaultItemFull, folders, items } = useStore(
+  const { updateVaultItemFull, loadAttachments, uploadAttachment, downloadAttachment, deleteAttachment, folders, items } = useStore(
     useShallow((state) => ({
       updateVaultItemFull: state.updateVaultItemFull,
+      loadAttachments: state.loadAttachments,
+      uploadAttachment: state.uploadAttachment,
+      downloadAttachment: state.downloadAttachment,
+      deleteAttachment: state.deleteAttachment,
       folders: state.folders,
       items: state.items,
     }))
   );
 
   const [saving, setSaving] = useState(false);
+  const [uploading, setUploading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
 
   const [title, setTitle] = useState("");
@@ -62,6 +77,12 @@ export default function EditItemModal({ item, onClose }: EditItemModalProps) {
   const allTags = Array.from(
     new Set(items.flatMap((i) => i.data.tags || []))
   ).sort();
+
+  useEffect(() => {
+    void loadAttachments(item.id).catch((error) => {
+      console.error("Ekler yüklenemedi:", error);
+    });
+  }, [item.id, loadAttachments]);
 
   useEffect(() => {
     const d = item.data;
@@ -105,6 +126,41 @@ export default function EditItemModal({ item, onClose }: EditItemModalProps) {
     setTags(d.tags || []);
     setCustomFields(d.customFields || []);
   }, [item]);
+
+  const handleAttachmentUpload = async (file: File | undefined) => {
+    if (!file) {
+      return;
+    }
+
+    setUploading(true);
+    try {
+      await uploadAttachment(item.id, file);
+      notify.success("Ek şifrelendi ve yüklendi");
+    } catch (err) {
+      console.error("Ek yükleme hatası:", err);
+      notify.error(getErrorMessage(err, "Ek yüklenemedi"));
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleAttachmentDelete = async (attachmentId: string) => {
+    try {
+      await deleteAttachment(item.id, attachmentId);
+    } catch (err) {
+      console.error("Ek silme hatası:", err);
+      notify.error(getErrorMessage(err, "Ek silinemedi"));
+    }
+  };
+
+  const handleAttachmentDownload = async (attachmentId: string) => {
+    try {
+      await downloadAttachment(item.id, attachmentId);
+    } catch (err) {
+      console.error("Ek indirme hatası:", err);
+      notify.error(getErrorMessage(err, "Ek indirilemedi"));
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -517,6 +573,68 @@ export default function EditItemModal({ item, onClose }: EditItemModalProps) {
           )}
 
           <CustomFieldsEditor fields={customFields} onChange={setCustomFields} idPrefix="edit-item-custom-field" />
+
+          <section className="rounded-xl border border-border bg-abyss/60 p-4 space-y-3">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <div className="flex items-center gap-2 text-sm font-medium text-text-primary">
+                  <Paperclip className="h-4 w-4 text-accent" />
+                  Şifreli Ekler
+                </div>
+                <p className="mt-1 text-xs text-text-muted">
+                  Dosya adı, türü ve içerik tarayıcıda şifrelenir; sunucu yalnızca ciphertext saklar.
+                </p>
+              </div>
+              <label className="shrink-0 cursor-pointer rounded-lg border border-accent/30 bg-accent/10 px-3 py-2 text-xs font-medium text-accent hover:bg-accent/20 transition-colors">
+                {uploading ? "Şifreleniyor..." : "Dosya ekle"}
+                <input
+                  type="file"
+                  className="sr-only"
+                  disabled={uploading}
+                  onChange={(event) => {
+                    const file = event.target.files?.[0];
+                    event.target.value = "";
+                    void handleAttachmentUpload(file);
+                  }}
+                />
+              </label>
+            </div>
+
+            {(item.attachments ?? []).length > 0 ? (
+              <div className="space-y-2">
+                {(item.attachments ?? []).map((attachment) => (
+                  <div key={attachment.id} className="flex items-center justify-between gap-3 rounded-lg bg-surface/60 px-3 py-2">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm text-text-primary">{attachment.name}</p>
+                      <p className="text-xs text-text-muted">{formatBytes(attachment.size)}</p>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={() => void handleAttachmentDownload(attachment.id)}
+                        className="rounded-lg p-2 text-text-muted hover:bg-surface hover:text-text-primary transition-colors"
+                        aria-label={`${attachment.name} ekini indir`}
+                      >
+                        <Download className="h-4 w-4" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void handleAttachmentDelete(attachment.id)}
+                        className="rounded-lg p-2 text-text-muted hover:bg-danger/10 hover:text-danger transition-colors"
+                        aria-label={`${attachment.name} ekini sil`}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="rounded-lg border border-dashed border-border px-3 py-4 text-center text-xs text-text-muted">
+                Bu öğeye henüz şifreli ek eklenmedi.
+              </p>
+            )}
+          </section>
 
           <div className="flex gap-3 pt-2">
             <button type="button" onClick={onClose} className="flex-1 py-2.5 rounded-xl border border-border text-text-secondary hover:text-text-primary hover:bg-surface transition-all text-sm">

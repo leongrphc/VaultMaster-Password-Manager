@@ -165,7 +165,7 @@ Kalan büyük özellikler güvenlik-kritik olduğu için bağımlılık sırası
 *   Bu dalga feature davranışı eklemez; sonraki ajanların aynı veri modeli üzerinden paralel çalışmasını sağlar.
 
 ### Dalga 1 — Paralel Başlatılabilir
-*   **Encrypted Attachments:** Vault item'a bağlı, istemci tarafında şifrelenen dosya ekleri.
+*   **Encrypted Attachments:** ✅ Vault item'a bağlı dosyalar tarayıcıda AES-GCM ile şifrelenip API'de yalnızca encrypted metadata/blob olarak saklanıyor; web edit akışında yükleme, listeleme, indirme ve silme desteği eklendi.
 *   **Passkey Vault Item Type:** ✅ Web uygulamasında gerçek browser interception olmadan passkey kimlik bilgilerinin encrypted vault item olarak eklenmesi, düzenlenmesi, görüntülenmesi ve JSON yedek uyumluluğu tamamlandı. Extension interception kapsam dışı bırakıldı.
 
 ### Dalga 2 — Sıradaki Güvenlik Özelliği
