@@ -9,6 +9,21 @@
 
 	window.__vaultmasterPasskeyInjected = true;
 
+	function getCredentialIdList(publicKey) {
+		if (!Array.isArray(publicKey?.allowCredentials)) {
+			return [];
+		}
+
+		return publicKey.allowCredentials
+			.map((credential) => credential?.id)
+			.filter((id) => id instanceof ArrayBuffer || ArrayBuffer.isView(id))
+			.map((id) => {
+				const bytes = id instanceof ArrayBuffer ? new Uint8Array(id) : new Uint8Array(id.buffer, id.byteOffset, id.byteLength);
+				return btoa(String.fromCharCode(...bytes));
+			})
+			.slice(0, 16);
+	}
+
 	function postPasskeyNotice(operation, options) {
 		const publicKey = options?.publicKey;
 		const rpId = operation === "create" ? publicKey?.rp?.id : publicKey?.rpId;
@@ -22,6 +37,10 @@
 				payload: {
 					rpId: typeof rpId === "string" ? rpId : "",
 					origin: window.location.origin,
+					rpName: operation === "create" && typeof publicKey?.rp?.name === "string" ? publicKey.rp.name : "",
+					userName: operation === "create" && typeof publicKey?.user?.name === "string" ? publicKey.user.name : "",
+					userDisplayName: operation === "create" && typeof publicKey?.user?.displayName === "string" ? publicKey.user.displayName : "",
+					allowCredentialIds: operation === "get" ? getCredentialIdList(publicKey) : [],
 				},
 			},
 			window.location.origin

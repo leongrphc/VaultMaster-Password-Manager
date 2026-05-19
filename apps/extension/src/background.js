@@ -59,13 +59,21 @@ function isRpIdAllowedForOrigin(rpId, origin) {
 	}
 }
 
+function isStringArray(value) {
+	return Array.isArray(value) && value.every((entry) => typeof entry === "string");
+}
+
 function isPasskeyInterceptPayload(message) {
 	return (
 		isValidPasskeyOperation(message?.operation) &&
 		isString(message.requestId) &&
 		isHttpUrlString(message.pageUrl) &&
 		isHttpUrlString(message.origin) &&
-		isOptionalString(message.rpId)
+		isOptionalString(message.rpId) &&
+		isOptionalString(message.rpName) &&
+		isOptionalString(message.userName) &&
+		isOptionalString(message.userDisplayName) &&
+		(message.allowCredentialIds === undefined || isStringArray(message.allowCredentialIds))
 	);
 }
 
@@ -316,16 +324,29 @@ async function handlePasskeyIntercept(message, sender, sendResponse) {
 		return;
 	}
 
+	const vaultResponse = await requestVaultTab("VM_PASSKEY_BRIDGE_REQUEST", {
+		operation: message.operation,
+		rpId: effectiveRpId,
+		rpName: message.rpName || "",
+		userName: message.userName || "",
+		userDisplayName: message.userDisplayName || "",
+		allowCredentialIds: message.allowCredentialIds || [],
+		origin: message.origin,
+		pageUrl: message.pageUrl,
+		sourceTabId: sender.tab?.id ?? null,
+	});
+
 	sendResponse({
 		ok: true,
 		payload: {
-			status: "consent_required",
+			status: vaultResponse?.payload?.status || "consent_required",
 			operation: message.operation,
 			rpId: effectiveRpId,
 			origin: message.origin,
 			pageUrl: message.pageUrl,
 			sourceTabId: sender.tab?.id ?? null,
-			message: "VaultMaster detected a passkey request. Credential creation/signing is not automatic and requires an explicit user action in VaultMaster.",
+			candidates: vaultResponse?.payload?.candidates || [],
+			message: vaultResponse?.payload?.message || "VaultMaster detected a passkey request. Credential creation/signing is not automatic and requires an explicit user action in VaultMaster.",
 		},
 	});
 }

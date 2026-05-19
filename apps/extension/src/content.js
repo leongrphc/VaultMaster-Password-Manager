@@ -17,6 +17,7 @@ const BRIDGE_REQUEST_TYPES = new Set([
 	BRIDGE_VAULT_STATUS_REQUEST,
 	"VM_VALIDATE_CREDENTIAL_DOMAIN_REQUEST",
 	"VM_GET_TOTP_CODE_REQUEST",
+	"VM_PASSKEY_BRIDGE_REQUEST",
 	"VM_LIST_CREDIT_CARDS_REQUEST",
 	"VM_GET_CREDIT_CARD_REQUEST",
 	"VM_LIST_IDENTITIES_REQUEST",
@@ -232,6 +233,10 @@ async function handlePasskeyIntercept(data) {
 		pageUrl: window.location.href,
 		origin: window.location.origin,
 		rpId: payload.rpId || "",
+		rpName: payload.rpName || "",
+		userName: payload.userName || "",
+		userDisplayName: payload.userDisplayName || "",
+		allowCredentialIds: Array.isArray(payload.allowCredentialIds) ? payload.allowCredentialIds : [],
 	}).catch(() => null);
 
 	showPasskeyConsentNotice(operation, response?.payload);
@@ -270,7 +275,16 @@ function showPasskeyConsentNotice(operation, payload) {
 	const status = payload?.status || "notice_only";
 	const message = status === "rp_mismatch"
 		? "RP ID bu sayfanın domainiyle eşleşmedi; VaultMaster işlem yapmadı."
-		: "VaultMaster isteği kaydetti ve kullanıcı onayı gerektirdi. İmzalama veya credential oluşturma bu aşamada uygulanmadı; tarayıcının yerel WebAuthn akışı devam eder.";
+		: payload?.message || "VaultMaster isteği kaydetti ve kullanıcı onayı gerektirdi. İmzalama veya credential oluşturma bu aşamada uygulanmadı; tarayıcının yerel WebAuthn akışı devam eder.";
+	const candidates = Array.isArray(payload?.candidates) ? payload.candidates : [];
+	const candidateHtml = candidates.length
+		? `<div style="display:grid;gap:8px;">${candidates.map((candidate) => `
+			<button data-action="select-passkey" data-item-id="${escapeHtml(candidate.itemId)}" style="border:1px solid rgba(0,255,178,0.20);background:rgba(18,26,49,0.9);border-radius:12px;padding:10px;text-align:left;color:#eef2ff;cursor:pointer;">
+				<div style="font-weight:700;">${escapeHtml(candidate.title || "Stored passkey")}</div>
+				<div style="color:#90a0c3;font-size:12px;">${escapeHtml(candidate.username || candidate.rpId || "Passkey candidate")}</div>
+			</button>
+		`).join("")}</div>`
+		: "";
 
 	panel.innerHTML = `
 		<div style="padding:14px;border-bottom:1px solid rgba(144,160,195,0.12);">
@@ -279,12 +293,35 @@ function showPasskeyConsentNotice(operation, payload) {
 		</div>
 		<div style="padding:12px;display:grid;gap:10px;">
 			<div style="color:#dbe7ff;font-size:12px;line-height:1.5;">${escapeHtml(message)}</div>
+			${candidateHtml}
 			<button data-action="dismiss" style="border:0;border-radius:12px;background:#00ffb2;color:#04111d;padding:10px;font-weight:700;cursor:pointer;">Tamam</button>
 		</div>
 	`;
 	panel.querySelector("[data-action='dismiss']")?.addEventListener("click", () => panel.remove());
+	panel.querySelectorAll("[data-action='select-passkey']").forEach((node) => {
+		node.addEventListener("click", () => {
+			const itemId = node.getAttribute("data-item-id");
+			showPasskeySelectionNotice(panel, itemId);
+		});
+	});
 	document.body.appendChild(panel);
-	window.setTimeout(() => panel.remove(), 7000);
+	window.setTimeout(() => panel.remove(), candidates.length ? 15000 : 7000);
+}
+
+function showPasskeySelectionNotice(panel, itemId) {
+	const body = panel.querySelector("div:nth-of-type(2)");
+	if (!(body instanceof HTMLElement)) {
+		return;
+	}
+
+	body.innerHTML = `
+		<div style="padding:12px;border-radius:14px;background:rgba(0,255,178,0.10);border:1px solid rgba(0,255,178,0.20);color:#b7ffe8;line-height:1.5;">
+			<div style="font-weight:700;margin-bottom:6px;">Passkey seçimi kaydedildi</div>
+			<div style="font-size:12px;">VaultMaster bu aşamada ${escapeHtml(itemId || "seçili")} kaydını sayfaya imzalı assertion olarak döndürmez. Yerel WebAuthn penceresini kullanın veya imzalama desteği eklendiğinde tekrar deneyin.</div>
+		</div>
+		<button data-action="dismiss" style="border:0;border-radius:12px;background:#00ffb2;color:#04111d;padding:10px;font-weight:700;cursor:pointer;">Tamam</button>
+	`;
+	body.querySelector("[data-action='dismiss']")?.addEventListener("click", () => panel.remove());
 }
 
 function initializeAutofillAssistant() {

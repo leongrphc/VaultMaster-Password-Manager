@@ -29,6 +29,8 @@ const GET_IDENTITY_REQUEST = "VM_GET_IDENTITY_REQUEST";
 const GET_IDENTITY_RESPONSE = "VM_GET_IDENTITY_RESPONSE";
 const SAVE_LOGIN_REQUEST = "VM_SAVE_LOGIN_REQUEST";
 const SAVE_LOGIN_RESPONSE = "VM_SAVE_LOGIN_RESPONSE";
+const PASSKEY_BRIDGE_REQUEST = "VM_PASSKEY_BRIDGE_REQUEST";
+const PASSKEY_BRIDGE_RESPONSE = "VM_PASSKEY_BRIDGE_REQUEST_RESPONSE";
 const VAULTMASTER_ORIGINS = new Set(["http://localhost:3000", "http://127.0.0.1:3000"]);
 
 function isAllowedExtensionBridgeOrigin(origin: string) {
@@ -53,6 +55,60 @@ function normalizeUrl(value?: string) {
 
 function normalizeIdentifier(value?: string) {
 	return value?.trim().toLowerCase() || "";
+}
+
+function isRpIdAllowedForOrigin(rpId: string | undefined, origin: string | undefined) {
+	if (!rpId || !origin) {
+		return false;
+	}
+
+	try {
+		const hostname = new URL(origin).hostname.toLowerCase();
+		const normalizedRpId = rpId.toLowerCase();
+		return hostname === normalizedRpId || hostname.endsWith(`.${normalizedRpId}`);
+	} catch {
+		return false;
+	}
+}
+
+function normalizeBase64Url(value: string | undefined) {
+	return value?.trim().replaceAll("-", "+").replaceAll("_", "/").replace(/=+$/g, "") || "";
+}
+
+function buildPasskeyCandidates(
+	items: ReturnType<typeof useStore.getState>["items"],
+	rpId: string | undefined,
+	origin: string | undefined,
+	allowCredentialIds: string[] = []
+) {
+	if (!isRpIdAllowedForOrigin(rpId, origin)) {
+		return [];
+	}
+
+	const allowedIds = new Set(allowCredentialIds.map(normalizeBase64Url).filter(Boolean));
+	return items
+		.filter((item) => item.data.type === "passkey")
+		.map((item) => {
+			if (item.data.type !== "passkey" || item.data.rpId.toLowerCase() !== rpId?.toLowerCase()) {
+				return null;
+			}
+
+			if (allowedIds.size > 0 && !allowedIds.has(normalizeBase64Url(item.data.credentialId))) {
+				return null;
+			}
+
+			return {
+				itemId: item.id,
+				title: item.data.title,
+				rpId: item.data.rpId,
+				username: item.data.username || "",
+				credentialId: item.data.credentialId,
+				signCount: item.data.signCount || 0,
+				transports: item.data.transports || [],
+			};
+		})
+		.filter((item): item is NonNullable<typeof item> => item !== null)
+		.slice(0, 6);
 }
 
 function scoreHostMatch(activePage: ReturnType<typeof normalizeUrl>, loginUrl: string | undefined) {
@@ -166,6 +222,13 @@ export default function BrowserExtensionBridge() {
 							username?: string;
 							password?: string;
 						};
+						operation?: "create" | "get";
+						rpId?: string;
+						rpName?: string;
+						userName?: string;
+						userDisplayName?: string;
+						origin?: string;
+						allowCredentialIds?: string[];
 					}
 				| undefined;
 
@@ -258,7 +321,27 @@ export default function BrowserExtensionBridge() {
 				return;
 			}
 
-			if (data.type === SAVE_LOGIN_REQUEST) {
+			if (data.type === PASSKEY_BRIDGE_REQUEST) {
+					if (!isRpIdAllowedForOrigin(data.rpId, data.origin)) {
+						respond(PASSKEY_BRIDGE_RESPONSE, { status: "rp_mismatch", candidates: [] });
+						return;
+					}
+
+					const candidates = buildPasskeyCandidates(items, data.rpId, data.origin, data.allowCredentialIds);
+					respond(PASSKEY_BRIDGE_RESPONSE, {
+						status: candidates.length ? "candidates_available" : "consent_required",
+						operation: data.operation,
+						rpId: data.rpId,
+						origin: data.origin,
+						candidates,
+						message: candidates.length
+							? "VaultMaster found matching stored passkey metadata. Select one only after confirming this site; cryptographic signing is not implemented in this bridge yet."
+							: "VaultMaster validated this passkey request, but no matching stored passkey item is available. Credential creation/signing is not automatic.",
+					});
+					return;
+				}
+
+				if (data.type === SAVE_LOGIN_REQUEST) {
 				const credential = data.credential;
 				if (!credential?.username || !credential.password || !credential.url) {
 					respond(SAVE_LOGIN_RESPONSE, { status: "invalid" });
@@ -542,6 +625,10 @@ function resolveResponseType(type: string): string | null {
 
 	if (type === SAVE_LOGIN_REQUEST) {
 		return SAVE_LOGIN_RESPONSE;
+	}
+
+	if (type === PASSKEY_BRIDGE_REQUEST) {
+		return PASSKEY_BRIDGE_RESPONSE;
 	}
 
 	if (type === LIST_CARDS_REQUEST) {

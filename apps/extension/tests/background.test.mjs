@@ -140,7 +140,15 @@ test("forwards valid domain validation requests to the vault tab", async () => {
 });
 
 test("accepts passkey intercepts only when page origin and rpId match", async () => {
-  const background = await loadBackground();
+  const background = await loadBackground({
+    tabResponse: {
+      ok: true,
+      payload: {
+        status: "candidates_available",
+        candidates: [{ itemId: "passkey-1", title: "Example", rpId: "example.com" }],
+      },
+    },
+  });
 
   const response = await background.send(
     {
@@ -150,15 +158,28 @@ test("accepts passkey intercepts only when page origin and rpId match", async ()
       pageUrl: "https://login.example.com/account",
       origin: "https://login.example.com",
       rpId: "example.com",
+      allowCredentialIds: ["Y3JlZC0xMjM"],
     },
     { tab: { id: 99, url: "https://login.example.com/account" } }
   );
 
   assert.equal(response.ok, true);
-  assert.equal(response.payload.status, "consent_required");
+  assert.equal(response.payload.status, "candidates_available");
   assert.equal(response.payload.rpId, "example.com");
   assert.equal(response.payload.sourceTabId, 99);
-  assert.equal(background.tabMessages.length, 0);
+  assert.deepEqual(response.payload.candidates, [{ itemId: "passkey-1", title: "Example", rpId: "example.com" }]);
+  assert.deepEqual(background.tabMessages[0], {
+    type: "VM_PASSKEY_BRIDGE_REQUEST",
+    operation: "get",
+    rpId: "example.com",
+    rpName: "",
+    userName: "",
+    userDisplayName: "",
+    allowCredentialIds: ["Y3JlZC0xMjM"],
+    origin: "https://login.example.com",
+    pageUrl: "https://login.example.com/account",
+    sourceTabId: 99,
+  });
 });
 
 test("rejects passkey intercepts with mismatched sender tab URL", async () => {

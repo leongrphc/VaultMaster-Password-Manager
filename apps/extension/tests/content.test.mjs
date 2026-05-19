@@ -100,7 +100,12 @@ function resolveRuntimeResponse(payload, { credential, domainValid }) {
   if (payload.type === "PASSKEY_INTERCEPTED") {
     return {
       ok: true,
-      payload: { status: "consent_required", rpId: payload.rpId || "example.com" },
+      payload: {
+        status: "candidates_available",
+        rpId: payload.rpId || "example.com",
+        candidates: [{ itemId: "passkey-1", title: "Example Passkey", username: "octo", rpId: "example.com" }],
+        message: "VaultMaster found matching stored passkey metadata. Select one only after confirming this site; cryptographic signing is not implemented in this bridge yet.",
+      },
     };
   }
 
@@ -176,5 +181,9 @@ test("relays page-world passkey requests with consent-only messaging", async () 
   assert.equal(passkeyMessage.operation, "get");
   assert.equal(passkeyMessage.rpId, "example.com");
   assert.equal(passkeyMessage.origin, "https://example.com");
-  assert.match(content.window.document.querySelector("#vaultmaster-passkey-notice").textContent, /requires explicit user action|kullanıcı onayı/i);
+  const notice = content.window.document.querySelector("#vaultmaster-passkey-notice");
+  assert.match(notice.textContent, /cryptographic signing is not implemented|imzalama/i);
+  assert.match(notice.textContent, /Example Passkey/);
+  notice.querySelector("[data-action='select-passkey']").click();
+  assert.match(notice.textContent, /imzalı assertion olarak döndürmez/i);
 });
