@@ -147,8 +147,9 @@ Aşağıdaki tablo, VaultMaster'ın sektördeki köklü rakipleri karşısındak
     *   ✅ Kullanıcıya kelime sayısı, ayırıcı karakter (tire, nokta vb.), büyük harf ve sayı ekleme seçenekleri sunuldu.
     *   ✅ Crypto testleri passphrase kelime sayısı, ayırıcı, büyük harf ve sayı seçeneklerini kapsayacak şekilde güncellendi.
 
-#### 8. Gelişmiş CSV İçe Aktarma Şablonları
+#### 8. Gelişmiş CSV İçe Aktarma Şablonları — ✅ Tamamlandı
 *   **Amaç:** Diğer şifre yöneticilerinden VaultMaster'a göçü saniyeler içine indirmek.
 *   **Teknik Uygulama:**
-    *   `apps/web/src/app/vault/settings/page.tsx` içindeki dosya yükleme mekanizması güncellenir.
-    *   Bitwarden, 1Password, Dashlane, LastPass, Google Chrome ve Mozilla Firefox CSV şablonları otomatik olarak analiz edilir ve ilgili alanlar (başlık, kullanıcı adı, şifre, URL, notlar) doğru şekilde VaultMaster şemasına eşlenir.
+    *   ✅ `apps/web/src/app/vault/settings/page.tsx` içindeki CSV içe aktarma mekanizması reusable `apps/web/src/lib/csv-import.ts` helper'ına taşındı.
+    *   ✅ Bitwarden, 1Password, Dashlane, LastPass, Google Chrome, Mozilla Firefox ve VaultMaster CSV şablonları otomatik analiz edilip login alanlarına eşleniyor.
+    *   ✅ Quoted alanlar, escaped quote, BOM, CRLF ve multiline notlar için CSV parser testleri eklendi.

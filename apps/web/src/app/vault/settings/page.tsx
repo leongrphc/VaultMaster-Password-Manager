@@ -24,6 +24,7 @@ import {
   Pencil,
 } from "lucide-react";
 import { useStore } from "@/lib/store";
+import { CsvImportError, parseVaultCsv } from "@/lib/csv-import";
 import { importMasterKey, encryptJSON, decryptJSON } from "@vaultmaster/crypto";
 import { api } from "@/lib/api";
 import type { AuditEventResponse, DeviceResponse, VaultItemData } from "@vaultmaster/shared";
@@ -196,95 +197,20 @@ export default function SettingsPage() {
 
     try {
       const text = await file.text();
-      const lines = text.split("\n").filter((l) => l.trim());
+      const result = parseVaultCsv(text);
 
-      if (lines.length < 2) {
-        setImportStatus("empty");
-        setImporting(false);
-        return;
+      for (const item of result.items) {
+        await createVaultItem(item);
       }
 
-      const header = lines[0].toLowerCase();
-      const isChrome = header.includes("name") && header.includes("url") && header.includes("username") && header.includes("password");
-      const isGeneric = header.includes("title") && header.includes("username") && header.includes("password");
-
-      if (!isChrome && !isGeneric) {
-        setImportStatus("invalid");
-        setImporting(false);
-        return;
-      }
-
-      let imported = 0;
-
-      for (let i = 1; i < lines.length; i++) {
-        const values = parseCSVLine(lines[i]);
-        if (values.length < 3) continue;
-
-        let loginData: VaultItemData;
-
-        if (isChrome) {
-          loginData = {
-            type: "login",
-            title: values[0] || values[1] || "Imported",
-            url: values[1] || "",
-            username: values[2] || "",
-            password: values[3] || "",
-            notes: "",
-          };
-        } else {
-          loginData = {
-            type: "login",
-            title: values[0] || "Imported",
-            url: values[1] || "",
-            username: values[2] || "",
-            password: values[3] || "",
-            notes: values[4] || "",
-          };
-        }
-
-        await createVaultItem(loginData);
-        imported++;
-      }
-
-      setImportStatus(`${imported} öğe başarıyla içe aktarıldı`);
+      const skippedText = result.skipped > 0 ? `, ${result.skipped} satır atlandı` : "";
+      setImportStatus(`${result.items.length} öğe başarıyla içe aktarıldı (${result.provider} CSV${skippedText})`);
     } catch (e) {
       console.error("Import hatası:", e);
-      setImportStatus("error");
+      setImportStatus(e instanceof CsvImportError ? e.code : "error");
     }
 
     setImporting(false);
-  };
-
-  const parseCSVLine = (line: string): string[] => {
-    const result: string[] = [];
-    let current = "";
-    let inQuotes = false;
-
-    for (let i = 0; i < line.length; i++) {
-      if (inQuotes) {
-        if (line[i] === '"') {
-          if (i + 1 < line.length && line[i + 1] === '"') {
-            current += '"';
-            i++;
-          } else {
-            inQuotes = false;
-          }
-        } else {
-          current += line[i];
-        }
-      } else {
-        if (line[i] === '"') {
-          inQuotes = true;
-        } else if (line[i] === ",") {
-          result.push(current.trim());
-          current = "";
-        } else {
-          current += line[i];
-        }
-      }
-    }
-    result.push(current.trim());
-    return result;
   };
 
   const handleImportJSON = async (file: File) => {
@@ -1190,10 +1116,10 @@ export default function SettingsPage() {
                 <div className="flex flex-col items-center">
                   <Upload className="w-8 h-8 text-text-muted group-hover:text-accent transition-colors mb-3" />
                   <p className="text-sm font-medium group-hover:text-accent transition-colors mb-1">
-                    CSV veya JSON dosyası seçin / sürükleyin
+                    CSV veya JSON dosyası seçin
                   </p>
                   <p className="text-xs text-text-muted">
-                    VaultMaster JSON yedekleri veya Chrome, Firefox vb. CSV formatları desteklenir
+                    VaultMaster JSON yedekleri veya yaygın tarayıcı/şifre yöneticisi CSV formatları desteklenir
                   </p>
                 </div>
               )}
@@ -1213,7 +1139,7 @@ export default function SettingsPage() {
                   <AlertTriangle className="w-4 h-4" />
                 )}
                 {importStatus === "invalid"
-                  ? "Geçersiz CSV formatı. title/name, url, username, password sütunları gerekli."
+                  ? "Geçersiz CSV formatı. VaultMaster, Chrome, Firefox, Bitwarden, 1Password, Dashlane veya LastPass şablonlarından biri gerekli."
                   : importStatus === "invalid_json"
                   ? "Geçersiz JSON formatı. Dosya geçerli bir VaultMaster yedeği değil."
                   : importStatus === "decrypt_error"
@@ -1231,7 +1157,7 @@ export default function SettingsPage() {
             <div className="mt-4 bg-surface rounded-xl p-4">
               <p className="text-xs font-medium text-text-secondary mb-2">Desteklenen formatlar:</p>
               <div className="grid grid-cols-2 gap-2">
-                {["VaultMaster (JSON)", "Google Chrome", "Mozilla Firefox", "Bitwarden", "LastPass"].map((name) => (
+                {["VaultMaster (JSON/CSV)", "Google Chrome", "Mozilla Firefox", "Bitwarden", "1Password", "Dashlane", "LastPass"].map((name) => (
                   <div key={name} className="flex items-center gap-2 text-xs text-text-muted">
                     <Check className="w-3 h-3 text-accent" />
                     {name}
