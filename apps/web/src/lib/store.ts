@@ -8,6 +8,7 @@ import type {
   VaultItemData,
   AuthTokens,
   AttachmentResponse,
+  EmergencyAccessGrantResponse,
   SharedVaultMemberResponse,
   SharedVaultResponse,
 } from "@vaultmaster/shared";
@@ -89,6 +90,7 @@ interface VaultState {
   lastActivity: number;
   sharedVaults: SharedVaultResponse[];
   sharedVaultMembers: Record<string, SharedVaultMemberResponse[]>;
+  emergencyAccessGrants: EmergencyAccessGrantResponse[];
 }
 
 interface AppStore extends AuthState, VaultState {
@@ -169,6 +171,20 @@ interface AppStore extends AuthState, VaultState {
     }
   ) => Promise<SharedVaultMemberResponse>;
   removeSharedVaultMember: (sharedVaultId: string, memberId: string) => Promise<void>;
+
+  loadEmergencyAccessGrants: () => Promise<void>;
+  inviteEmergencyContact: (body: {
+    contactEmail: string;
+    encryptedAccessKey: string;
+    encryptedAccessIv: string;
+    waitTimeDays: number;
+  }) => Promise<EmergencyAccessGrantResponse>;
+  acceptEmergencyAccessGrant: (id: string) => Promise<void>;
+  requestEmergencyAccess: (id: string) => Promise<void>;
+  approveEmergencyAccessRequest: (id: string) => Promise<void>;
+  rejectEmergencyAccessRequest: (id: string) => Promise<void>;
+  cancelEmergencyAccessGrant: (id: string) => Promise<void>;
+  releaseEmergencyAccessKey: (id: string) => Promise<EmergencyAccessGrantResponse>;
 
   lockVault: () => void;
   unlockVault: (password: string, email: string) => Promise<boolean>;
@@ -267,8 +283,9 @@ export const useStore = create<AppStore>()(
       lastSyncedAt: null,
       lockTimeoutMinutes: 5,
       lastActivity: Date.now(),
-          sharedVaults: [],
-          sharedVaultMembers: {},
+      sharedVaults: [],
+      sharedVaultMembers: {},
+      emergencyAccessGrants: [],
 
       setAuth: (tokens, email, userId, deviceId = null) =>
         set({
@@ -341,6 +358,7 @@ export const useStore = create<AppStore>()(
             lastSyncedAt: null,
             sharedVaults: [],
             sharedVaultMembers: {},
+            emergencyAccessGrants: [],
           };
         }),
 
@@ -802,6 +820,96 @@ export const useStore = create<AppStore>()(
             ),
           },
         }));
+      },
+
+      loadEmergencyAccessGrants: async () => {
+        const response = (await get().runWithValidAccessToken((accessToken) =>
+          api.emergencyAccess.getAll(accessToken) as Promise<{ data: EmergencyAccessGrantResponse[] }>
+        )) as { data: EmergencyAccessGrantResponse[] };
+
+        set({ emergencyAccessGrants: response.data });
+      },
+
+      inviteEmergencyContact: async (body) => {
+        const response = (await get().runWithValidAccessToken((accessToken) =>
+          api.emergencyAccess.invite(body, accessToken) as Promise<{ data: EmergencyAccessGrantResponse }>
+        )) as { data: EmergencyAccessGrantResponse };
+
+        set((state) => ({ emergencyAccessGrants: [response.data, ...state.emergencyAccessGrants] }));
+        return response.data;
+      },
+
+      acceptEmergencyAccessGrant: async (id) => {
+        const response = (await get().runWithValidAccessToken((accessToken) =>
+          api.emergencyAccess.accept(id, accessToken) as Promise<{ data: EmergencyAccessGrantResponse }>
+        )) as { data: EmergencyAccessGrantResponse };
+
+        set((state) => ({
+          emergencyAccessGrants: state.emergencyAccessGrants.map((grant) =>
+            grant.id === id ? response.data : grant
+          ),
+        }));
+      },
+
+      requestEmergencyAccess: async (id) => {
+        const response = (await get().runWithValidAccessToken((accessToken) =>
+          api.emergencyAccess.request(id, accessToken) as Promise<{ data: EmergencyAccessGrantResponse }>
+        )) as { data: EmergencyAccessGrantResponse };
+
+        set((state) => ({
+          emergencyAccessGrants: state.emergencyAccessGrants.map((grant) =>
+            grant.id === id ? response.data : grant
+          ),
+        }));
+      },
+
+      approveEmergencyAccessRequest: async (id) => {
+        const response = (await get().runWithValidAccessToken((accessToken) =>
+          api.emergencyAccess.approve(id, accessToken) as Promise<{ data: EmergencyAccessGrantResponse }>
+        )) as { data: EmergencyAccessGrantResponse };
+
+        set((state) => ({
+          emergencyAccessGrants: state.emergencyAccessGrants.map((grant) =>
+            grant.id === id ? response.data : grant
+          ),
+        }));
+      },
+
+      rejectEmergencyAccessRequest: async (id) => {
+        const response = (await get().runWithValidAccessToken((accessToken) =>
+          api.emergencyAccess.reject(id, accessToken) as Promise<{ data: EmergencyAccessGrantResponse }>
+        )) as { data: EmergencyAccessGrantResponse };
+
+        set((state) => ({
+          emergencyAccessGrants: state.emergencyAccessGrants.map((grant) =>
+            grant.id === id ? response.data : grant
+          ),
+        }));
+      },
+
+      cancelEmergencyAccessGrant: async (id) => {
+        const response = (await get().runWithValidAccessToken((accessToken) =>
+          api.emergencyAccess.cancel(id, accessToken) as Promise<{ data: EmergencyAccessGrantResponse }>
+        )) as { data: EmergencyAccessGrantResponse };
+
+        set((state) => ({
+          emergencyAccessGrants: state.emergencyAccessGrants.map((grant) =>
+            grant.id === id ? response.data : grant
+          ),
+        }));
+      },
+
+      releaseEmergencyAccessKey: async (id) => {
+        const response = (await get().runWithValidAccessToken((accessToken) =>
+          api.emergencyAccess.release(id, accessToken) as Promise<{ data: EmergencyAccessGrantResponse }>
+        )) as { data: EmergencyAccessGrantResponse };
+
+        set((state) => ({
+          emergencyAccessGrants: state.emergencyAccessGrants.map((grant) =>
+            grant.id === id ? response.data : grant
+          ),
+        }));
+        return response.data;
       },
 
       lockVault: () =>

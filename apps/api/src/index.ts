@@ -18,6 +18,7 @@ import webAuthnRoutes from "./routes/webauthn.routes.js";
 import devicesRoutes from "./routes/devices.routes.js";
 import auditRoutes from "./routes/audit.routes.js";
 import sharedVaultRoutes from "./routes/shared-vault.routes.js";
+import emergencyAccessRoutes from "./routes/emergency-access.routes.js";
 import { logInfo } from "./utils/logger.js";
 import { initSentry } from "./utils/sentry.js";
 
@@ -124,6 +125,7 @@ export function createApp(): Express {
   app.use("/api/devices", devicesRoutes);
   app.use("/api/audit-events", auditRoutes);
   app.use("/api/shared-vaults", sharedVaultRoutes);
+  app.use("/api/emergency-access", emergencyAccessRoutes);
   app.use("/api/vault", vaultRoutes);
   app.use("/api/folders", foldersRoutes);
 

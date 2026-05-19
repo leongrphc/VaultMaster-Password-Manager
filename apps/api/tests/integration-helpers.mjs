@@ -195,3 +195,13 @@ export function sharedVaultInvitePayload(overrides = {}) {
     ...overrides,
   };
 }
+
+export function emergencyAccessPayload(overrides = {}) {
+  return {
+    contactEmail: uniqueEmail("emergency-contact"),
+    encryptedAccessKey: "contact-wrapped-recovery-key",
+    encryptedAccessIv: "contact-wrapped-recovery-key-iv",
+    waitTimeDays: 7,
+    ...overrides,
+  };
+}

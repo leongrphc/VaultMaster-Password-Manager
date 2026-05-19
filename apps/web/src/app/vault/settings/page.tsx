@@ -29,7 +29,7 @@ import { useStore } from "@/lib/store";
 import { CsvImportError, parseVaultCsv } from "@/lib/csv-import";
 import { importMasterKey, encryptJSON, decryptJSON } from "@vaultmaster/crypto";
 import { api } from "@/lib/api";
-import type { AuditEventResponse, DeviceResponse, SharedVaultMemberResponse, VaultItemData } from "@vaultmaster/shared";
+import type { AuditEventResponse, DeviceResponse, EmergencyAccessGrantResponse, SharedVaultMemberResponse, VaultItemData } from "@vaultmaster/shared";
 import TwoFactorSettings from "@/components/vault/TwoFactorSettings";
 import WebAuthnSettings from "@/components/vault/WebAuthnSettings";
 import AccountSecurityPanel from "@/components/vault/AccountSecurityPanel";
@@ -70,6 +70,15 @@ export default function SettingsPage() {
     loadSharedVaultMembers,
     inviteSharedVaultMember,
     removeSharedVaultMember,
+    emergencyAccessGrants,
+    loadEmergencyAccessGrants,
+    inviteEmergencyContact,
+    acceptEmergencyAccessGrant,
+    requestEmergencyAccess,
+    approveEmergencyAccessRequest,
+    rejectEmergencyAccessRequest,
+    cancelEmergencyAccessGrant,
+    releaseEmergencyAccessKey,
   } = useStore(
     useShallow((state) => ({
       userEmail: state.userEmail,
@@ -92,6 +101,15 @@ export default function SettingsPage() {
       loadSharedVaultMembers: state.loadSharedVaultMembers,
       inviteSharedVaultMember: state.inviteSharedVaultMember,
       removeSharedVaultMember: state.removeSharedVaultMember,
+      emergencyAccessGrants: state.emergencyAccessGrants,
+      loadEmergencyAccessGrants: state.loadEmergencyAccessGrants,
+      inviteEmergencyContact: state.inviteEmergencyContact,
+      acceptEmergencyAccessGrant: state.acceptEmergencyAccessGrant,
+      requestEmergencyAccess: state.requestEmergencyAccess,
+      approveEmergencyAccessRequest: state.approveEmergencyAccessRequest,
+      rejectEmergencyAccessRequest: state.rejectEmergencyAccessRequest,
+      cancelEmergencyAccessGrant: state.cancelEmergencyAccessGrant,
+      releaseEmergencyAccessKey: state.releaseEmergencyAccessKey,
     }))
   );
 
@@ -128,6 +146,16 @@ export default function SettingsPage() {
     encryptedVaultKeyIv: "",
   });
   const [removingMemberId, setRemovingMemberId] = useState<string | null>(null);
+  const [emergencyStatus, setEmergencyStatus] = useState<string | null>(null);
+  const [emergencyError, setEmergencyError] = useState<string | null>(null);
+  const [emergencyLoading, setEmergencyLoading] = useState(false);
+  const [emergencyForm, setEmergencyForm] = useState({
+    contactEmail: "",
+    waitTimeDays: 7,
+    encryptedAccessKey: "",
+    encryptedAccessIv: "",
+  });
+  const [releasedEmergencyKey, setReleasedEmergencyKey] = useState<EmergencyAccessGrantResponse | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const timeoutOptions = [
@@ -409,7 +437,12 @@ export default function SettingsPage() {
         setSharingError(error instanceof Error ? error.message : "Paylaşımlı kasalar yüklenemedi");
       })
       .finally(() => setSharingLoading(false));
-  }, [activeTab, tokens, loadSharedVaults]);
+
+    loadEmergencyAccessGrants().catch((error) => {
+      console.error("Acil durum erişimleri yüklenemedi:", error);
+      setEmergencyError(error instanceof Error ? error.message : "Acil durum erişimleri yüklenemedi");
+    });
+  }, [activeTab, tokens, loadSharedVaults, loadEmergencyAccessGrants]);
 
   const selectedSharedVault = sharedVaults.find((vault) => vault.id === selectedSharedVaultId) ?? null;
   const selectedMembers = selectedSharedVaultId
@@ -516,6 +549,50 @@ export default function SettingsPage() {
     } finally {
       setRemovingMemberId(null);
     }
+  };
+
+  const runEmergencyAction = async (action: () => Promise<void>, successMessage: string) => {
+    setEmergencyLoading(true);
+    setEmergencyError(null);
+    setEmergencyStatus(null);
+    setReleasedEmergencyKey(null);
+    try {
+      await action();
+      setEmergencyStatus(successMessage);
+    } catch (error) {
+      console.error("Acil durum erişimi işlemi başarısız:", error);
+      setEmergencyError(error instanceof Error ? error.message : "Acil durum erişimi işlemi başarısız");
+    } finally {
+      setEmergencyLoading(false);
+    }
+  };
+
+  const handleInviteEmergencyContact = async () => {
+    if (
+      !emergencyForm.contactEmail.trim() ||
+      !emergencyForm.encryptedAccessKey.trim() ||
+      !emergencyForm.encryptedAccessIv.trim()
+    ) {
+      setEmergencyError("E-posta ve şifreli erişim anahtarı alanları gereklidir");
+      return;
+    }
+
+    await runEmergencyAction(async () => {
+      await inviteEmergencyContact({
+        contactEmail: emergencyForm.contactEmail.trim(),
+        encryptedAccessKey: emergencyForm.encryptedAccessKey.trim(),
+        encryptedAccessIv: emergencyForm.encryptedAccessIv.trim(),
+        waitTimeDays: emergencyForm.waitTimeDays,
+      });
+      setEmergencyForm({ contactEmail: "", waitTimeDays: 7, encryptedAccessKey: "", encryptedAccessIv: "" });
+    }, "Acil durum kişisi davet edildi");
+  };
+
+  const handleReleaseEmergencyAccessKey = async (id: string) => {
+    await runEmergencyAction(async () => {
+      const released = await releaseEmergencyAccessKey(id);
+      setReleasedEmergencyKey(released);
+    }, "Şifreli erişim anahtarı alındı");
   };
 
   const handleRevokeDevice = async (deviceId: string) => {
@@ -1479,6 +1556,77 @@ export default function SettingsPage() {
               </div>
             </div>
           )}
+
+          <div className="glass rounded-2xl p-6">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 rounded-xl bg-accent/10 flex items-center justify-center">
+                <Shield className="w-5 h-5 text-accent" />
+              </div>
+              <div>
+                <h3 className="font-semibold">Acil Durum Erişimi</h3>
+                <p className="text-sm text-text-secondary">
+                  Trusted contact daveti, bekleme süresi ve encrypted key release akışı.
+                </p>
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-warning/20 bg-warning/5 p-4 text-sm text-warning/90 mb-5">
+              Recovery/share key materyali istemcide contact için şifrelenmiş olarak hazırlanmalıdır; sunucu yalnızca encryptedAccessKey ve IV saklar.
+            </div>
+
+            {(emergencyError || emergencyStatus) && (
+              <div className={`mb-4 flex items-center gap-2 p-3 rounded-xl text-sm ${emergencyError ? "bg-danger/5 border border-danger/20 text-danger" : "bg-accent/5 border border-accent/20 text-accent"}`}>
+                {emergencyError ? <AlertTriangle className="w-4 h-4" /> : <Check className="w-4 h-4" />}
+                {emergencyError ?? emergencyStatus}
+              </div>
+            )}
+
+            <div className="grid gap-3 sm:grid-cols-2">
+              <input value={emergencyForm.contactEmail} onChange={(event) => setEmergencyForm((form) => ({ ...form, contactEmail: event.target.value }))} placeholder="Contact e-postası" className="rounded-xl border border-border bg-surface px-4 py-3 text-sm text-text-primary outline-none focus:border-accent/60" />
+              <input type="number" min={1} max={30} value={emergencyForm.waitTimeDays} onChange={(event) => setEmergencyForm((form) => ({ ...form, waitTimeDays: Number(event.target.value) }))} placeholder="Bekleme günü" className="rounded-xl border border-border bg-surface px-4 py-3 text-sm text-text-primary outline-none focus:border-accent/60" />
+              <input value={emergencyForm.encryptedAccessKey} onChange={(event) => setEmergencyForm((form) => ({ ...form, encryptedAccessKey: event.target.value }))} placeholder="contact encryptedAccessKey" className="rounded-xl border border-border bg-surface px-4 py-3 text-sm text-text-primary outline-none focus:border-accent/60" />
+              <input value={emergencyForm.encryptedAccessIv} onChange={(event) => setEmergencyForm((form) => ({ ...form, encryptedAccessIv: event.target.value }))} placeholder="contact encryptedAccessIv" className="rounded-xl border border-border bg-surface px-4 py-3 text-sm text-text-primary outline-none focus:border-accent/60" />
+            </div>
+
+            <button onClick={handleInviteEmergencyContact} disabled={emergencyLoading} className="mt-4 rounded-xl bg-accent/10 px-4 py-2 text-sm font-medium text-accent hover:bg-accent/20 disabled:opacity-50">
+              {emergencyLoading ? "İşleniyor..." : "Acil Durum Kişisi Davet Et"}
+            </button>
+
+            {releasedEmergencyKey?.encryptedAccessKey && (
+              <div className="mt-5 rounded-2xl border border-accent/20 bg-accent/5 p-4">
+                <p className="text-sm font-medium text-accent mb-2">Released encrypted key</p>
+                <p className="break-all font-[family-name:var(--font-mono)] text-xs text-text-primary">{releasedEmergencyKey.encryptedAccessKey}</p>
+                <p className="mt-2 break-all font-[family-name:var(--font-mono)] text-xs text-text-muted">IV: {releasedEmergencyKey.encryptedAccessIv}</p>
+              </div>
+            )}
+
+            <div className="mt-6 space-y-3">
+              {emergencyAccessGrants.length === 0 ? (
+                <div className="py-8 text-center text-sm text-text-secondary bg-surface rounded-xl">Henüz acil durum erişimi yok.</div>
+              ) : emergencyAccessGrants.map((grant) => (
+                <div key={grant.id} className="rounded-2xl border border-border bg-surface/60 p-4">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-text-primary">{grant.contactEmail ?? grant.ownerEmail ?? grant.contactId}</p>
+                      <div className="mt-2 flex flex-wrap gap-2 text-xs">
+                        <span className="rounded-lg bg-abyss px-2.5 py-1 text-accent">{grant.status}</span>
+                        <span className="rounded-lg bg-abyss px-2.5 py-1 text-text-secondary">{grant.waitTimeDays} gün</span>
+                        {grant.availableAt && <span className="rounded-lg bg-abyss px-2.5 py-1 text-text-secondary">Release: {formatDateTime(grant.availableAt)}</span>}
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {grant.status === "pending" && <button onClick={() => void runEmergencyAction(() => acceptEmergencyAccessGrant(grant.id), "Davet kabul edildi")} disabled={emergencyLoading} className="rounded-xl bg-accent/10 px-3 py-2 text-xs font-medium text-accent hover:bg-accent/20 disabled:opacity-50">Kabul et</button>}
+                      {grant.status === "active" && <button onClick={() => void runEmergencyAction(() => requestEmergencyAccess(grant.id), "Erişim talep edildi")} disabled={emergencyLoading} className="rounded-xl bg-warning/10 px-3 py-2 text-xs font-medium text-warning hover:bg-warning/20 disabled:opacity-50">Talep et</button>}
+                      {grant.status === "requested" && <button onClick={() => void runEmergencyAction(() => approveEmergencyAccessRequest(grant.id), "Talep onaylandı")} disabled={emergencyLoading} className="rounded-xl bg-accent/10 px-3 py-2 text-xs font-medium text-accent hover:bg-accent/20 disabled:opacity-50">Onayla</button>}
+                      {grant.status === "requested" && <button onClick={() => void runEmergencyAction(() => rejectEmergencyAccessRequest(grant.id), "Talep reddedildi")} disabled={emergencyLoading} className="rounded-xl bg-danger/10 px-3 py-2 text-xs font-medium text-danger hover:bg-danger/20 disabled:opacity-50">Reddet</button>}
+                      {(grant.status === "requested" || grant.status === "approved") && <button onClick={() => void handleReleaseEmergencyAccessKey(grant.id)} disabled={emergencyLoading} className="rounded-xl bg-blue-500/10 px-3 py-2 text-xs font-medium text-blue-400 hover:bg-blue-500/20 disabled:opacity-50">Release</button>}
+                      {grant.status !== "cancelled" && <button onClick={() => void runEmergencyAction(() => cancelEmergencyAccessGrant(grant.id), "Grant iptal edildi")} disabled={emergencyLoading} className="rounded-xl bg-danger/10 px-3 py-2 text-xs font-medium text-danger hover:bg-danger/20 disabled:opacity-50">İptal</button>}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
       )}
 

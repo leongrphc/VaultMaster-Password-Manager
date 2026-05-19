@@ -189,14 +189,24 @@ export interface SharedVaultMemberResponse {
   updatedAt: string;
 }
 
+export type EmergencyAccessStatus =
+  | "pending"
+  | "active"
+  | "requested"
+  | "approved"
+  | "rejected"
+  | "cancelled";
+
 export interface EmergencyAccessGrantResponse {
   id: string;
   ownerId: string;
+  ownerEmail?: string;
   contactId: string;
-  encryptedAccessKey: string;
-  encryptedAccessIv: string;
+  contactEmail?: string;
+  encryptedAccessKey?: string;
+  encryptedAccessIv?: string;
   waitTimeDays: number;
-  status: string;
+  status: EmergencyAccessStatus;
   requestedAt?: string | null;
   availableAt?: string | null;
   createdAt: string;

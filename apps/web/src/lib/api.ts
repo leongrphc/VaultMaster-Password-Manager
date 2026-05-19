@@ -191,6 +191,38 @@ export const api = {
       request(`/shared-vaults/${id}/members/${memberId}`, { method: "DELETE", token }),
   },
 
+  emergencyAccess: {
+    getAll: (token: string) => request("/emergency-access", { token }),
+
+    invite: (
+      body: {
+        contactEmail: string;
+        encryptedAccessKey: string;
+        encryptedAccessIv: string;
+        waitTimeDays: number;
+      },
+      token: string
+    ) => request("/emergency-access", { method: "POST", body, token }),
+
+    accept: (id: string, token: string) =>
+      request(`/emergency-access/${id}/accept`, { method: "POST", token }),
+
+    request: (id: string, token: string) =>
+      request(`/emergency-access/${id}/request`, { method: "POST", token }),
+
+    approve: (id: string, token: string) =>
+      request(`/emergency-access/${id}/approve`, { method: "POST", token }),
+
+    reject: (id: string, token: string) =>
+      request(`/emergency-access/${id}/reject`, { method: "POST", token }),
+
+    cancel: (id: string, token: string) =>
+      request(`/emergency-access/${id}/cancel`, { method: "POST", token }),
+
+    release: (id: string, token: string) =>
+      request(`/emergency-access/${id}/release`, { token }),
+  },
+
   vault: {
     getAll: (token: string) => request("/vault", { token }),
 
