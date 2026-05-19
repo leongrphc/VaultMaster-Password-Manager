@@ -153,3 +153,26 @@ Aşağıdaki tablo, VaultMaster'ın sektördeki köklü rakipleri karşısındak
     *   ✅ `apps/web/src/app/vault/settings/page.tsx` içindeki CSV içe aktarma mekanizması reusable `apps/web/src/lib/csv-import.ts` helper'ına taşındı.
     *   ✅ Bitwarden, 1Password, Dashlane, LastPass, Google Chrome, Mozilla Firefox ve VaultMaster CSV şablonları otomatik analiz edilip login alanlarına eşleniyor.
     *   ✅ Quoted alanlar, escaped quote, BOM, CRLF ve multiline notlar için CSV parser testleri eklendi.
+
+---
+
+## 6. Kalan Geliştirmeler İçin Paralel Uygulama Durumu
+
+Kalan büyük özellikler güvenlik-kritik olduğu için bağımlılık sırasına göre dalgalara ayrıldı. Böylece farklı ajanlar aynı dosyalarda çakışmadan çalışabilir.
+
+### Dalga 0 — Ortak Güvenlik Primitifleri — ✅ Hazırlandı
+*   Prisma ve shared type/schema seviyesinde WebAuthn credential, attachment, passkey item, shared vault ve emergency access için ortak sözleşme hazırlandı.
+*   Bu dalga feature davranışı eklemez; sonraki ajanların aynı veri modeli üzerinden paralel çalışmasını sağlar.
+
+### Dalga 1 — Paralel Başlatılabilir
+*   **Encrypted Attachments:** Vault item'a bağlı, istemci tarafında şifrelenen dosya ekleri.
+*   **Passkey Vault Item Type:** Gerçek browser interception olmadan passkey kimlik bilgilerinin encrypted vault item olarak saklanması.
+
+### Dalga 2 — Sıradaki Güvenlik Özelliği
+*   **WebAuthn / FIDO2 MFA:** Mevcut TOTP 2FA desenini genişleten donanımsal/platform authenticator desteği.
+
+### Dalga 3 ve Sonrası — Bağımlı Özellikler
+*   **Biometric Local Unlock:** WebAuthn/platform authenticator altyapısı oturduktan sonra.
+*   **Shared Vaults:** Public key ve per-recipient key wrapping modeli tamamlandıktan sonra.
+*   **Emergency Access:** Shared vault/key wrapping temeli üzerine kurulacak.
+*   **Extension Passkey Interception:** Passkey item type ve origin/rpId threat model tamamlandıktan sonra en son yapılacak.

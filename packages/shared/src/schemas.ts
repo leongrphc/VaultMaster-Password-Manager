@@ -110,6 +110,38 @@ export const vaultHistoryRestoreSchema = z.object({
   versionId: z.string().uuid(),
 });
 
+export const attachmentCreateSchema = z.object({
+  vaultItemId: z.string().uuid(),
+  encryptedMetadata: z.string().min(1),
+  metadataIv: z.string().min(1),
+  encryptedBlob: z.string().min(1),
+  blobIv: z.string().min(1),
+  size: z.number().int().positive().max(25 * 1024 * 1024),
+});
+
+export const webAuthnCredentialNameSchema = z.object({
+  name: z.string().trim().min(1).max(100).optional(),
+});
+
+export const sharedVaultCreateSchema = z.object({
+  encryptedMetadata: z.string().min(1),
+  metadataIv: z.string().min(1),
+});
+
+export const sharedVaultInviteSchema = z.object({
+  email: z.string().email(),
+  role: z.enum(["viewer", "editor", "admin"]),
+  encryptedVaultKey: z.string().min(1),
+  encryptedVaultKeyIv: z.string().min(1),
+});
+
+export const emergencyAccessGrantSchema = z.object({
+  contactEmail: z.string().email(),
+  encryptedAccessKey: z.string().min(1),
+  encryptedAccessIv: z.string().min(1),
+  waitTimeDays: z.number().int().min(1).max(30),
+});
+
 export type RegisterInput = z.infer<typeof registerSchema>;
 export type LoginInput = z.infer<typeof loginSchema>;
 export type PasswordChangeInput = z.infer<typeof passwordChangeSchema>;
@@ -122,3 +154,8 @@ export type DeviceIdInput = z.infer<typeof deviceIdSchema>;
 export type UpdateDeviceInput = z.infer<typeof updateDeviceSchema>;
 export type RevokeOtherDevicesInput = z.infer<typeof revokeOtherDevicesSchema>;
 export type TwoFactorCodeInput = z.infer<typeof twoFactorCodeSchema>;
+export type AttachmentCreateInput = z.infer<typeof attachmentCreateSchema>;
+export type WebAuthnCredentialNameInput = z.infer<typeof webAuthnCredentialNameSchema>;
+export type SharedVaultCreateInput = z.infer<typeof sharedVaultCreateSchema>;
+export type SharedVaultInviteInput = z.infer<typeof sharedVaultInviteSchema>;
+export type EmergencyAccessGrantInput = z.infer<typeof emergencyAccessGrantSchema>;

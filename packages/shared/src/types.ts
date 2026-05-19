@@ -1,4 +1,4 @@
-export type VaultItemType = "login" | "secure_note" | "credit_card" | "identity";
+export type VaultItemType = "login" | "secure_note" | "credit_card" | "identity" | "passkey";
 
 export interface VaultItemCustomField {
   id: string;
@@ -53,11 +53,52 @@ export interface VaultItemIdentityData {
   customFields?: VaultItemCustomField[];
 }
 
+export interface VaultItemPasskeyData {
+  type: "passkey";
+  title: string;
+  rpId: string;
+  credentialId: string;
+  userHandle: string;
+  username?: string;
+  publicKey?: string;
+  privateKey: string;
+  signCount?: number;
+  transports?: string[];
+  notes?: string;
+  tags?: string[];
+  customFields?: VaultItemCustomField[];
+}
+
 export type VaultItemData =
   | VaultItemLoginData
   | VaultItemNoteData
   | VaultItemCreditCardData
-  | VaultItemIdentityData;
+  | VaultItemIdentityData
+  | VaultItemPasskeyData;
+
+export interface AttachmentResponse {
+  id: string;
+  vaultItemId: string;
+  userId: string;
+  encryptedMetadata: string;
+  metadataIv: string;
+  encryptedBlob: string;
+  blobIv: string;
+  size: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface WebAuthnCredentialResponse {
+  id: string;
+  credentialId: string;
+  deviceType?: string | null;
+  backedUp: boolean;
+  transports?: unknown;
+  name?: string | null;
+  createdAt: string;
+  lastUsedAt?: string | null;
+}
 
 export interface VaultItemResponse {
   id: string;
@@ -123,6 +164,41 @@ export interface AuditEventResponse {
   userAgent: string | null;
   metadata: Record<string, unknown> | null;
   createdAt: string;
+}
+
+export interface SharedVaultResponse {
+  id: string;
+  ownerId: string;
+  encryptedMetadata: string;
+  metadataIv: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SharedVaultMemberResponse {
+  id: string;
+  sharedVaultId: string;
+  userId: string;
+  role: string;
+  encryptedVaultKey: string;
+  encryptedVaultKeyIv: string;
+  status: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface EmergencyAccessGrantResponse {
+  id: string;
+  ownerId: string;
+  contactId: string;
+  encryptedAccessKey: string;
+  encryptedAccessIv: string;
+  waitTimeDays: number;
+  status: string;
+  requestedAt?: string | null;
+  availableAt?: string | null;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface LoginResponse {

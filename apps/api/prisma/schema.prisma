@@ -20,10 +20,15 @@ model User {
   createdAt          DateTime     @default(now())
   updatedAt          DateTime     @updatedAt
 
-  vaultItems         VaultItem[]
-  folders            Folder[]
-  devices            Device[]
-  auditEvents        AuditEvent[]
+  vaultItems               VaultItem[]
+  folders                  Folder[]
+  devices                  Device[]
+  auditEvents              AuditEvent[]
+  webAuthnCredentials      WebAuthnCredential[]
+  ownedSharedVaults        SharedVault[] @relation("SharedVaultOwner")
+  sharedVaultMemberships   SharedVaultMember[]
+  emergencyAccessGrants    EmergencyAccessGrant[] @relation("EmergencyAccessOwner")
+  emergencyAccessContacts  EmergencyAccessGrant[] @relation("EmergencyAccessContact")
 
   @@map("users")
 }
@@ -56,6 +61,7 @@ model VaultItem {
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
   versions      VaultItemVersion[]
+  attachments   Attachment[]
 
   @@index([userId])
   @@index([folderId])
@@ -111,4 +117,92 @@ model AuditEvent {
   @@index([userId, createdAt])
   @@index([deviceId])
   @@map("audit_events")
+}
+
+model WebAuthnCredential {
+  id           String   @id @default(uuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  credentialId String   @unique
+  publicKey    String
+  counter      Int      @default(0)
+  deviceType   String?
+  backedUp     Boolean  @default(false)
+  transports   Json?
+  name         String?
+  createdAt    DateTime @default(now())
+  lastUsedAt   DateTime?
+
+  @@index([userId])
+  @@map("webauthn_credentials")
+}
+
+model Attachment {
+  id                String    @id @default(uuid())
+  vaultItemId       String
+  vaultItem         VaultItem @relation(fields: [vaultItemId], references: [id], onDelete: Cascade)
+  userId            String
+  encryptedMetadata String
+  metadataIv        String
+  encryptedBlob     String
+  blobIv            String
+  size              Int
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@index([vaultItemId])
+  @@index([userId])
+  @@map("attachments")
+}
+
+model SharedVault {
+  id                String              @id @default(uuid())
+  ownerId           String
+  owner             User                @relation("SharedVaultOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  encryptedMetadata String
+  metadataIv        String
+  members           SharedVaultMember[]
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+
+  @@index([ownerId])
+  @@map("shared_vaults")
+}
+
+model SharedVaultMember {
+  id                    String      @id @default(uuid())
+  sharedVaultId         String
+  sharedVault           SharedVault @relation(fields: [sharedVaultId], references: [id], onDelete: Cascade)
+  userId                String
+  user                  User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role                  String
+  encryptedVaultKey     String
+  encryptedVaultKeyIv   String
+  status                String      @default("pending")
+  createdAt             DateTime    @default(now())
+  updatedAt             DateTime    @updatedAt
+
+  @@unique([sharedVaultId, userId])
+  @@index([userId])
+  @@map("shared_vault_members")
+}
+
+model EmergencyAccessGrant {
+  id                  String    @id @default(uuid())
+  ownerId             String
+  owner               User      @relation("EmergencyAccessOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  contactId           String
+  contact             User      @relation("EmergencyAccessContact", fields: [contactId], references: [id], onDelete: Cascade)
+  encryptedAccessKey  String
+  encryptedAccessIv   String
+  waitTimeDays        Int
+  status              String    @default("pending")
+  requestedAt         DateTime?
+  availableAt         DateTime?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  @@unique([ownerId, contactId])
+  @@index([contactId])
+  @@map("emergency_access_grants")
 }
