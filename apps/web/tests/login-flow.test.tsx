@@ -21,6 +21,10 @@ vi.mock("@vaultmaster/crypto", () => ({
   getStrengthLabel: vi.fn(() => "strong"),
 }));
 
+vi.mock("@simplewebauthn/browser", () => ({
+  startAuthentication: vi.fn(async () => ({ id: "credential-id" })),
+}));
+
 vi.mock("../src/lib/api", () => ({
   api: {
     auth: {
@@ -123,7 +127,7 @@ describe("login/register flow", () => {
 
   test("login handles 2FA challenge before accepting a verification code", async () => {
     vi.mocked(api.auth.login)
-      .mockResolvedValueOnce({ success: true, data: { requires2FA: true } })
+      .mockResolvedValueOnce({ success: true, data: { requires2FA: true, webAuthnOptions: null } })
       .mockResolvedValueOnce(mockAuthResponse("user@example.com"));
     const user = userEvent.setup();
     render(<LoginPage />);

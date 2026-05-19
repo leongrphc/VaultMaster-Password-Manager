@@ -169,7 +169,7 @@ Kalan büyük özellikler güvenlik-kritik olduğu için bağımlılık sırası
 *   **Passkey Vault Item Type:** ✅ Web uygulamasında gerçek browser interception olmadan passkey kimlik bilgilerinin encrypted vault item olarak eklenmesi, düzenlenmesi, görüntülenmesi ve JSON yedek uyumluluğu tamamlandı. Extension interception kapsam dışı bırakıldı.
 
 ### Dalga 2 — Sıradaki Güvenlik Özelliği
-*   **WebAuthn / FIDO2 MFA:** Mevcut TOTP 2FA desenini genişleten donanımsal/platform authenticator desteği.
+*   **WebAuthn / FIDO2 MFA:** ✅ Mevcut TOTP/recovery akışını zayıflatmadan WebAuthn/FIDO2 MFA eklendi: registration/authentication challenge lifecycle, security key ile login doğrulama, settings credential yönetimi ve audit event entegrasyonu tamamlandı.
 
 ### Dalga 3 ve Sonrası — Bağımlı Özellikler
 *   **Biometric Local Unlock:** WebAuthn/platform authenticator altyapısı oturduktan sonra.

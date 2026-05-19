@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@sentry/nextjs": "^10.22.0",
+    "@simplewebauthn/browser": "^13.3.0",
     "@vaultmaster/crypto": "workspace:*",
     "@vaultmaster/shared": "workspace:*",
     "lucide-react": "^0.475.0",

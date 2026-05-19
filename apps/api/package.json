@@ -18,6 +18,7 @@
   "dependencies": {
     "@prisma/client": "^6.4.0",
     "@sentry/node": "^10.22.0",
+    "@simplewebauthn/server": "^13.3.0",
     "@vaultmaster/shared": "workspace:*",
     "argon2": "^0.41.0",
     "cookie-parser": "^1.4.7",

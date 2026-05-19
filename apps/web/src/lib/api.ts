@@ -94,8 +94,14 @@ export const api = {
     register: (body: { email: string; authHash: string; kdfSalt: string; kdfIterations: number }) =>
       request("/auth/register", { method: "POST", body }),
 
-    login: (body: { email: string; authHash: string; code?: string; recoveryCode?: string }) =>
-      request("/auth/login", { method: "POST", body }),
+    login: (body: {
+      email: string;
+      authHash: string;
+      code?: string;
+      recoveryCode?: string;
+      webAuthnResponse?: unknown;
+      webAuthnChallengeToken?: string;
+    }) => request("/auth/login", { method: "POST", body }),
 
     refresh: (refreshToken: string) =>
       request("/auth/refresh", { method: "POST", body: { refreshToken } }),
@@ -120,6 +126,23 @@ export const api = {
       body: { code?: string; recoveryCode?: string },
       token: string
     ) => request("/auth/2fa/recovery-codes/regenerate", { method: "POST", body, token }),
+
+    webAuthnCredentials: (token: string) =>
+      request("/auth/webauthn/credentials", { token }),
+
+    webAuthnRegistrationOptions: (token: string) =>
+      request("/auth/webauthn/registration/options", { method: "POST", token }),
+
+    webAuthnRegistrationVerify: (
+      body: { response: unknown; challengeToken: string; name?: string },
+      token: string
+    ) => request("/auth/webauthn/registration/verify", { method: "POST", body, token }),
+
+    webAuthnRename: (id: string, body: { name: string }, token: string) =>
+      request(`/auth/webauthn/credentials/${id}`, { method: "PATCH", body, token }),
+
+    webAuthnRemove: (id: string, token: string) =>
+      request(`/auth/webauthn/credentials/${id}`, { method: "DELETE", token }),
 
     changePassword: (
       body: {

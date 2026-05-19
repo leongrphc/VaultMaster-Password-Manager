@@ -31,6 +31,7 @@ import { importMasterKey, encryptJSON, decryptJSON } from "@vaultmaster/crypto";
 import { api } from "@/lib/api";
 import type { AuditEventResponse, DeviceResponse, SharedVaultMemberResponse, VaultItemData } from "@vaultmaster/shared";
 import TwoFactorSettings from "@/components/vault/TwoFactorSettings";
+import WebAuthnSettings from "@/components/vault/WebAuthnSettings";
 import AccountSecurityPanel from "@/components/vault/AccountSecurityPanel";
 import PlaintextExportConfirmModal from "@/components/vault/PlaintextExportConfirmModal";
 import { useShallow } from "zustand/shallow";
@@ -648,12 +649,16 @@ export default function SettingsPage() {
       "auth.register": "Hesap oluşturuldu",
       "auth.login": "Giriş yapıldı",
       "auth.login.2fa": "2FA ile giriş yapıldı",
+      "auth.login.webauthn": "WebAuthn ile giriş yapıldı",
       "auth.logout": "Çıkış yapıldı",
       "auth.refresh": "Oturum yenilendi",
       "security.2fa.setup": "2FA kurulumu başlatıldı",
       "security.2fa.enable": "2FA etkinleştirildi",
       "security.2fa.disable": "2FA devre dışı bırakıldı",
       "security.2fa.recovery_codes.regenerate": "Recovery codes yenilendi",
+      "security.webauthn.register": "WebAuthn anahtarı eklendi",
+      "security.webauthn.rename": "WebAuthn anahtarı yeniden adlandırıldı",
+      "security.webauthn.remove": "WebAuthn anahtarı kaldırıldı",
       "security.session.rename": "Cihaz adı güncellendi",
       "security.session.revoke": "Oturum sonlandırıldı",
       "security.session.revoke_others": "Diğer oturumlar kapatıldı",
@@ -861,6 +866,7 @@ export default function SettingsPage() {
           </div>
 
           <TwoFactorSettings />
+          <WebAuthnSettings />
           <AccountSecurityPanel />
 
           <div className="glass rounded-2xl p-6">

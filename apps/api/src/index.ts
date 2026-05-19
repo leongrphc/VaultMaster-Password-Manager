@@ -14,6 +14,7 @@ import vaultRoutes from "./routes/vault.routes.js";
 import foldersRoutes from "./routes/folders.routes.js";
 import healthRoutes from "./routes/health.routes.js";
 import twoFactorRoutes from "./routes/two-factor.routes.js";
+import webAuthnRoutes from "./routes/webauthn.routes.js";
 import devicesRoutes from "./routes/devices.routes.js";
 import auditRoutes from "./routes/audit.routes.js";
 import sharedVaultRoutes from "./routes/shared-vault.routes.js";
@@ -119,6 +120,7 @@ export function createApp(): Express {
   app.use("/api/health", healthRoutes);
   app.use("/api/auth", authRoutes);
   app.use("/api/auth/2fa", twoFactorRoutes);
+  app.use("/api/auth/webauthn", webAuthnRoutes);
   app.use("/api/devices", devicesRoutes);
   app.use("/api/audit-events", auditRoutes);
   app.use("/api/shared-vaults", sharedVaultRoutes);

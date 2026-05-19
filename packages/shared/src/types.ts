@@ -205,6 +205,7 @@ export interface EmergencyAccessGrantResponse {
 
 export interface LoginResponse {
   requires2FA?: boolean;
+  webAuthnOptions?: unknown;
   user?: UserResponse;
   tokens?: AuthTokens;
   deviceId?: string;

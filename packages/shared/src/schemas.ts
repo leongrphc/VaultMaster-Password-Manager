@@ -34,6 +34,7 @@ export const loginSchema = z.object({
     .string()
     .min(6, "Recovery code gecersiz")
     .optional(),
+  webAuthnResponse: z.unknown().optional(),
 });
 
 export const refreshTokenSchema = z.object({

@@ -27,6 +27,10 @@ import {
   consumeRecoveryCode,
   createRecoveryCodes,
 } from "../utils/recovery-codes.js";
+import {
+  createWebAuthnLoginOptions,
+  verifyWebAuthnLogin,
+} from "./webauthn.routes.js";
 
 const router: Router = Router();
 
@@ -147,51 +151,82 @@ router.post("/login", async (req: Request, res: Response) => {
       return;
     }
 
-    if (user.twoFactorEnabled) {
+    const webAuthnCredentials = await prisma.webAuthnCredential.findMany({
+      where: { userId: user.id },
+      select: { id: true },
+    });
+    const requiresWebAuthn = webAuthnCredentials.length > 0;
+
+    if (user.twoFactorEnabled || requiresWebAuthn) {
       const recoveryCodeHashes = readRecoveryCodeHashes(user.twoFactorRecoveryCodes);
 
-      if (!body.code && !body.recoveryCode) {
-        res.status(200).json({ success: true, data: { requires2FA: true } });
+      if (!body.code && !body.recoveryCode && !body.webAuthnResponse) {
+        const webAuthnChallenge = requiresWebAuthn
+          ? await createWebAuthnLoginOptions(user.id)
+          : undefined;
+        res.status(200).json({
+          success: true,
+          data: {
+            requires2FA: true,
+            webAuthnOptions: webAuthnChallenge,
+          },
+        });
         return;
       }
-
-      if (!user.twoFactorSecret) {
-        res.status(500).json({ success: false, error: "2FA yapılandırma hatası" });
-        return;
-      }
-
-      const totp = new OTPAuth.TOTP({
-        issuer: "VaultMaster",
-        label: user.email,
-        algorithm: "SHA1",
-        digits: 6,
-        period: 30,
-        secret: OTPAuth.Secret.fromBase32(readStoredSecret(user.twoFactorSecret)),
-      });
 
       let recoveryCodesAfterUse: string[] | null = null;
+      let totpVerified = false;
+      let webAuthnVerified = false;
 
-      if (body.recoveryCode) {
+      if (body.recoveryCode && user.twoFactorEnabled) {
         recoveryCodesAfterUse = await consumeRecoveryCode(
           recoveryCodeHashes,
           body.recoveryCode
         );
       }
 
-      const delta = body.code
-        ? totp.validate({ token: body.code, window: 1 })
-        : null;
+      if (body.code && user.twoFactorEnabled) {
+        if (!user.twoFactorSecret) {
+          res.status(500).json({ success: false, error: "2FA yapılandırma hatası" });
+          return;
+        }
 
-      if (delta === null && recoveryCodesAfterUse === null) {
+        const totp = new OTPAuth.TOTP({
+          issuer: "VaultMaster",
+          label: user.email,
+          algorithm: "SHA1",
+          digits: 6,
+          period: 30,
+          secret: OTPAuth.Secret.fromBase32(readStoredSecret(user.twoFactorSecret)),
+        });
+
+        totpVerified = totp.validate({ token: body.code, window: 1 }) !== null;
+      }
+
+      if (body.webAuthnResponse && requiresWebAuthn) {
+        webAuthnVerified = await verifyWebAuthnLogin(
+          user.id,
+          body.webAuthnResponse,
+          (req.body as { webAuthnChallengeToken?: unknown }).webAuthnChallengeToken
+        ).catch(() => false);
+      }
+
+      if (!totpVerified && recoveryCodesAfterUse === null && !webAuthnVerified) {
         await logAuditEvent({
           userId: user.id,
-          action: "auth.login.2fa",
+          action: requiresWebAuthn && body.webAuthnResponse ? "auth.login.webauthn" : "auth.login.2fa",
           status: "failure",
           ipAddress,
           userAgent,
-          metadata: { reason: body.recoveryCode ? "invalid_recovery_code" : "invalid_2fa_code" },
+          metadata: {
+            reason: body.recoveryCode
+              ? "invalid_recovery_code"
+              : body.webAuthnResponse
+              ? "invalid_webauthn_response"
+              : "invalid_2fa_code",
+          },
         });
-        res.status(401).json({ success: false, error: "Geçersiz veya süresi dolmuş 2FA kodu" });
+        res.status(401).json({ success: false, error: "Geçersiz veya süresi dolmuş 2FA doğrulaması" });
         return;
       }
 
@@ -221,7 +256,7 @@ router.post("/login", async (req: Request, res: Response) => {
     await logAuditEvent({
       userId: user.id,
       deviceId: device.id,
-      action: user.twoFactorEnabled ? "auth.login.2fa" : "auth.login",
+      action: user.twoFactorEnabled || webAuthnCredentials.length > 0 ? "auth.login.2fa" : "auth.login",
       status: "success",
       ipAddress,
       userAgent,

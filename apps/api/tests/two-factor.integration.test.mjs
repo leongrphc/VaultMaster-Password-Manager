@@ -82,7 +82,8 @@ test("2FA setup, verify, login challenge, TOTP login, and disable flow works", a
 
   const challengedLogin = await loginUser(baseUrl, user.payload);
   assert.equal(challengedLogin.response.status, 200);
-  assert.deepEqual(challengedLogin.response.body.data, { requires2FA: true });
+  assert.equal(challengedLogin.response.body.data.requires2FA, true);
+  assert.equal(challengedLogin.response.body.data.webAuthnOptions, undefined);
 
   const invalidCodeLogin = await loginUser(baseUrl, user.payload, { code: "000000" });
   assert.equal(invalidCodeLogin.response.status, 401);

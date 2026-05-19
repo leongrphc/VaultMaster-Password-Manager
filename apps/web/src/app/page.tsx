@@ -2,12 +2,14 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Shield, Eye, EyeOff, ArrowRight, Lock, Mail, AlertTriangle } from "lucide-react";
+import { Shield, Eye, EyeOff, ArrowRight, Lock, Mail, AlertTriangle, KeyRound } from "lucide-react";
 import {
   deriveMasterKey,
   exportMasterKeyBase64,
 } from "@vaultmaster/crypto";
 import { generateAuthHash } from "@vaultmaster/crypto";
+import { startAuthentication } from "@simplewebauthn/browser";
+import type { PublicKeyCredentialRequestOptionsJSON } from "@simplewebauthn/browser";
 import { useStore } from "@/lib/store";
 import { api, getErrorMessage } from "@/lib/api";
 import type { LoginResponse } from "@vaultmaster/shared";
@@ -39,6 +41,10 @@ export default function LoginPage() {
   const [twoFactorCode, setTwoFactorCode] = useState("");
   const [useRecoveryCode, setUseRecoveryCode] = useState(false);
   const [recoveryCode, setRecoveryCode] = useState("");
+  const [webAuthnOptions, setWebAuthnOptions] = useState<{
+    options: PublicKeyCredentialRequestOptionsJSON;
+    challengeToken: string;
+  } | null>(null);
 
   useEffect(() => {
     if (useStore.persist?.hasHydrated?.()) {
@@ -63,6 +69,46 @@ export default function LoginPage() {
 
   const handlePasswordKeyEvent = (event: React.KeyboardEvent<HTMLInputElement>) => {
     setCapsLockOn(event.getModifierState("CapsLock"));
+  };
+
+  const completeWebAuthnLogin = async () => {
+    if (!webAuthnOptions) {
+      return;
+    }
+
+    setLoading(true);
+    setError("");
+    try {
+      const masterKey = await deriveMasterKey(password, email);
+      const authHash = await generateAuthHash(masterKey, password);
+      const masterKeyB64 = await exportMasterKeyBase64(masterKey);
+      const webAuthnResponse = await startAuthentication({
+        optionsJSON: webAuthnOptions.options,
+      });
+      const response = (await api.auth.login({
+        email,
+        authHash,
+        webAuthnResponse,
+        webAuthnChallengeToken: webAuthnOptions.challengeToken,
+      })) as { success: boolean; data: LoginResponse };
+
+      if (response.data.tokens && response.data.user) {
+        setAuth(
+          response.data.tokens,
+          response.data.user.email,
+          response.data.user.id,
+          response.data.deviceId ?? null
+        );
+        setMasterKey(masterKeyB64);
+        window.location.assign("/vault");
+      }
+    } catch (err: unknown) {
+      const message = getErrorMessage(err, "WebAuthn doğrulaması tamamlanamadı");
+      setError(message);
+      notify.error(message);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -107,9 +153,15 @@ export default function LoginPage() {
           code: requires2FA && !useRecoveryCode ? twoFactorCode : undefined,
           recoveryCode: requires2FA && useRecoveryCode ? recoveryCode : undefined,
         })) as { success: boolean; data: LoginResponse };
-        
+
         if (response.data.requires2FA) {
           setRequires2FA(true);
+          setWebAuthnOptions(
+            response.data.webAuthnOptions as {
+              options: PublicKeyCredentialRequestOptionsJSON;
+              challengeToken: string;
+            } | null
+          );
           return;
         }
       }
@@ -366,17 +418,30 @@ export default function LoginPage() {
                       placeholder={useRecoveryCode ? "ABCD-EF12-3456" : "000000"}
                     />
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setUseRecoveryCode(!useRecoveryCode);
-                      setTwoFactorCode("");
-                      setRecoveryCode("");
-                    }}
-                    className="mt-2 text-sm text-text-secondary hover:text-accent transition-colors"
-                  >
-                    {useRecoveryCode ? "Authenticator koduna dön" : "Recovery code kullan"}
-                  </button>
+                  <div className="mt-2 flex flex-wrap gap-3">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setUseRecoveryCode(!useRecoveryCode);
+                        setTwoFactorCode("");
+                        setRecoveryCode("");
+                      }}
+                      className="text-sm text-text-secondary hover:text-accent transition-colors"
+                    >
+                      {useRecoveryCode ? "Authenticator koduna dön" : "Recovery code kullan"}
+                    </button>
+                    {webAuthnOptions && (
+                      <button
+                        type="button"
+                        onClick={() => void completeWebAuthnLogin()}
+                        disabled={loading}
+                        className="inline-flex items-center gap-1 text-sm text-text-secondary hover:text-accent transition-colors disabled:opacity-50"
+                      >
+                        <KeyRound className="w-4 h-4" />
+                        Security key ile doğrula
+                      </button>
+                    )}
+                  </div>
                 </div>
               )}
 
@@ -411,6 +476,7 @@ export default function LoginPage() {
                     setTwoFactorCode("");
                     setRecoveryCode("");
                     setUseRecoveryCode(false);
+                    setWebAuthnOptions(null);
                     return;
                   }
                   setAcknowledgedNoRecovery(false);
