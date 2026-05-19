@@ -175,4 +175,4 @@ Kalan büyük özellikler güvenlik-kritik olduğu için bağımlılık sırası
 *   **Biometric Local Unlock:** WebAuthn/platform authenticator altyapısı oturduktan sonra.
 *   **Shared Vaults:** Public key ve per-recipient key wrapping modeli tamamlandıktan sonra.
 *   **Emergency Access:** Shared vault/key wrapping temeli üzerine kurulacak.
-*   **Extension Passkey Interception:** Passkey item type ve origin/rpId threat model tamamlandıktan sonra en son yapılacak.
+*   **Extension Passkey Interception:** ⚠️ Kısmi — Extension artık page-world `navigator.credentials.create/get` çağrılarını güvenli bir inject script ile algılıyor, content/background hattında sender origin, page origin ve rpId doğrulaması yapıyor ve kullanıcıya açık rıza/uyarı mesajı gösteriyor. Otomatik credential oluşturma, imzalama veya passkey private-key kullanımı bilerek uygulanmadı; tarayıcının yerel WebAuthn akışı devam ediyor.

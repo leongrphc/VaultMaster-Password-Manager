@@ -44,6 +44,10 @@ const autofillSuppressions = new Map();
 const suggestionCache = new Map();
 const credentialCache = new Map();
 const pendingCredentialNonces = new Map();
+const PASSKEY_INJECTED_SOURCE = "vaultmaster-passkey-injected";
+const PASSKEY_CONTENT_SOURCE = "vaultmaster-passkey-content";
+
+installPasskeyBridge();
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 	if (!isVaultMasterPage()) {
@@ -187,6 +191,100 @@ if (!isVaultMasterPage()) {
 	});
 
 	initializeAutofillAssistant();
+}
+
+function installPasskeyBridge() {
+	if (isVaultMasterPage()) {
+		return;
+	}
+
+	const script = document.createElement("script");
+	script.src = chrome.runtime.getURL("passkey-injected.js");
+	script.async = false;
+	script.onload = () => script.remove();
+	(document.documentElement || document.head).appendChild(script);
+
+	window.addEventListener("message", (event) => {
+		if (event.source !== window || event.origin !== window.location.origin) {
+			return;
+		}
+
+		const data = event.data;
+		if (data?.source !== PASSKEY_INJECTED_SOURCE || data.type !== "VM_PASSKEY_INTERCEPTED") {
+			return;
+		}
+
+		void handlePasskeyIntercept(data);
+	}, true);
+}
+
+async function handlePasskeyIntercept(data) {
+	const operation = data.operation;
+	const payload = data.payload || {};
+	if (operation !== "create" && operation !== "get") {
+		return;
+	}
+
+	const response = await sendRuntimeMessage({
+		type: "PASSKEY_INTERCEPTED",
+		operation,
+		requestId: data.requestId,
+		pageUrl: window.location.href,
+		origin: window.location.origin,
+		rpId: payload.rpId || "",
+	}).catch(() => null);
+
+	showPasskeyConsentNotice(operation, response?.payload);
+
+	window.postMessage(
+		{
+			source: PASSKEY_CONTENT_SOURCE,
+			type: "VM_PASSKEY_NOTICE",
+			requestId: data.requestId,
+			payload: response?.payload || { status: "bridge_unavailable" },
+		},
+		window.location.origin
+	);
+}
+
+function showPasskeyConsentNotice(operation, payload) {
+	removePanel();
+	const panel = document.createElement("div");
+	panel.id = "vaultmaster-passkey-notice";
+	panel.style.cssText = [
+		"position:fixed",
+		"right:20px",
+		"bottom:20px",
+		"z-index:2147483647",
+		"width:min(360px, calc(100vw - 24px))",
+		"background:linear-gradient(180deg, rgba(11,17,31,0.98) 0%, rgba(7,11,22,0.98) 100%)",
+		"border:1px solid rgba(0,255,178,0.18)",
+		"border-radius:18px",
+		"box-shadow:0 20px 56px rgba(0,0,0,0.32)",
+		"color:#eef2ff",
+		"font:13px/1.45 'Segoe UI', Arial, sans-serif",
+		"overflow:hidden",
+	].join(";");
+
+	const action = operation === "create" ? "passkey oluşturma" : "passkey ile giriş";
+	const status = payload?.status || "notice_only";
+	const message = status === "rp_mismatch"
+		? "RP ID bu sayfanın domainiyle eşleşmedi; VaultMaster işlem yapmadı."
+		: "VaultMaster isteği kaydetti ve kullanıcı onayı gerektirdi. İmzalama veya credential oluşturma bu aşamada uygulanmadı; tarayıcının yerel WebAuthn akışı devam eder.";
+
+	panel.innerHTML = `
+		<div style="padding:14px;border-bottom:1px solid rgba(144,160,195,0.12);">
+			<div style="font-weight:700;margin-bottom:4px;">VaultMaster Passkey Bridge</div>
+			<div style="color:#90a0c3;font-size:12px;">${escapeHtml(formatHostname(window.location.href))} üzerinde ${escapeHtml(action)} isteği algılandı.</div>
+		</div>
+		<div style="padding:12px;display:grid;gap:10px;">
+			<div style="color:#dbe7ff;font-size:12px;line-height:1.5;">${escapeHtml(message)}</div>
+			<button data-action="dismiss" style="border:0;border-radius:12px;background:#00ffb2;color:#04111d;padding:10px;font-weight:700;cursor:pointer;">Tamam</button>
+		</div>
+	`;
+	panel.querySelector("[data-action='dismiss']")?.addEventListener("click", () => panel.remove());
+	document.body.appendChild(panel);
+	window.setTimeout(() => panel.remove(), 7000);
 }
 
 function initializeAutofillAssistant() {

@@ -24,6 +24,12 @@
 			"run_at": "document_start"
 		}
 	],
+	"web_accessible_resources": [
+		{
+			"resources": ["passkey-injected.js"],
+			"matches": ["<all_urls>"]
+		}
+	],
 	"commands": {
 		"_execute_action": {
 			"suggested_key": {

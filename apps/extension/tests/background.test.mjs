@@ -138,3 +138,63 @@ test("forwards valid domain validation requests to the vault tab", async () => {
     sourceTabId: 99,
   });
 });
+
+test("accepts passkey intercepts only when page origin and rpId match", async () => {
+  const background = await loadBackground();
+
+  const response = await background.send(
+    {
+      type: "PASSKEY_INTERCEPTED",
+      operation: "get",
+      requestId: "passkey-1",
+      pageUrl: "https://login.example.com/account",
+      origin: "https://login.example.com",
+      rpId: "example.com",
+    },
+    { tab: { id: 99, url: "https://login.example.com/account" } }
+  );
+
+  assert.equal(response.ok, true);
+  assert.equal(response.payload.status, "consent_required");
+  assert.equal(response.payload.rpId, "example.com");
+  assert.equal(response.payload.sourceTabId, 99);
+  assert.equal(background.tabMessages.length, 0);
+});
+
+test("rejects passkey intercepts with mismatched sender tab URL", async () => {
+  const background = await loadBackground();
+
+  const response = await background.send(
+    {
+      type: "PASSKEY_INTERCEPTED",
+      operation: "get",
+      requestId: "passkey-1",
+      pageUrl: "https://example.com/login",
+      origin: "https://example.com",
+      rpId: "example.com",
+    },
+    { tab: { id: 99, url: "https://attacker.example/login" } }
+  );
+
+  assert.deepEqual(response, { ok: false, error: "Invalid message payload" });
+  assert.equal(background.tabMessages.length, 0);
+});
+
+test("blocks passkey intercepts when rpId is outside the page origin", async () => {
+  const background = await loadBackground();
+
+  const response = await background.send(
+    {
+      type: "PASSKEY_INTERCEPTED",
+      operation: "create",
+      requestId: "passkey-1",
+      pageUrl: "https://example.com/register",
+      origin: "https://example.com",
+      rpId: "evil.example",
+    },
+    { tab: { id: 99, url: "https://example.com/register" } }
+  );
+
+  assert.deepEqual(response, { ok: false, payload: { status: "rp_mismatch" } });
+  assert.equal(background.tabMessages.length, 0);
+});

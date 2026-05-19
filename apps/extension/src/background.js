@@ -41,6 +41,34 @@ function isLoginCredentialPayload(value) {
 	);
 }
 
+function isValidPasskeyOperation(value) {
+	return value === "create" || value === "get";
+}
+
+function isRpIdAllowedForOrigin(rpId, origin) {
+	if (!isString(rpId) || !isHttpUrlString(origin)) {
+		return false;
+	}
+
+	try {
+		const hostname = new URL(origin).hostname.toLowerCase();
+		const normalizedRpId = rpId.toLowerCase();
+		return hostname === normalizedRpId || hostname.endsWith(`.${normalizedRpId}`);
+	} catch {
+		return false;
+	}
+}
+
+function isPasskeyInterceptPayload(message) {
+	return (
+		isValidPasskeyOperation(message?.operation) &&
+		isString(message.requestId) &&
+		isHttpUrlString(message.pageUrl) &&
+		isHttpUrlString(message.origin) &&
+		isOptionalString(message.rpId)
+	);
+}
+
 function isPendingAutofillPayload(value) {
 	return (
 		isObject(value) &&
@@ -63,6 +91,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
 	if (message?.type === "GET_EXTENSION_STATUS") {
 		void getExtensionStatus(sendResponse);
+		return true;
+	}
+
+	if (message?.type === "PASSKEY_INTERCEPTED") {
+		void handlePasskeyIntercept(message, sender, sendResponse);
 		return true;
 	}
 
@@ -261,6 +294,38 @@ async function getExtensionStatus(sendResponse) {
 		ok: true,
 		payload: {
 			hasVaultTab: Boolean(vaultTab?.id),
+		},
+	});
+}
+
+async function handlePasskeyIntercept(message, sender, sendResponse) {
+	if (!isPasskeyInterceptPayload(message) || sender.tab?.url !== message.pageUrl) {
+		rejectInvalidPayload(sendResponse);
+		return;
+	}
+
+	const pageOrigin = new URL(message.pageUrl).origin;
+	if (pageOrigin !== message.origin) {
+		sendResponse({ ok: false, payload: { status: "origin_mismatch" } });
+		return;
+	}
+
+	const effectiveRpId = message.rpId || new URL(message.origin).hostname;
+	if (!isRpIdAllowedForOrigin(effectiveRpId, message.origin)) {
+		sendResponse({ ok: false, payload: { status: "rp_mismatch" } });
+		return;
+	}
+
+	sendResponse({
+		ok: true,
+		payload: {
+			status: "consent_required",
+			operation: message.operation,
+			rpId: effectiveRpId,
+			origin: message.origin,
+			pageUrl: message.pageUrl,
+			sourceTabId: sender.tab?.id ?? null,
+			message: "VaultMaster detected a passkey request. Credential creation/signing is not automatic and requires an explicit user action in VaultMaster.",
 		},
 	});
 }

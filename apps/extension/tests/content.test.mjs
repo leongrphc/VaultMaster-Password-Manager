@@ -26,6 +26,7 @@ async function loadContent({ credential, domainValid = true } = {}) {
   dom.window.chrome = {
     runtime: {
       lastError: null,
+      getURL: (path) => `chrome-extension://vaultmaster/${path}`,
       onMessage: { addListener: (listener) => listeners.push(listener) },
       sendMessage: (payload, callback) => {
         runtimeMessages.push(payload);
@@ -96,6 +97,13 @@ function resolveRuntimeResponse(payload, { credential, domainValid }) {
     };
   }
 
+  if (payload.type === "PASSKEY_INTERCEPTED") {
+    return {
+      ok: true,
+      payload: { status: "consent_required", rpId: payload.rpId || "example.com" },
+    };
+  }
+
   return { ok: true, payload: { status: "ready", suggestions: [] } };
 }
 
@@ -143,4 +151,30 @@ test("blocks panel autofill and shows a phishing warning when the domain is inva
   assert.equal(content.window.document.querySelector("#password").value, "");
   assert.match(content.window.document.querySelector("#vaultmaster-inline-autofill").textContent, /Güvenlik Uyarısı/);
   assert.equal(content.runtimeMessages.some((message) => message.type === "VALIDATE_CREDENTIAL_DOMAIN"), true);
+});
+
+test("relays page-world passkey requests with consent-only messaging", async () => {
+  const content = await loadContent();
+
+  content.window.dispatchEvent(
+    new content.window.MessageEvent("message", {
+      source: content.window,
+      origin: "https://example.com",
+      data: {
+        source: "vaultmaster-passkey-injected",
+        type: "VM_PASSKEY_INTERCEPTED",
+        operation: "get",
+        requestId: "passkey-1",
+        payload: { rpId: "example.com", origin: "https://example.com" },
+      },
+    })
+  );
+
+  await new Promise((resolve) => content.window.setTimeout(resolve, 0));
+
+  const passkeyMessage = content.runtimeMessages.find((message) => message.type === "PASSKEY_INTERCEPTED");
+  assert.equal(passkeyMessage.operation, "get");
+  assert.equal(passkeyMessage.rpId, "example.com");
+  assert.equal(passkeyMessage.origin, "https://example.com");
+  assert.match(content.window.document.querySelector("#vaultmaster-passkey-notice").textContent, /requires explicit user action|kullanıcı onayı/i);
 });
