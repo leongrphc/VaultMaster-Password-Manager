@@ -9,6 +9,7 @@ import {
   encryptJSON,
   decryptJSON,
   generatePassword,
+  generatePassphrase,
   calculateStrength,
   getStrengthLabel,
   generateAuthHash,
@@ -66,6 +67,34 @@ test("generatePassword respects requested character groups", () => {
   assert.match(password, /[0-9]/);
   assert.match(password, /[^a-zA-Z0-9]/);
   assert.equal(/[l1IO0|]/.test(password), false);
+});
+
+test("generatePassphrase respects word count and separator", () => {
+  const passphrase = generatePassphrase({
+    wordCount: 5,
+    separator: ".",
+    capitalize: false,
+    includeNumber: false,
+  });
+  const words = passphrase.split(".");
+
+  assert.equal(words.length, 5);
+  assert.ok(words.every((word) => word.length > 0));
+  assert.equal(/\d/.test(passphrase), false);
+});
+
+test("generatePassphrase applies capitalization and number option", () => {
+  const passphrase = generatePassphrase({
+    wordCount: 4,
+    separator: "-",
+    capitalize: true,
+    includeNumber: true,
+  });
+  const words = passphrase.split("-");
+
+  assert.equal(words.length, 4);
+  assert.ok(words.every((word) => /^[A-Z]/.test(word)));
+  assert.match(passphrase, /\d/);
 });
 
 test("password strength labelling stays consistent", () => {

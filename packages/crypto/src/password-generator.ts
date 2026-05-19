@@ -21,6 +21,32 @@ export const DEFAULT_OPTIONS: PasswordOptions = {
   excludeAmbiguous: false,
 };
 
+export interface PassphraseOptions {
+  wordCount: number;
+  separator: string;
+  capitalize: boolean;
+  includeNumber: boolean;
+}
+
+export const DEFAULT_PASSPHRASE_OPTIONS: PassphraseOptions = {
+  wordCount: 4,
+  separator: "-",
+  capitalize: false,
+  includeNumber: false,
+};
+
+const DICEWARE_WORDS = [
+  "ada", "akil", "alev", "altin", "anahtar", "armut", "aslan", "aydin",
+  "bahar", "balik", "baris", "baykus", "bulut", "burun", "cam", "ceviz",
+  "cinar", "dag", "deniz", "derin", "dolap", "dut", "elma", "emek",
+  "fidan", "fikir", "fil", "gemi", "gok", "golge", "guven", "halat",
+  "harita", "irmak", "isik", "kalem", "kaplan", "kaya", "kiraz", "kitap",
+  "kopek", "kopru", "kule", "liman", "lodos", "masa", "mercam", "merdiven",
+  "mavi", "orman", "pamuk", "pazar", "pirinc", "pusula", "radyo", "renk",
+  "sahil", "sandal", "sari", "serin", "simsek", "tarla", "tas", "tilki",
+  "toprak", "turna", "umut", "uzay", "vadi", "yelken", "yildiz", "zeytin",
+] as const;
+
 const AMBIGUOUS = new Set(["l", "1", "I", "O", "0", "|"]);
 
 export function generatePassword(
@@ -76,6 +102,26 @@ export function generatePassword(
   return shuffleArray(allChars).join("");
 }
 
+export function generatePassphrase(
+  options: Partial<PassphraseOptions> = {}
+): string {
+  const opts = { ...DEFAULT_PASSPHRASE_OPTIONS, ...options };
+  const wordCount = Math.max(3, Math.min(12, Math.floor(opts.wordCount)));
+  const words: string[] = [];
+
+  for (let i = 0; i < wordCount; i++) {
+    const word = pickRandomFromArray(DICEWARE_WORDS);
+    words.push(opts.capitalize ? capitalizeWord(word) : word);
+  }
+
+  if (opts.includeNumber) {
+    const lastIndex = words.length - 1;
+    words[lastIndex] = `${words[lastIndex]}${pickRandom(DIGITS)}`;
+  }
+
+  return words.join(opts.separator);
+}
+
 /**
  * Şifre sağlamlığını 0-100 arasında puanlar.
  */
@@ -113,6 +159,16 @@ function pickRandom(str: string): string {
   const array = new Uint32Array(1);
   crypto.getRandomValues(array);
   return str[array[0]! % str.length]!;
+}
+
+function pickRandomFromArray<T>(items: readonly T[]): T {
+  const array = new Uint32Array(1);
+  crypto.getRandomValues(array);
+  return items[array[0]! % items.length]!;
+}
+
+function capitalizeWord(word: string): string {
+  return `${word[0]!.toUpperCase()}${word.slice(1)}`;
 }
 
 function shuffleArray<T>(arr: T[]): T[] {
