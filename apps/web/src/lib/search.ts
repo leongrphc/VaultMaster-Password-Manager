@@ -19,6 +19,7 @@ const typeAliases: Record<string, VaultItemType> = {
   card: "credit_card",
   credit_card: "credit_card",
   identity: "identity",
+  passkey: "passkey",
 };
 
 const fieldAliases: Record<string, FieldName> = {
@@ -189,6 +190,14 @@ function getSearchableValues(item: DecryptedVaultItem) {
       { value: data.cardholderName, weight: 9 },
       { value: data.notes || "", weight: 4 }
     );
+  } else if (data.type === "passkey") {
+    values.push(
+      { value: data.rpId, weight: 10 },
+      { value: data.username || "", weight: 9 },
+      { value: data.credentialId, weight: 8 },
+      { value: data.userHandle, weight: 6 },
+      { value: data.notes || "", weight: 4 }
+    );
   } else {
     values.push(
       { value: data.fullName, weight: 10 },
@@ -208,6 +217,7 @@ function getNoteValue(item: DecryptedVaultItem) {
   if (data.type === "secure_note") return data.content;
   if (data.type === "login") return data.notes || "";
   if (data.type === "credit_card") return data.notes || "";
+  if (data.type === "passkey") return data.notes || "";
   return data.notes || data.address || "";
 }
 

@@ -110,6 +110,46 @@ describe("add/edit/delete item flow", () => {
     expect(onClose).toHaveBeenCalled();
   });
 
+  test("creates a passkey item as encrypted vault data", async () => {
+    const onClose = vi.fn();
+    createVaultItem.mockResolvedValue(undefined);
+    const user = userEvent.setup();
+    render(<AddItemModal onClose={onClose} />);
+
+    await user.click(screen.getByRole("button", { name: "Passkey" }));
+    await user.type(screen.getByLabelText("Başlık"), "GitHub Passkey");
+    await user.type(screen.getByLabelText("RP ID"), "github.com");
+    await user.type(screen.getByLabelText("Kullanıcı Adı"), "octo");
+    await user.type(screen.getByLabelText("Credential ID"), "cred-123");
+    await user.type(screen.getByLabelText("User Handle"), "user-handle-123");
+    await user.type(screen.getByLabelText("Public Key"), "public-key");
+    await user.type(screen.getByLabelText("Private Key"), "private-key");
+    await user.type(screen.getByLabelText("Sign Count"), "7");
+    await user.type(screen.getByLabelText("Transports"), "internal, hybrid");
+    await user.type(screen.getByLabelText("Notlar"), "Manual passkey record");
+    await user.click(screen.getByRole("button", { name: /^Kaydet/i }));
+
+    await waitFor(() => expect(createVaultItem).toHaveBeenCalledWith(
+      {
+        type: "passkey",
+        title: "GitHub Passkey",
+        rpId: "github.com",
+        credentialId: "cred-123",
+        userHandle: "user-handle-123",
+        username: "octo",
+        publicKey: "public-key",
+        privateKey: "private-key",
+        signCount: 7,
+        transports: ["internal", "hybrid"],
+        notes: "Manual passkey record",
+        tags: undefined,
+        customFields: undefined,
+      },
+      null
+    ));
+    expect(onClose).toHaveBeenCalled();
+  });
+
   test("updates an existing login item", async () => {
     const onClose = vi.fn();
     updateVaultItemFull.mockResolvedValue(undefined);
@@ -155,6 +195,110 @@ describe("add/edit/delete item flow", () => {
       null
     ));
     expect(onClose).toHaveBeenCalled();
+  });
+
+  test("updates an existing passkey item", async () => {
+    const onClose = vi.fn();
+    updateVaultItemFull.mockResolvedValue(undefined);
+    const user = userEvent.setup();
+    render(
+      <EditItemModal
+        onClose={onClose}
+        item={{
+          id: "item-passkey-1",
+          folderId: null,
+          favorite: false,
+          createdAt: "2026-05-17T00:00:00.000Z",
+          updatedAt: "2026-05-17T00:00:00.000Z",
+          data: {
+            type: "passkey",
+            title: "GitHub Passkey",
+            rpId: "github.com",
+            credentialId: "cred-123",
+            userHandle: "user-handle-123",
+            username: "octo",
+            publicKey: "public-key",
+            privateKey: "old-private-key",
+            signCount: 1,
+            transports: ["internal"],
+          },
+        }}
+      />
+    );
+
+    const privateKeyInput = screen.getByLabelText("Private Key");
+    await user.clear(privateKeyInput);
+    await user.type(privateKeyInput, "new-private-key");
+    const signCountInput = screen.getByLabelText("Sign Count");
+    await user.clear(signCountInput);
+    await user.type(signCountInput, "2");
+    await user.click(screen.getByRole("button", { name: /^Güncelle/i }));
+
+    await waitFor(() => expect(updateVaultItemFull).toHaveBeenCalledWith(
+      "item-passkey-1",
+      {
+        type: "passkey",
+        title: "GitHub Passkey",
+        rpId: "github.com",
+        credentialId: "cred-123",
+        userHandle: "user-handle-123",
+        username: "octo",
+        publicKey: "public-key",
+        privateKey: "new-private-key",
+        signCount: 2,
+        transports: ["internal"],
+        notes: undefined,
+        tags: undefined,
+        customFields: undefined,
+      },
+      null
+    ));
+    expect(onClose).toHaveBeenCalled();
+  });
+
+  test("shows passkey details on the item card", () => {
+    render(
+      <VaultItemCard
+        item={{
+          id: "item-passkey-1",
+          folderId: null,
+          favorite: false,
+          createdAt: "2026-05-17T00:00:00.000Z",
+          updatedAt: "2026-05-17T00:00:00.000Z",
+          data: {
+            type: "passkey",
+            title: "GitHub Passkey",
+            rpId: "github.com",
+            credentialId: "cred-123",
+            userHandle: "user-handle-123",
+            username: "octo",
+            publicKey: "public-key",
+            privateKey: "private-key",
+            signCount: 3,
+            transports: ["internal", "hybrid"],
+          },
+        }}
+        viewMode="comfortable"
+        isSelected
+        isPasswordRevealed={false}
+        copiedId={null}
+        totpState={null}
+        index={0}
+        onSelect={vi.fn()}
+        onCopy={vi.fn()}
+        onTogglePassword={vi.fn()}
+        onEdit={vi.fn()}
+        onHistory={vi.fn()}
+        onToggleFavorite={vi.fn()}
+        onDelete={vi.fn()}
+      />
+    );
+
+    expect(screen.getByText("GitHub Passkey")).toBeInTheDocument();
+    expect(screen.getByText("github.com")).toBeInTheDocument();
+    expect(screen.getByText("cred-123")).toBeInTheDocument();
+    expect(screen.getByText("internal, hybrid")).toBeInTheDocument();
+    expect(screen.getByText("••••••••••")).toBeInTheDocument();
   });
 
   test("deletes an item from its card action", async () => {

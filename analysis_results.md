@@ -52,7 +52,7 @@ Aşağıdaki tablo, VaultMaster'ın sektördeki köklü rakipleri karşısındak
 | **Açık Kaynak Kod** | ❌ Hayır |  Evet |  Evet | ❌ Hayır | ❌ Hayır |  Evet | ** Evet** |
 | **Kullanıcı Arayüzü UX** |  Mükemmel | ⚠️ Orta |  Çok İyi |  Çok İyi |  Mükemmel | ❌ Zayıf | ** Çok İyi** |
 | **Self-Hosting (Kendi Sunucunu Kurma)** | ❌ Hayır |  Evet | ❌ Hayır | ❌ Hayır | ❌ Hayır |  Evet | ** Evet** |
-| **Passkey (Geçiş Anahtarı) Desteği** |  Evet |  Evet |  Evet |  Evet |  Evet | ⚠️ Eklentiyle | **❌ Hayır** |
+| **Passkey (Geçiş Anahtarı) Desteği** |  Evet |  Evet |  Evet |  Evet |  Evet | ⚠️ Eklentiyle | **⚠️ Kısmi (şifreli kasa öğesi)** |
 | **WebAuthn / YubiKey (Donanımsal MFA)** |  Evet |  Evet |  Evet |  Evet |  Evet | ⚠️ Eklentiyle | **❌ Hayır** |
 | **Biyometrik Kilit Açma** |  Evet |  Evet |  Evet |  Evet |  Evet | ⚠️ Eklentiyle | **❌ Hayır** |
 | **Şifreli Dosya Ekleri** |  Evet |  Evet |  Evet |  Evet |  Evet |  Evet (Lokal) | **❌ Hayır** |
@@ -166,7 +166,7 @@ Kalan büyük özellikler güvenlik-kritik olduğu için bağımlılık sırası
 
 ### Dalga 1 — Paralel Başlatılabilir
 *   **Encrypted Attachments:** Vault item'a bağlı, istemci tarafında şifrelenen dosya ekleri.
-*   **Passkey Vault Item Type:** Gerçek browser interception olmadan passkey kimlik bilgilerinin encrypted vault item olarak saklanması.
+*   **Passkey Vault Item Type:** ✅ Web uygulamasında gerçek browser interception olmadan passkey kimlik bilgilerinin encrypted vault item olarak eklenmesi, düzenlenmesi, görüntülenmesi ve JSON yedek uyumluluğu tamamlandı. Extension interception kapsam dışı bırakıldı.
 
 ### Dalga 2 — Sıradaki Güvenlik Özelliği
 *   **WebAuthn / FIDO2 MFA:** Mevcut TOTP 2FA desenini genişleten donanımsal/platform authenticator desteği.

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { X, Globe, FileText, CreditCard, User, Eye, EyeOff, Wand2 } from "lucide-react";
+import { X, Globe, FileText, CreditCard, User, Eye, EyeOff, Wand2, KeyRound } from "lucide-react";
 import { useStore, type DecryptedVaultItem } from "@/lib/store";
 import { generatePassword } from "@vaultmaster/crypto";
 import type { VaultItemCustomField, VaultItemData } from "@vaultmaster/shared";
@@ -46,6 +46,15 @@ export default function EditItemModal({ item, onClose }: EditItemModalProps) {
   const [organization, setOrganization] = useState("");
   const [address, setAddress] = useState("");
   const [identityNotes, setIdentityNotes] = useState("");
+  const [rpId, setRpId] = useState("");
+  const [credentialId, setCredentialId] = useState("");
+  const [userHandle, setUserHandle] = useState("");
+  const [passkeyUsername, setPasskeyUsername] = useState("");
+  const [publicKey, setPublicKey] = useState("");
+  const [privateKey, setPrivateKey] = useState("");
+  const [signCount, setSignCount] = useState("");
+  const [transports, setTransports] = useState("");
+  const [passkeyNotes, setPasskeyNotes] = useState("");
   const [folderId, setFolderId] = useState<string | null>(item.folderId);
   const [tags, setTags] = useState<string[]>([]);
   const [customFields, setCustomFields] = useState<VaultItemCustomField[]>([]);
@@ -81,6 +90,16 @@ export default function EditItemModal({ item, onClose }: EditItemModalProps) {
       setOrganization(d.organization || "");
       setAddress(d.address || "");
       setIdentityNotes(d.notes || "");
+    } else if (d.type === "passkey") {
+      setRpId(d.rpId);
+      setCredentialId(d.credentialId);
+      setUserHandle(d.userHandle);
+      setPasskeyUsername(d.username || "");
+      setPublicKey(d.publicKey || "");
+      setPrivateKey(d.privateKey);
+      setSignCount(d.signCount === undefined ? "" : String(d.signCount));
+      setTransports((d.transports || []).join(", "));
+      setPasskeyNotes(d.notes || "");
     }
 
     setTags(d.tags || []);
@@ -138,7 +157,7 @@ export default function EditItemModal({ item, onClose }: EditItemModalProps) {
           customFields:
             sanitizedCustomFields.length > 0 ? sanitizedCustomFields : undefined,
         };
-      } else {
+      } else if (type === "identity") {
         data = {
           type: "identity",
           title,
@@ -148,6 +167,28 @@ export default function EditItemModal({ item, onClose }: EditItemModalProps) {
           organization: organization || undefined,
           address: address || undefined,
           notes: identityNotes || undefined,
+          tags: tags.length > 0 ? tags : undefined,
+          customFields:
+            sanitizedCustomFields.length > 0 ? sanitizedCustomFields : undefined,
+        };
+      } else {
+        data = {
+          type: "passkey",
+          title,
+          rpId: rpId.trim(),
+          credentialId: credentialId.trim(),
+          userHandle: userHandle.trim(),
+          username: passkeyUsername.trim() || undefined,
+          publicKey: publicKey.trim() || undefined,
+          privateKey: privateKey.trim(),
+          signCount: signCount.trim() ? Number(signCount) : undefined,
+          transports: transports.trim()
+            ? transports
+                .split(",")
+                .map((transport) => transport.trim())
+                .filter(Boolean)
+            : undefined,
+          notes: passkeyNotes || undefined,
           tags: tags.length > 0 ? tags : undefined,
           customFields:
             sanitizedCustomFields.length > 0 ? sanitizedCustomFields : undefined,
@@ -173,6 +214,7 @@ export default function EditItemModal({ item, onClose }: EditItemModalProps) {
     secure_note: { label: "Güvenli Not", icon: FileText },
     credit_card: { label: "Kredi Kartı", icon: CreditCard },
     identity: { label: "Kimlik", icon: User },
+    passkey: { label: "Passkey", icon: KeyRound },
   };
 
   const TypeIcon = typeLabels[type].icon;
@@ -422,6 +464,54 @@ export default function EditItemModal({ item, onClose }: EditItemModalProps) {
                   rows={3}
                   className="w-full bg-abyss border border-border rounded-xl py-2.5 px-4 text-sm text-text-primary focus:outline-none focus:border-accent/50 transition-colors resize-none"
                 />
+              </div>
+            </>
+          )}
+
+          {type === "passkey" && (
+            <>
+              <div className="rounded-xl border border-accent/20 bg-accent/5 p-3 text-xs text-text-secondary">
+                Passkey kaydı yalnızca şifreli kasa öğesi olarak saklanır. Bu ekranda tarayıcı WebAuthn veya navigator.credentials çağrıları kullanılmaz.
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div>
+                  <label htmlFor={fieldId("passkey-rp-id")} className="block text-sm text-text-secondary mb-2">RP ID</label>
+                  <input id={fieldId("passkey-rp-id")} required value={rpId} onChange={(e) => setRpId(e.target.value)} className="w-full bg-abyss border border-border rounded-xl py-2.5 px-4 text-sm text-text-primary focus:outline-none focus:border-accent/50 transition-colors font-[family-name:var(--font-mono)]" />
+                </div>
+                <div>
+                  <label htmlFor={fieldId("passkey-username")} className="block text-sm text-text-secondary mb-2">Kullanıcı Adı</label>
+                  <input id={fieldId("passkey-username")} value={passkeyUsername} onChange={(e) => setPasskeyUsername(e.target.value)} className="w-full bg-abyss border border-border rounded-xl py-2.5 px-4 text-sm text-text-primary focus:outline-none focus:border-accent/50 transition-colors" />
+                </div>
+              </div>
+              <div>
+                <label htmlFor={fieldId("passkey-credential-id")} className="block text-sm text-text-secondary mb-2">Credential ID</label>
+                <input id={fieldId("passkey-credential-id")} required value={credentialId} onChange={(e) => setCredentialId(e.target.value)} className="w-full bg-abyss border border-border rounded-xl py-2.5 px-4 text-sm text-text-primary focus:outline-none focus:border-accent/50 transition-colors font-[family-name:var(--font-mono)]" />
+              </div>
+              <div>
+                <label htmlFor={fieldId("passkey-user-handle")} className="block text-sm text-text-secondary mb-2">User Handle</label>
+                <input id={fieldId("passkey-user-handle")} required value={userHandle} onChange={(e) => setUserHandle(e.target.value)} className="w-full bg-abyss border border-border rounded-xl py-2.5 px-4 text-sm text-text-primary focus:outline-none focus:border-accent/50 transition-colors font-[family-name:var(--font-mono)]" />
+              </div>
+              <div>
+                <label htmlFor={fieldId("passkey-public-key")} className="block text-sm text-text-secondary mb-2">Public Key</label>
+                <textarea id={fieldId("passkey-public-key")} value={publicKey} onChange={(e) => setPublicKey(e.target.value)} rows={3} className="w-full bg-abyss border border-border rounded-xl py-2.5 px-4 text-sm text-text-primary focus:outline-none focus:border-accent/50 transition-colors resize-none font-[family-name:var(--font-mono)]" />
+              </div>
+              <div>
+                <label htmlFor={fieldId("passkey-private-key")} className="block text-sm text-text-secondary mb-2">Private Key</label>
+                <textarea id={fieldId("passkey-private-key")} required value={privateKey} onChange={(e) => setPrivateKey(e.target.value)} rows={4} className="w-full bg-abyss border border-border rounded-xl py-2.5 px-4 text-sm text-text-primary focus:outline-none focus:border-accent/50 transition-colors resize-none font-[family-name:var(--font-mono)]" />
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div>
+                  <label htmlFor={fieldId("passkey-sign-count")} className="block text-sm text-text-secondary mb-2">Sign Count</label>
+                  <input id={fieldId("passkey-sign-count")} type="number" min="0" value={signCount} onChange={(e) => setSignCount(e.target.value)} className="w-full bg-abyss border border-border rounded-xl py-2.5 px-4 text-sm text-text-primary focus:outline-none focus:border-accent/50 transition-colors" />
+                </div>
+                <div>
+                  <label htmlFor={fieldId("passkey-transports")} className="block text-sm text-text-secondary mb-2">Transports</label>
+                  <input id={fieldId("passkey-transports")} value={transports} onChange={(e) => setTransports(e.target.value)} className="w-full bg-abyss border border-border rounded-xl py-2.5 px-4 text-sm text-text-primary focus:outline-none focus:border-accent/50 transition-colors" placeholder="internal, hybrid, usb" />
+                </div>
+              </div>
+              <div>
+                <label htmlFor={fieldId("passkey-notes")} className="block text-sm text-text-secondary mb-2">Notlar</label>
+                <textarea id={fieldId("passkey-notes")} value={passkeyNotes} onChange={(e) => setPasskeyNotes(e.target.value)} rows={3} className="w-full bg-abyss border border-border rounded-xl py-2.5 px-4 text-sm text-text-primary focus:outline-none focus:border-accent/50 transition-colors resize-none" />
               </div>
             </>
           )}

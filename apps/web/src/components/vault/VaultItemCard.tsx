@@ -295,6 +295,25 @@ function renderItemDetails(
     );
   }
 
+  if (item.data.type === "passkey") {
+    return (
+      <div className="space-y-3">
+        <DetailRow label="RP ID" value={item.data.rpId} mono />
+        {item.data.username && <DetailRow label="Kullanıcı" value={item.data.username} />}
+        <DetailRow label="Credential ID" value={item.data.credentialId} mono />
+        <DetailRow label="User Handle" value={item.data.userHandle} mono />
+        {item.data.publicKey && <NotesBlock label="Public Key" value={item.data.publicKey} mono />}
+        <NotesBlock label="Private Key" value={isPasswordRevealed ? item.data.privateKey : "••••••••••"} mono />
+        {item.data.signCount !== undefined && <DetailRow label="Sign Count" value={String(item.data.signCount)} />}
+        {item.data.transports && item.data.transports.length > 0 && (
+          <DetailRow label="Transports" value={item.data.transports.join(", ")} />
+        )}
+        {item.data.notes && <NotesBlock label="Notlar" value={item.data.notes} />}
+        {renderCustomFields(item, onCopy)}
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-3">
       <DetailRow label="Tam Ad" value={item.data.fullName} />
@@ -317,11 +336,11 @@ function DetailRow({ label, value, mono = false }: { label: string; value: strin
   );
 }
 
-function NotesBlock({ label, value }: { label?: string; value: string }) {
+function NotesBlock({ label, value, mono = false }: { label?: string; value: string; mono?: boolean }) {
   return (
     <div>
       {label && <span className="text-sm text-text-secondary block mb-1">{label}</span>}
-      <p className="text-sm text-text-primary bg-abyss rounded-lg p-3 whitespace-pre-wrap">{value}</p>
+      <p className={`text-sm text-text-primary bg-abyss rounded-lg p-3 whitespace-pre-wrap break-all ${mono ? "font-[family-name:var(--font-mono)]" : ""}`}>{value}</p>
     </div>
   );
 }
@@ -410,6 +429,8 @@ function getItemIcon(type: string) {
       return <CreditCard className="w-5 h-5" />;
     case "identity":
       return <User className="w-5 h-5" />;
+    case "passkey":
+      return <KeyRound className="w-5 h-5" />;
     default:
       return <Globe className="w-5 h-5" />;
   }
@@ -421,5 +442,6 @@ function getItemSubtitle(item: DecryptedVaultItem) {
   if (data.type === "secure_note") return "Güvenli Not";
   if (data.type === "credit_card") return `•••• ${data.cardNumber.slice(-4)}`;
   if (data.type === "identity") return data.email || data.fullName;
+  if (data.type === "passkey") return data.username || data.rpId;
   return "";
 }

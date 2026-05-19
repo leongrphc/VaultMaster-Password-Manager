@@ -257,6 +257,7 @@ function getItemDetail(item: DecryptedVaultItem) {
   if (data.type === "login") return data.username || data.url || "Login";
   if (data.type === "credit_card") return `Kart •••• ${data.cardNumber.slice(-4)}`;
   if (data.type === "identity") return data.email || data.fullName;
+  if (data.type === "passkey") return data.username || data.rpId;
   return "Güvenli not";
 }
 
@@ -264,5 +265,6 @@ function getItemIcon(item: DecryptedVaultItem) {
   if (item.data.type === "login") return <Globe className="w-4 h-4" />;
   if (item.data.type === "credit_card") return <CreditCard className="w-4 h-4" />;
   if (item.data.type === "identity") return <User className="w-4 h-4" />;
+  if (item.data.type === "passkey") return <KeyRound className="w-4 h-4" />;
   return <FileText className="w-4 h-4" />;
 }
