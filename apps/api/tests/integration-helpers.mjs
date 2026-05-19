@@ -196,6 +196,15 @@ export function sharedVaultInvitePayload(overrides = {}) {
   };
 }
 
+export function sharedVaultItemPayload(overrides = {}) {
+  return {
+    encryptedData: "encrypted-shared-item-payload",
+    iv: "shared-item-iv",
+    favorite: false,
+    ...overrides,
+  };
+}
+
 export function emergencyAccessPayload(overrides = {}) {
   return {
     contactEmail: uniqueEmail("emergency-contact"),

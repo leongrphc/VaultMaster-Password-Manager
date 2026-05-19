@@ -162,11 +162,29 @@ model SharedVault {
   encryptedMetadata String
   metadataIv        String
   members           SharedVaultMember[]
+  items             SharedVaultItem[]
   createdAt         DateTime            @default(now())
   updatedAt         DateTime            @updatedAt
 
   @@index([ownerId])
   @@map("shared_vaults")
+}
+
+model SharedVaultItem {
+  id            String      @id @default(uuid())
+  sharedVaultId String
+  sharedVault   SharedVault @relation(fields: [sharedVaultId], references: [id], onDelete: Cascade)
+  createdById   String
+  encryptedData String
+  iv            String
+  favorite      Boolean     @default(false)
+  deletedAt     DateTime?
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  @@index([sharedVaultId])
+  @@index([sharedVaultId, deletedAt])
+  @@map("shared_vault_items")
 }
 
 model SharedVaultMember {

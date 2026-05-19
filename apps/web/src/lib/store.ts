@@ -9,6 +9,7 @@ import type {
   AuthTokens,
   AttachmentResponse,
   EmergencyAccessGrantResponse,
+  SharedVaultItemResponse,
   SharedVaultMemberResponse,
   SharedVaultResponse,
 } from "@vaultmaster/shared";
@@ -90,6 +91,7 @@ interface VaultState {
   lastActivity: number;
   sharedVaults: SharedVaultResponse[];
   sharedVaultMembers: Record<string, SharedVaultMemberResponse[]>;
+  sharedVaultItems: Record<string, SharedVaultItemResponse[]>;
   emergencyAccessGrants: EmergencyAccessGrantResponse[];
 }
 
@@ -171,6 +173,17 @@ interface AppStore extends AuthState, VaultState {
     }
   ) => Promise<SharedVaultMemberResponse>;
   removeSharedVaultMember: (sharedVaultId: string, memberId: string) => Promise<void>;
+  loadSharedVaultItems: (sharedVaultId: string) => Promise<void>;
+  createSharedVaultItem: (
+    sharedVaultId: string,
+    body: { encryptedData: string; iv: string; favorite?: boolean }
+  ) => Promise<SharedVaultItemResponse>;
+  updateSharedVaultItem: (
+    sharedVaultId: string,
+    itemId: string,
+    body: { encryptedData?: string; iv?: string; favorite?: boolean }
+  ) => Promise<SharedVaultItemResponse>;
+  deleteSharedVaultItem: (sharedVaultId: string, itemId: string) => Promise<void>;
 
   loadEmergencyAccessGrants: () => Promise<void>;
   inviteEmergencyContact: (body: {
@@ -285,6 +298,7 @@ export const useStore = create<AppStore>()(
       lastActivity: Date.now(),
       sharedVaults: [],
       sharedVaultMembers: {},
+      sharedVaultItems: {},
       emergencyAccessGrants: [],
 
       setAuth: (tokens, email, userId, deviceId = null) =>
@@ -358,6 +372,7 @@ export const useStore = create<AppStore>()(
             lastSyncedAt: null,
             sharedVaults: [],
             sharedVaultMembers: {},
+            sharedVaultItems: {},
             emergencyAccessGrants: [],
           };
         }),
@@ -818,6 +833,62 @@ export const useStore = create<AppStore>()(
             [sharedVaultId]: (state.sharedVaultMembers[sharedVaultId] ?? []).filter(
               (member) => member.id !== memberId
             ),
+          },
+        }));
+      },
+
+      loadSharedVaultItems: async (sharedVaultId) => {
+        const response = (await get().runWithValidAccessToken((accessToken) =>
+          api.sharedVaults.getItems(sharedVaultId, accessToken) as Promise<{ data: SharedVaultItemResponse[] }>
+        )) as { data: SharedVaultItemResponse[] };
+
+        set((state) => ({
+          sharedVaultItems: {
+            ...state.sharedVaultItems,
+            [sharedVaultId]: response.data,
+          },
+        }));
+      },
+
+      createSharedVaultItem: async (sharedVaultId, body) => {
+        const response = (await get().runWithValidAccessToken((accessToken) =>
+          api.sharedVaults.createItem(sharedVaultId, body, accessToken) as Promise<{ data: SharedVaultItemResponse }>
+        )) as { data: SharedVaultItemResponse };
+
+        set((state) => ({
+          sharedVaultItems: {
+            ...state.sharedVaultItems,
+            [sharedVaultId]: [response.data, ...(state.sharedVaultItems[sharedVaultId] ?? [])],
+          },
+        }));
+        return response.data;
+      },
+
+      updateSharedVaultItem: async (sharedVaultId, itemId, body) => {
+        const response = (await get().runWithValidAccessToken((accessToken) =>
+          api.sharedVaults.updateItem(sharedVaultId, itemId, body, accessToken) as Promise<{ data: SharedVaultItemResponse }>
+        )) as { data: SharedVaultItemResponse };
+
+        set((state) => ({
+          sharedVaultItems: {
+            ...state.sharedVaultItems,
+            [sharedVaultId]: (state.sharedVaultItems[sharedVaultId] ?? []).map((item) =>
+              item.id === itemId ? response.data : item
+            ),
+          },
+        }));
+        return response.data;
+      },
+
+      deleteSharedVaultItem: async (sharedVaultId, itemId) => {
+        await get().runWithValidAccessToken((accessToken) =>
+          api.sharedVaults.deleteItem(sharedVaultId, itemId, accessToken)
+        );
+
+        set((state) => ({
+          sharedVaultItems: {
+            ...state.sharedVaultItems,
+            [sharedVaultId]: (state.sharedVaultItems[sharedVaultId] ?? []).filter((item) => item.id !== itemId),
           },
         }));
       },

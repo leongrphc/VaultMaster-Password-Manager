@@ -189,6 +189,25 @@ export const api = {
 
     removeMember: (id: string, memberId: string, token: string) =>
       request(`/shared-vaults/${id}/members/${memberId}`, { method: "DELETE", token }),
+
+    getItems: (id: string, token: string) =>
+      request(`/shared-vaults/${id}/items`, { token }),
+
+    createItem: (
+      id: string,
+      body: { encryptedData: string; iv: string; favorite?: boolean },
+      token: string
+    ) => request(`/shared-vaults/${id}/items`, { method: "POST", body, token }),
+
+    updateItem: (
+      id: string,
+      itemId: string,
+      body: { encryptedData?: string; iv?: string; favorite?: boolean },
+      token: string
+    ) => request(`/shared-vaults/${id}/items/${itemId}`, { method: "PUT", body, token }),
+
+    deleteItem: (id: string, itemId: string, token: string) =>
+      request(`/shared-vaults/${id}/items/${itemId}`, { method: "DELETE", token }),
   },
 
   emergencyAccess: {

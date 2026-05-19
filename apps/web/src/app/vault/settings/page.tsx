@@ -65,11 +65,16 @@ export default function SettingsPage() {
     runWithValidAccessToken,
     sharedVaults,
     sharedVaultMembers,
+    sharedVaultItems,
     loadSharedVaults,
     createSharedVault,
     loadSharedVaultMembers,
     inviteSharedVaultMember,
     removeSharedVaultMember,
+    loadSharedVaultItems,
+    createSharedVaultItem,
+    updateSharedVaultItem,
+    deleteSharedVaultItem,
     emergencyAccessGrants,
     loadEmergencyAccessGrants,
     inviteEmergencyContact,
@@ -96,11 +101,16 @@ export default function SettingsPage() {
       runWithValidAccessToken: state.runWithValidAccessToken,
       sharedVaults: state.sharedVaults,
       sharedVaultMembers: state.sharedVaultMembers,
+      sharedVaultItems: state.sharedVaultItems,
       loadSharedVaults: state.loadSharedVaults,
       createSharedVault: state.createSharedVault,
       loadSharedVaultMembers: state.loadSharedVaultMembers,
       inviteSharedVaultMember: state.inviteSharedVaultMember,
       removeSharedVaultMember: state.removeSharedVaultMember,
+      loadSharedVaultItems: state.loadSharedVaultItems,
+      createSharedVaultItem: state.createSharedVaultItem,
+      updateSharedVaultItem: state.updateSharedVaultItem,
+      deleteSharedVaultItem: state.deleteSharedVaultItem,
       emergencyAccessGrants: state.emergencyAccessGrants,
       loadEmergencyAccessGrants: state.loadEmergencyAccessGrants,
       inviteEmergencyContact: state.inviteEmergencyContact,
@@ -145,6 +155,12 @@ export default function SettingsPage() {
     encryptedVaultKey: "",
     encryptedVaultKeyIv: "",
   });
+  const [sharedVaultItemForm, setSharedVaultItemForm] = useState({
+    encryptedData: "",
+    iv: "",
+    favorite: false,
+  });
+  const [editingSharedVaultItemId, setEditingSharedVaultItemId] = useState<string | null>(null);
   const [removingMemberId, setRemovingMemberId] = useState<string | null>(null);
   const [emergencyStatus, setEmergencyStatus] = useState<string | null>(null);
   const [emergencyError, setEmergencyError] = useState<string | null>(null);
@@ -448,6 +464,11 @@ export default function SettingsPage() {
   const selectedMembers = selectedSharedVaultId
     ? sharedVaultMembers[selectedSharedVaultId] ?? []
     : [];
+  const selectedSharedVaultItems = selectedSharedVaultId
+    ? sharedVaultItems[selectedSharedVaultId] ?? []
+    : [];
+  const selectedSharedVaultRole = selectedSharedVault?.currentUserMembership?.role ?? "owner";
+  const canWriteSelectedSharedVault = ["owner", "admin", "editor"].includes(selectedSharedVaultRole);
 
   const handleCreateSharedVault = async () => {
     setSharingError(null);
@@ -485,7 +506,10 @@ export default function SettingsPage() {
     setSelectedSharedVaultId(sharedVaultId);
     setSharingError(null);
     try {
-      await loadSharedVaultMembers(sharedVaultId);
+      await Promise.all([
+        loadSharedVaultMembers(sharedVaultId),
+        loadSharedVaultItems(sharedVaultId),
+      ]);
     } catch (error) {
       console.error("Üyeler yüklenemedi:", error);
       setSharingError(error instanceof Error ? error.message : "Üyeler yüklenemedi");
@@ -548,6 +572,71 @@ export default function SettingsPage() {
       setSharingError(error instanceof Error ? error.message : "Üye kaldırılamadı");
     } finally {
       setRemovingMemberId(null);
+    }
+  };
+
+  const handleSaveSharedVaultItem = async () => {
+    if (!selectedSharedVaultId) {
+      setSharingError("Önce bir paylaşımlı kasa seçin");
+      return;
+    }
+
+    if (!sharedVaultItemForm.encryptedData.trim() || !sharedVaultItemForm.iv.trim()) {
+      setSharingError("Şifreli öğe verisi ve IV gereklidir");
+      return;
+    }
+
+    setSharingError(null);
+    setSharingStatus(null);
+    setSharingLoading(true);
+    try {
+      const body = {
+        encryptedData: sharedVaultItemForm.encryptedData.trim(),
+        iv: sharedVaultItemForm.iv.trim(),
+        favorite: sharedVaultItemForm.favorite,
+      };
+
+      if (editingSharedVaultItemId) {
+        await updateSharedVaultItem(selectedSharedVaultId, editingSharedVaultItemId, body);
+        setSharingStatus("Şifreli paylaşımlı kasa öğesi güncellendi");
+      } else {
+        await createSharedVaultItem(selectedSharedVaultId, body);
+        setSharingStatus("Şifreli paylaşımlı kasa öğesi eklendi");
+      }
+
+      setSharedVaultItemForm({ encryptedData: "", iv: "", favorite: false });
+      setEditingSharedVaultItemId(null);
+    } catch (error) {
+      console.error("Paylaşımlı kasa öğesi kaydedilemedi:", error);
+      setSharingError(error instanceof Error ? error.message : "Paylaşımlı kasa öğesi kaydedilemedi");
+    } finally {
+      setSharingLoading(false);
+    }
+  };
+
+  const handleEditSharedVaultItem = (item: { id: string; encryptedData: string; iv: string; favorite: boolean }) => {
+    setEditingSharedVaultItemId(item.id);
+    setSharedVaultItemForm({ encryptedData: item.encryptedData, iv: item.iv, favorite: item.favorite });
+  };
+
+  const handleDeleteSharedVaultItem = async (itemId: string) => {
+    if (!selectedSharedVaultId) {
+      return;
+    }
+
+    const confirmed = window.confirm("Bu paylaşımlı kasa öğesini silmek istiyor musunuz?");
+    if (!confirmed) {
+      return;
+    }
+
+    setSharingError(null);
+    setSharingStatus(null);
+    try {
+      await deleteSharedVaultItem(selectedSharedVaultId, itemId);
+      setSharingStatus("Paylaşımlı kasa öğesi silindi");
+    } catch (error) {
+      console.error("Paylaşımlı kasa öğesi silinemedi:", error);
+      setSharingError(error instanceof Error ? error.message : "Paylaşımlı kasa öğesi silinemedi");
     }
   };
 
@@ -1550,6 +1639,71 @@ export default function SettingsPage() {
                         <Trash2 className="h-4 w-4" />
                         {removingMemberId === member.id ? "Kaldırılıyor..." : "Kaldır"}
                       </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {selectedSharedVault && (
+            <div className="glass rounded-2xl p-6">
+              <div className="flex items-center justify-between gap-3 mb-4">
+                <div>
+                  <h3 className="font-semibold">Şifreli Paylaşımlı Kasa Öğeleri</h3>
+                  <p className="text-sm text-text-secondary">Sunucu yalnızca encryptedData ve iv alanlarını saklar; öğe içeriği istemcide şifrelenmiş olmalıdır.</p>
+                </div>
+                <button onClick={() => void loadSharedVaultItems(selectedSharedVault.id)} className="rounded-xl bg-surface px-3 py-2 text-sm text-text-secondary hover:text-text-primary">Öğeleri Yenile</button>
+              </div>
+
+              {canWriteSelectedSharedVault ? (
+                <div className="mb-5 rounded-2xl border border-border bg-surface/60 p-4">
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <input value={sharedVaultItemForm.encryptedData} onChange={(event) => setSharedVaultItemForm((form) => ({ ...form, encryptedData: event.target.value }))} placeholder="encryptedData" className="rounded-xl border border-border bg-abyss px-4 py-3 text-sm text-text-primary outline-none focus:border-accent/60" />
+                    <input value={sharedVaultItemForm.iv} onChange={(event) => setSharedVaultItemForm((form) => ({ ...form, iv: event.target.value }))} placeholder="iv" className="rounded-xl border border-border bg-abyss px-4 py-3 text-sm text-text-primary outline-none focus:border-accent/60" />
+                  </div>
+                  <label className="mt-3 flex items-center gap-2 text-sm text-text-secondary">
+                    <input type="checkbox" checked={sharedVaultItemForm.favorite} onChange={(event) => setSharedVaultItemForm((form) => ({ ...form, favorite: event.target.checked }))} className="h-4 w-4 accent-accent" />
+                    Favori
+                  </label>
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    <button onClick={handleSaveSharedVaultItem} disabled={sharingLoading} className="rounded-xl bg-accent/10 px-4 py-2 text-sm font-medium text-accent hover:bg-accent/20 disabled:opacity-50">
+                      {editingSharedVaultItemId ? "Şifreli Öğeyi Güncelle" : "Şifreli Öğe Ekle"}
+                    </button>
+                    {editingSharedVaultItemId && (
+                      <button onClick={() => { setEditingSharedVaultItemId(null); setSharedVaultItemForm({ encryptedData: "", iv: "", favorite: false }); }} className="rounded-xl bg-surface px-4 py-2 text-sm font-medium text-text-secondary hover:text-text-primary">
+                        Vazgeç
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <div className="mb-5 rounded-xl border border-warning/20 bg-warning/5 p-4 text-sm text-warning/90">
+                  Viewer rolü paylaşımlı kasa öğelerini listeleyebilir, ancak oluşturamaz, güncelleyemez veya silemez.
+                </div>
+              )}
+
+              <div className="space-y-3">
+                {selectedSharedVaultItems.length === 0 ? (
+                  <div className="py-6 text-center text-sm text-text-secondary bg-surface rounded-xl">Paylaşımlı kasa öğesi yok veya henüz yüklenmedi.</div>
+                ) : selectedSharedVaultItems.map((item) => (
+                  <div key={item.id} className="rounded-2xl border border-border bg-surface/60 p-4">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                      <div className="min-w-0">
+                        <p className="truncate font-[family-name:var(--font-mono)] text-xs text-text-primary">{item.id}</p>
+                        <p className="mt-1 truncate font-[family-name:var(--font-mono)] text-xs text-text-muted">{item.encryptedData}</p>
+                        <div className="mt-2 flex flex-wrap gap-2 text-xs">
+                          <span className="rounded-lg bg-abyss px-2.5 py-1 text-text-secondary">IV: {item.iv}</span>
+                          <span className="rounded-lg bg-abyss px-2.5 py-1 text-accent">{item.favorite ? "favorite" : "normal"}</span>
+                          <span className="rounded-lg bg-abyss px-2.5 py-1 text-text-secondary">{formatDateTime(item.updatedAt)}</span>
+                        </div>
+                      </div>
+                      {canWriteSelectedSharedVault && (
+                        <div className="flex shrink-0 flex-wrap gap-2">
+                          <button onClick={() => handleEditSharedVaultItem(item)} className="rounded-xl bg-accent/10 px-4 py-2 text-sm font-medium text-accent hover:bg-accent/20">Düzenle</button>
+                          <button onClick={() => void handleDeleteSharedVaultItem(item.id)} className="rounded-xl bg-danger/10 px-4 py-2 text-sm font-medium text-danger hover:bg-danger/20">Sil</button>
+                        </div>
+                      )}
                     </div>
                   </div>
                 ))}

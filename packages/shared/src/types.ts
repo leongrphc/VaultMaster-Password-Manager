@@ -189,6 +189,18 @@ export interface SharedVaultMemberResponse {
   updatedAt: string;
 }
 
+export interface SharedVaultItemResponse {
+  id: string;
+  sharedVaultId: string;
+  createdById: string;
+  encryptedData: string;
+  iv: string;
+  favorite: boolean;
+  deletedAt?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export type EmergencyAccessStatus =
   | "pending"
   | "active"

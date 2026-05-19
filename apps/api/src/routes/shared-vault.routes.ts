@@ -2,6 +2,8 @@ import { Router, type Request, type Response } from "express";
 import {
   sharedVaultCreateSchema,
   sharedVaultInviteSchema,
+  sharedVaultItemCreateSchema,
+  sharedVaultItemUpdateSchema,
   vaultItemIdSchema,
 } from "@vaultmaster/shared";
 import { prisma } from "../config/prisma.js";
@@ -48,6 +50,19 @@ async function findSharedVaultAccess(sharedVaultId: string, userId: string) {
 
 function canManageMembers(access: NonNullable<Awaited<ReturnType<typeof findSharedVaultAccess>>>) {
   return access.isOwner || access.membership?.role === "admin";
+}
+
+function canWriteItems(access: NonNullable<Awaited<ReturnType<typeof findSharedVaultAccess>>>) {
+  return access.isOwner || ["owner", "admin", "editor"].includes(access.membership?.role ?? "");
+}
+
+function serializeSharedVaultItem<T extends { createdAt: Date; updatedAt: Date; deletedAt: Date | null }>(item: T) {
+  return {
+    ...item,
+    deletedAt: item.deletedAt?.toISOString() ?? null,
+    createdAt: item.createdAt.toISOString(),
+    updatedAt: item.updatedAt.toISOString(),
+  };
 }
 
 function canRemoveMember(
@@ -151,6 +166,147 @@ router.post("/", async (req: Request, res: Response) => {
       updatedAt: sharedVault.updatedAt.toISOString(),
     },
   });
+});
+
+// GET /api/shared-vaults/:id/items
+router.get("/:id/items", async (req: Request, res: Response) => {
+  const { id } = vaultItemIdSchema.parse({ id: req.params.id });
+  const access = await findSharedVaultAccess(id, req.user!.userId);
+
+  if (!access) {
+    res.status(404).json({ success: false, error: "Paylaşımlı kasa bulunamadı" });
+    return;
+  }
+
+  const items = await prisma.sharedVaultItem.findMany({
+    where: { sharedVaultId: id, deletedAt: null },
+    orderBy: { updatedAt: "desc" },
+  });
+
+  res.json({ success: true, data: items.map(serializeSharedVaultItem) });
+});
+
+// POST /api/shared-vaults/:id/items
+router.post("/:id/items", async (req: Request, res: Response) => {
+  const { id } = vaultItemIdSchema.parse({ id: req.params.id });
+  const body = sharedVaultItemCreateSchema.parse(req.body);
+  const access = await findSharedVaultAccess(id, req.user!.userId);
+
+  if (!access) {
+    res.status(404).json({ success: false, error: "Paylaşımlı kasa bulunamadı" });
+    return;
+  }
+
+  if (!canWriteItems(access)) {
+    res.status(403).json({ success: false, error: "Paylaşımlı kasa öğesi oluşturma yetkiniz yok" });
+    return;
+  }
+
+  const item = await prisma.sharedVaultItem.create({
+    data: {
+      sharedVaultId: id,
+      createdById: req.user!.userId,
+      encryptedData: body.encryptedData,
+      iv: body.iv,
+      favorite: body.favorite,
+    },
+  });
+
+  await logAuditEvent({
+    userId: req.user!.userId,
+    action: "shared_vault.item.create",
+    status: "success",
+    ipAddress: getRequestIp(req),
+    userAgent: getRequestUserAgent(req),
+    metadata: { sharedVaultId: id, itemId: item.id },
+  });
+
+  res.status(201).json({ success: true, data: serializeSharedVaultItem(item) });
+});
+
+// PUT /api/shared-vaults/:id/items/:itemId
+router.put("/:id/items/:itemId", async (req: Request, res: Response) => {
+  const { id } = vaultItemIdSchema.parse({ id: req.params.id });
+  const { id: itemId } = vaultItemIdSchema.parse({ id: req.params.itemId });
+  const body = sharedVaultItemUpdateSchema.parse(req.body);
+  const access = await findSharedVaultAccess(id, req.user!.userId);
+
+  if (!access) {
+    res.status(404).json({ success: false, error: "Paylaşımlı kasa bulunamadı" });
+    return;
+  }
+
+  if (!canWriteItems(access)) {
+    res.status(403).json({ success: false, error: "Paylaşımlı kasa öğesi güncelleme yetkiniz yok" });
+    return;
+  }
+
+  const existing = await prisma.sharedVaultItem.findFirst({
+    where: { id: itemId, sharedVaultId: id, deletedAt: null },
+  });
+
+  if (!existing) {
+    res.status(404).json({ success: false, error: "Paylaşımlı kasa öğesi bulunamadı" });
+    return;
+  }
+
+  const item = await prisma.sharedVaultItem.update({
+    where: { id: itemId },
+    data: { ...body, deletedAt: null },
+  });
+
+  await logAuditEvent({
+    userId: req.user!.userId,
+    action: "shared_vault.item.update",
+    status: "success",
+    ipAddress: getRequestIp(req),
+    userAgent: getRequestUserAgent(req),
+    metadata: { sharedVaultId: id, itemId: item.id },
+  });
+
+  res.json({ success: true, data: serializeSharedVaultItem(item) });
+});
+
+// DELETE /api/shared-vaults/:id/items/:itemId
+router.delete("/:id/items/:itemId", async (req: Request, res: Response) => {
+  const { id } = vaultItemIdSchema.parse({ id: req.params.id });
+  const { id: itemId } = vaultItemIdSchema.parse({ id: req.params.itemId });
+  const access = await findSharedVaultAccess(id, req.user!.userId);
+
+  if (!access) {
+    res.status(404).json({ success: false, error: "Paylaşımlı kasa bulunamadı" });
+    return;
+  }
+
+  if (!canWriteItems(access)) {
+    res.status(403).json({ success: false, error: "Paylaşımlı kasa öğesi silme yetkiniz yok" });
+    return;
+  }
+
+  const existing = await prisma.sharedVaultItem.findFirst({
+    where: { id: itemId, sharedVaultId: id, deletedAt: null },
+  });
+
+  if (!existing) {
+    res.status(404).json({ success: false, error: "Paylaşımlı kasa öğesi bulunamadı" });
+    return;
+  }
+
+  await prisma.sharedVaultItem.update({
+    where: { id: itemId },
+    data: { deletedAt: new Date() },
+  });
+
+  await logAuditEvent({
+    userId: req.user!.userId,
+    action: "shared_vault.item.delete",
+    status: "success",
+    ipAddress: getRequestIp(req),
+    userAgent: getRequestUserAgent(req),
+    metadata: { sharedVaultId: id, itemId },
+  });
+
+  res.json({ success: true, data: { message: "Paylaşımlı kasa öğesi silindi" } });
 });
 
 // GET /api/shared-vaults/:id/members

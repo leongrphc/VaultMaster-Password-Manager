@@ -138,6 +138,18 @@ export const sharedVaultInviteSchema = z.object({
   encryptedVaultKeyIv: z.string().min(1),
 });
 
+export const sharedVaultItemCreateSchema = z.object({
+  encryptedData: z.string().min(1),
+  iv: z.string().min(1),
+  favorite: z.boolean().optional().default(false),
+});
+
+export const sharedVaultItemUpdateSchema = z.object({
+  encryptedData: z.string().min(1).optional(),
+  iv: z.string().min(1).optional(),
+  favorite: z.boolean().optional(),
+});
+
 export const emergencyAccessGrantSchema = z.object({
   contactEmail: z.string().email(),
   encryptedAccessKey: z.string().min(1),
@@ -161,4 +173,6 @@ export type AttachmentCreateInput = z.infer<typeof attachmentCreateSchema>;
 export type WebAuthnCredentialNameInput = z.infer<typeof webAuthnCredentialNameSchema>;
 export type SharedVaultCreateInput = z.infer<typeof sharedVaultCreateSchema>;
 export type SharedVaultInviteInput = z.infer<typeof sharedVaultInviteSchema>;
+export type SharedVaultItemCreateInput = z.infer<typeof sharedVaultItemCreateSchema>;
+export type SharedVaultItemUpdateInput = z.infer<typeof sharedVaultItemUpdateSchema>;
 export type EmergencyAccessGrantInput = z.infer<typeof emergencyAccessGrantSchema>;

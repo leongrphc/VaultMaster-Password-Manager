@@ -8,6 +8,7 @@ import {
   request,
   sharedVaultPayload,
   sharedVaultInvitePayload,
+  sharedVaultItemPayload,
   startTestServer,
   stopTestServer,
 } from "./integration-helpers.mjs";
@@ -146,4 +147,86 @@ test("shared vault member management enforces owner/admin/member roles", async (
     headers: ownerHeaders,
   });
   assert.equal(ownerRemoveAdmin.status, 200);
+});
+
+test("shared vault encrypted item CRUD enforces membership and write roles", async () => {
+  const owner = await registerUser(baseUrl);
+  const editor = await registerUser(baseUrl);
+  const viewer = await registerUser(baseUrl);
+  const outsider = await registerUser(baseUrl);
+  const ownerHeaders = authHeaders(owner.accessToken);
+
+  const created = await request(baseUrl, "/api/shared-vaults", {
+    method: "POST",
+    headers: ownerHeaders,
+    body: sharedVaultPayload(),
+  });
+  assert.equal(created.status, 201);
+  const sharedVaultId = created.body.data.id;
+
+  const editorInvite = await request(baseUrl, `/api/shared-vaults/${sharedVaultId}/invite`, {
+    method: "POST",
+    headers: ownerHeaders,
+    body: sharedVaultInvitePayload({ email: editor.payload.email, role: "editor" }),
+  });
+  assert.equal(editorInvite.status, 201);
+
+  const viewerInvite = await request(baseUrl, `/api/shared-vaults/${sharedVaultId}/invite`, {
+    method: "POST",
+    headers: ownerHeaders,
+    body: sharedVaultInvitePayload({ email: viewer.payload.email, role: "viewer" }),
+  });
+  assert.equal(viewerInvite.status, 201);
+
+  const createdItem = await request(baseUrl, `/api/shared-vaults/${sharedVaultId}/items`, {
+    method: "POST",
+    headers: authHeaders(editor.accessToken),
+    body: sharedVaultItemPayload(),
+  });
+  assert.equal(createdItem.status, 201);
+  assert.equal(createdItem.body.data.encryptedData, "encrypted-shared-item-payload");
+  assert.equal(createdItem.body.data.iv, "shared-item-iv");
+  assert.equal(createdItem.body.data.createdById, editor.data.user.id);
+  assert.equal(createdItem.body.data.plaintext, undefined);
+  const itemId = createdItem.body.data.id;
+
+  const viewerList = await request(baseUrl, `/api/shared-vaults/${sharedVaultId}/items`, {
+    headers: authHeaders(viewer.accessToken),
+  });
+  assert.equal(viewerList.status, 200);
+  assert.equal(viewerList.body.data.length, 1);
+  assert.equal(viewerList.body.data[0].id, itemId);
+
+  const viewerCreate = await request(baseUrl, `/api/shared-vaults/${sharedVaultId}/items`, {
+    method: "POST",
+    headers: authHeaders(viewer.accessToken),
+    body: sharedVaultItemPayload({ encryptedData: "viewer-encrypted-payload" }),
+  });
+  assert.equal(viewerCreate.status, 403);
+
+  const outsiderList = await request(baseUrl, `/api/shared-vaults/${sharedVaultId}/items`, {
+    headers: authHeaders(outsider.accessToken),
+  });
+  assert.equal(outsiderList.status, 404);
+
+  const updated = await request(baseUrl, `/api/shared-vaults/${sharedVaultId}/items/${itemId}`, {
+    method: "PUT",
+    headers: ownerHeaders,
+    body: { encryptedData: "updated-encrypted-shared-item", iv: "updated-shared-item-iv", favorite: true },
+  });
+  assert.equal(updated.status, 200);
+  assert.equal(updated.body.data.encryptedData, "updated-encrypted-shared-item");
+  assert.equal(updated.body.data.favorite, true);
+
+  const deleted = await request(baseUrl, `/api/shared-vaults/${sharedVaultId}/items/${itemId}`, {
+    method: "DELETE",
+    headers: authHeaders(editor.accessToken),
+  });
+  assert.equal(deleted.status, 200);
+
+  const emptyList = await request(baseUrl, `/api/shared-vaults/${sharedVaultId}/items`, {
+    headers: ownerHeaders,
+  });
+  assert.equal(emptyList.status, 200);
+  assert.equal(emptyList.body.data.length, 0);
 });
