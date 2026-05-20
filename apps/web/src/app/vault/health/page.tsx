@@ -34,6 +34,8 @@ export default function HealthReportPage() {
   const items = useStore((state) => state.items);
   const [checkedBreaches, setCheckedBreaches] = useState<Record<string, number | null>>({});
   const [checkingBreaches, setCheckingBreaches] = useState(false);
+  const [breachProgress, setBreachProgress] = useState({ checked: 0, total: 0 });
+  const [breachAbortController, setBreachAbortController] = useState<AbortController | null>(null);
 
   const loginItems = useMemo(
     () => items.filter((i) => i.data.type === "login").map((i) => ({
@@ -97,40 +99,58 @@ export default function HealthReportPage() {
 
   // HIBP kontrolü (k-anonymity)
   const checkBreaches = async () => {
+    const controller = new AbortController();
     setCheckingBreaches(true);
+    setBreachAbortController(controller);
+    setBreachProgress({ checked: 0, total: loginItems.length });
     const results: Record<string, number | null> = {};
 
-    for (const item of loginItems) {
-      const pw = item.data.password;
-      try {
-        const encoder = new TextEncoder();
-        const data = encoder.encode(pw);
-        const hashBuffer = await crypto.subtle.digest("SHA-1", data);
-        const hashArray = Array.from(new Uint8Array(hashBuffer));
-        const hashHex = hashArray.map((b) => b.toString(16).padStart(2, "0")).join("").toUpperCase();
+    try {
+      for (const item of loginItems) {
+        if (controller.signal.aborted) break;
 
-        const prefix = hashHex.slice(0, 5);
-        const suffix = hashHex.slice(5);
+        const pw = item.data.password;
+        try {
+          const encoder = new TextEncoder();
+          const data = encoder.encode(pw);
+          const hashBuffer = await crypto.subtle.digest("SHA-1", data);
+          const hashArray = Array.from(new Uint8Array(hashBuffer));
+          const hashHex = hashArray.map((b) => b.toString(16).padStart(2, "0")).join("").toUpperCase();
 
-        const res = await fetch(`https://api.pwnedpasswords.com/range/${prefix}`);
-        const text = await res.text();
+          const prefix = hashHex.slice(0, 5);
+          const suffix = hashHex.slice(5);
 
-        const lines = text.split("\n");
-        const match = lines.find((line) => line.startsWith(suffix));
+          const res = await fetch(`https://api.pwnedpasswords.com/range/${prefix}`, { signal: controller.signal });
+          const text = await res.text();
 
-        if (match) {
-          const count = parseInt(match.split(":")[1].trim(), 10);
-          results[item.id] = count;
-        } else {
-          results[item.id] = 0;
+          const lines = text.split("\n");
+          const match = lines.find((line) => line.startsWith(suffix));
+
+          if (match) {
+            const count = parseInt(match.split(":")[1].trim(), 10);
+            results[item.id] = count;
+          } else {
+            results[item.id] = 0;
+          }
+        } catch (error) {
+          if (error instanceof DOMException && error.name === "AbortError") break;
+          results[item.id] = null;
+        } finally {
+          if (!controller.signal.aborted) {
+            setBreachProgress((progress) => ({ ...progress, checked: progress.checked + 1 }));
+          }
         }
-      } catch {
-        results[item.id] = null;
       }
-    }
 
-    setCheckedBreaches(results);
-    setCheckingBreaches(false);
+      setCheckedBreaches(results);
+    } finally {
+      setCheckingBreaches(false);
+      setBreachAbortController(null);
+    }
+  };
+
+  const cancelBreachCheck = () => {
+    breachAbortController?.abort();
   };
 
   const breachedItems = Object.entries(checkedBreaches).filter(
@@ -163,6 +183,10 @@ export default function HealthReportPage() {
     strong: "#00cc8e",
     excellent: "#00ffb2",
   };
+
+  const breachProgressPercent = breachProgress.total > 0
+    ? Math.round((breachProgress.checked / breachProgress.total) * 100)
+    : 0;
 
   if (totalLogins === 0) {
     return (
@@ -237,36 +261,61 @@ export default function HealthReportPage() {
 
       {/* HIBP Kontrol */}
       <div className="glass rounded-2xl p-6 mb-6">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-danger/10 flex items-center justify-center">
+        <div className="flex items-start justify-between gap-4">
+          <div className="flex items-start gap-3">
+            <div className="w-10 h-10 rounded-xl bg-danger/10 flex items-center justify-center shrink-0">
               <ShieldAlert className="w-5 h-5 text-danger" />
             </div>
             <div>
               <h3 className="font-semibold">Sızıntı Kontrolü</h3>
               <p className="text-sm text-text-secondary">
-                Have I Been Pwned veritabanında şifrelerinizi kontrol edin (k-anonymity ile güvenli)
+                Şifreler tarayıcınızda SHA-1 ile özetlenir; HIBP&apos;ye yalnızca ilk 5 hash karakteri gönderilir. Tam hash ve düz metin şifreler cihazınızdan çıkmaz, eşleşme yerel olarak yapılır.
               </p>
             </div>
           </div>
-          <button
-            onClick={checkBreaches}
-            disabled={checkingBreaches}
-            className="bg-danger/10 hover:bg-danger/20 text-danger font-medium px-5 py-2.5 rounded-xl flex items-center gap-2 transition-all text-sm disabled:opacity-50 shrink-0"
-          >
-            {checkingBreaches ? (
-              <>
-                <RefreshCw className="w-4 h-4 animate-spin" />
-                Kontrol ediliyor...
-              </>
-            ) : (
-              <>
-                <ShieldAlert className="w-4 h-4" />
-                Kontrol Et
-              </>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              onClick={checkBreaches}
+              disabled={checkingBreaches}
+              className="bg-danger/10 hover:bg-danger/20 text-danger font-medium px-5 py-2.5 rounded-xl flex items-center gap-2 transition-all text-sm disabled:opacity-50"
+            >
+              {checkingBreaches ? (
+                <>
+                  <RefreshCw className="w-4 h-4 animate-spin" />
+                  Kontrol ediliyor...
+                </>
+              ) : (
+                <>
+                  <ShieldAlert className="w-4 h-4" />
+                  Kontrol Et
+                </>
+              )}
+            </button>
+            {checkingBreaches && (
+              <button
+                onClick={cancelBreachCheck}
+                className="bg-surface hover:bg-surface-hover text-text-secondary font-medium px-4 py-2.5 rounded-xl transition-all text-sm"
+              >
+                İptal
+              </button>
             )}
-          </button>
+          </div>
         </div>
+
+        {checkingBreaches && (
+          <div className="mt-4 rounded-xl border border-accent/20 bg-accent/5 p-3">
+            <div className="flex items-center justify-between text-xs text-text-secondary mb-2">
+              <span>{breachProgress.checked} / {breachProgress.total} şifre kontrol edildi</span>
+              <span>{breachProgressPercent}%</span>
+            </div>
+            <div className="h-2 bg-abyss rounded-full overflow-hidden">
+              <div
+                className="h-full bg-accent rounded-full transition-all"
+                style={{ width: `${breachProgressPercent}%` }}
+              />
+            </div>
+          </div>
+        )}
 
         {breachedItems.length > 0 && (
           <div className="mt-4 space-y-2">

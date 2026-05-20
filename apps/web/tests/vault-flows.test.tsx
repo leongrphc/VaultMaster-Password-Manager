@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, test, vi } from "vitest";
 import AddItemModal from "../src/components/vault/AddItemModal";
 import EditItemModal from "../src/components/vault/EditItemModal";
 import LockScreen from "../src/components/vault/LockScreen";
+import HealthReportPage from "../src/app/vault/health/page";
 import PlaintextExportConfirmModal from "../src/components/vault/PlaintextExportConfirmModal";
 import VaultItemCard from "../src/components/vault/VaultItemCard";
 
@@ -14,11 +15,45 @@ const uploadAttachment = vi.fn();
 const downloadAttachment = vi.fn();
 const deleteAttachment = vi.fn();
 const unlockVault = vi.fn();
+const unlockVaultLocally = vi.fn();
+const getLocalUnlockStatus = vi.fn(() => ({ enabled: false }));
 const logout = vi.fn();
 
-const storeState = {
+type StoreItem = {
+  id: string;
+  folderId: string | null;
+  favorite: boolean;
+  createdAt: string;
+  updatedAt: string;
+  data: {
+    type: "login";
+    title: string;
+    username: string;
+    password: string;
+    url?: string;
+  };
+};
+
+const storeState: {
+  userEmail: string;
+  unlockVault: typeof unlockVault;
+  unlockVaultLocally: typeof unlockVaultLocally;
+  getLocalUnlockStatus: typeof getLocalUnlockStatus;
+  logout: typeof logout;
+  createVaultItem: typeof createVaultItem;
+  updateVaultItemFull: typeof updateVaultItemFull;
+  loadAttachments: typeof loadAttachments;
+  uploadAttachment: typeof uploadAttachment;
+  downloadAttachment: typeof downloadAttachment;
+  deleteAttachment: typeof deleteAttachment;
+  folders: unknown[];
+  items: StoreItem[];
+  selectedFolderId: string | null;
+} = {
   userEmail: "user@example.com",
   unlockVault,
+  unlockVaultLocally,
+  getLocalUnlockStatus,
   logout,
   createVaultItem,
   updateVaultItemFull,
@@ -49,7 +84,9 @@ vi.mock("../src/lib/api", () => ({
 }));
 
 vi.mock("@vaultmaster/crypto", () => ({
+  calculateStrength: vi.fn((password: string) => password.length >= 12 ? 85 : 35),
   generatePassword: vi.fn(() => "generated-password"),
+  getStrengthLabel: vi.fn((score: number) => score >= 80 ? "strong" : "weak"),
 }));
 
 beforeEach(() => {
@@ -61,6 +98,9 @@ beforeEach(() => {
   downloadAttachment.mockReset();
   deleteAttachment.mockReset();
   unlockVault.mockReset();
+  unlockVaultLocally.mockReset();
+  getLocalUnlockStatus.mockReset();
+  getLocalUnlockStatus.mockReturnValue({ enabled: false });
   logout.mockReset();
   storeState.userEmail = "user@example.com";
   storeState.folders = [];
@@ -411,5 +451,90 @@ describe("plaintext export warning modal", () => {
 
     expect(onConfirm).toHaveBeenCalled();
     expect(onClose).not.toHaveBeenCalled();
+  });
+});
+
+describe("health report breach check", () => {
+  test("shows privacy copy and checks HIBP by hash prefix only", async () => {
+    const digest = vi.spyOn(crypto.subtle, "digest").mockResolvedValue(
+      new Uint8Array([0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc]).buffer
+    );
+    const fetchMock = vi.fn().mockResolvedValue({ text: async () => "6789ABC:3" });
+    vi.stubGlobal("fetch", fetchMock);
+    storeState.items = [{
+      id: "item-1",
+      folderId: null,
+      favorite: false,
+      createdAt: "2026-05-17T00:00:00.000Z",
+      updatedAt: "2026-05-17T00:00:00.000Z",
+      data: {
+        type: "login",
+        title: "GitHub",
+        username: "octo",
+        password: "not-sent-password",
+      },
+    }];
+    const user = userEvent.setup();
+
+    render(<HealthReportPage />);
+
+    expect(screen.getByText(/yalnızca ilk 5 hash karakteri gönderilir/i)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /Kontrol Et/i }));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(
+      "https://api.pwnedpasswords.com/range/12345",
+      expect.objectContaining({ signal: expect.any(AbortSignal) })
+    ));
+    expect(fetchMock.mock.calls[0][0]).not.toContain("not-sent-password");
+    expect(digest).toHaveBeenCalled();
+    await waitFor(() => expect(screen.getByText(/3 kez sızdırılmış/i)).toBeInTheDocument());
+
+    digest.mockRestore();
+  });
+
+  test("shows progress and cancels an active breach check", async () => {
+    vi.spyOn(crypto.subtle, "digest").mockResolvedValue(
+      new Uint8Array([0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc]).buffer
+    );
+    const fetchMock = vi.fn((_url: string, init?: RequestInit) => new Promise((_resolve, reject) => {
+      init?.signal?.addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError")));
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+    storeState.items = [{
+      id: "item-1",
+      folderId: null,
+      favorite: false,
+      createdAt: "2026-05-17T00:00:00.000Z",
+      updatedAt: "2026-05-17T00:00:00.000Z",
+      data: {
+        type: "login",
+        title: "GitHub",
+        username: "octo",
+        password: "first-password",
+      },
+    }, {
+      id: "item-2",
+      folderId: null,
+      favorite: false,
+      createdAt: "2026-05-17T00:00:00.000Z",
+      updatedAt: "2026-05-17T00:00:00.000Z",
+      data: {
+        type: "login",
+        title: "GitLab",
+        username: "octo",
+        password: "second-password",
+      },
+    }];
+    const user = userEvent.setup();
+
+    render(<HealthReportPage />);
+
+    await user.click(screen.getByRole("button", { name: /Kontrol Et/i }));
+    expect(await screen.findByText("0 / 2 şifre kontrol edildi")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "İptal" }));
+
+    await waitFor(() => expect(screen.queryByRole("button", { name: "İptal" })).not.toBeInTheDocument());
+    expect(screen.getByRole("button", { name: /Kontrol Et/i })).toBeEnabled();
   });
 });
