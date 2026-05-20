@@ -44,6 +44,8 @@ const CREDENTIAL_CACHE_TTL_MS = 30000;
 const autofillSuppressions = new Map();
 const suggestionCache = new Map();
 const credentialCache = new Map();
+const suggestionRequests = new Map();
+const credentialRequests = new Map();
 const pendingCredentialNonces = new Map();
 const PASSKEY_INJECTED_SOURCE = "vaultmaster-passkey-injected";
 const PASSKEY_CONTENT_SOURCE = "vaultmaster-passkey-content";
@@ -425,6 +427,13 @@ async function prewarmPageAutofillState() {
 	}
 
 	const identifier = context.usernameInput?.value.trim() || "";
+	if (
+		pageAutofillState.identifier === identifier &&
+		Date.now() - pageAutofillState.updatedAt <= SUGGESTION_CACHE_TTL_MS
+	) {
+		return;
+	}
+
 	const payload = await fetchSuggestions(identifier);
 
 	pageAutofillState = {
@@ -527,6 +536,9 @@ async function evaluateAutofillOpportunity() {
 }
 
 function showSuggestionPanel({ context, panelKey, typedIdentifier, suggestions, isUsingOfflineData }) {
+	for (const suggestion of suggestions) {
+		void getCachedCredential(suggestion.itemId);
+	}
 	const shouldReuse =
 		activePanel &&
 		activePanel.panelKey === panelKey &&
@@ -654,16 +666,12 @@ async function fillCredentialFromMessage(message, sendResponse) {
 }
 
 async function handleCredentialFill(itemId, context, panelKey, options = {}) {
-	if (!options.forceFill) {
-		const isDomainValid = await validateCredentialForDomain(itemId, window.location.href);
-		if (!isDomainValid) {
+	const result = await fillCredentialIntoContext(itemId, context, options);
+	if (!result.ok) {
+		if (result.status === "domain_mismatch" && !options.forceFill) {
 			showPhishingWarning(itemId, context, panelKey);
 			return;
 		}
-	}
-
-	const result = await fillCredentialIntoContext(itemId, context, options);
-	if (!result.ok) {
 		updatePanelNotice(result.message || "Kayıt alınamadı. VaultMaster sekmesinin açık ve kilitsiz olduğundan emin olun.", true);
 		if (options.fromLauncher) {
 			showLauncherFeedback("Kayit alinamadi");
@@ -680,9 +688,18 @@ async function handleCredentialFill(itemId, context, panelKey, options = {}) {
 }
 
 async function fillCredentialIntoContext(itemId, context, options = {}) {
-	const credential = await getCachedCredential(itemId);
+	const credentialResult = options.credential
+		? { status: "ready", credential: options.credential }
+		: await getCachedCredential(itemId, { forceFill: options.forceFill });
+	const credential = credentialResult?.credential;
 	if (!credential) {
-		return { ok: false, message: "Kayıt alınamadı. VaultMaster sekmesinin açık ve kilitsiz olduğundan emin olun." };
+		return {
+			ok: false,
+			status: credentialResult?.status,
+			message: credentialResult?.status === "domain_mismatch"
+				? "Kayıt bu domain için doğrulanamadı."
+				: "Kayıt alınamadı. VaultMaster sekmesinin açık ve kilitsiz olduğundan emin olun.",
+		};
 	}
 	const latestContext = getPageLoginContext() || context;
 	const filledFields = [];
@@ -723,29 +740,44 @@ async function fillCredentialIntoContext(itemId, context, options = {}) {
 	};
 }
 
-async function getCachedCredential(itemId) {
+async function getCachedCredential(itemId, options = {}) {
 	const cached = credentialCache.get(itemId);
-	if (cached && cached.expiresAt > Date.now()) {
-		return cached.credential;
+	if (!options.forceFill && cached && cached.expiresAt > Date.now()) {
+		return { status: "ready", credential: cached.credential };
 	}
 
-	const response = await sendRuntimeMessage({
+	const requestKey = `${itemId}|${options.forceFill ? "force" : "strict"}`;
+	if (credentialRequests.has(requestKey)) {
+		return credentialRequests.get(requestKey);
+	}
+
+	const request = sendRuntimeMessage({
 		type: "GET_LOGIN_CREDENTIAL",
 		itemId,
 		pageUrl: window.location.href,
-	}).catch(() => null);
+		forceFill: Boolean(options.forceFill),
+	})
+		.catch(() => null)
+		.then((response) => {
+			const payload = response?.payload;
+			const credential = payload?.credential;
+			if (!response?.ok || payload?.status !== "ready" || !credential) {
+				credentialCache.delete(itemId);
+				return { status: payload?.status || "error", credential: null };
+			}
 
-	const credential = response?.payload?.credential;
-	if (!response?.ok || response.payload?.status !== "ready" || !credential) {
-		credentialCache.delete(itemId);
-		return null;
-	}
+			credentialCache.set(itemId, {
+				credential,
+				expiresAt: Date.now() + CREDENTIAL_CACHE_TTL_MS,
+			});
+			return { status: "ready", credential };
+		})
+		.finally(() => {
+			credentialRequests.delete(requestKey);
+		});
 
-	credentialCache.set(itemId, {
-		credential,
-		expiresAt: Date.now() + CREDENTIAL_CACHE_TTL_MS,
-	});
-	return credential;
+	credentialRequests.set(requestKey, request);
+	return request;
 }
 
 // Phishing koruması - domain doğrulama
@@ -1442,22 +1474,34 @@ async function fetchSuggestions(identifier, options = {}) {
 		return cached.payload;
 	}
 
-	const response = await sendRuntimeMessage({
+	if (!options.forceRefresh && suggestionRequests.has(cacheKey)) {
+		return suggestionRequests.get(cacheKey);
+	}
+
+	const request = sendRuntimeMessage({
 		type: "LIST_LOGIN_SUGGESTIONS",
 		identifier: normalizedIdentifier,
 		pageUrl: window.location.href,
-	}).catch(() => null);
+	})
+		.catch(() => null)
+		.then((response) => {
+			const payload = response?.payload;
+			if (!response?.ok || !payload || payload.status !== "ready" || !payload.suggestions?.length) {
+				return null;
+			}
 
-	const payload = response?.payload;
-	if (!response?.ok || !payload || payload.status !== "ready" || !payload.suggestions?.length) {
-		return null;
-	}
+			suggestionCache.set(cacheKey, {
+				payload,
+				expiresAt: Date.now() + SUGGESTION_CACHE_TTL_MS,
+			});
+			return payload;
+		})
+		.finally(() => {
+			suggestionRequests.delete(cacheKey);
+		});
 
-	suggestionCache.set(cacheKey, {
-		payload,
-		expiresAt: Date.now() + SUGGESTION_CACHE_TTL_MS,
-	});
-	return payload;
+	suggestionRequests.set(cacheKey, request);
+	return request;
 }
 
 function isLikelyIdentifierInput(input) {

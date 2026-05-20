@@ -229,6 +229,7 @@ export default function BrowserExtensionBridge() {
 						userDisplayName?: string;
 						origin?: string;
 						allowCredentialIds?: string[];
+						forceFill?: boolean;
 					}
 				| undefined;
 
@@ -528,17 +529,20 @@ export default function BrowserExtensionBridge() {
 
 			if (data.type === CREDENTIAL_REQUEST) {
 				const activePage = normalizeUrl(data.pageUrl);
-				const matchedItem = items.find((item) => {
-					if (item.id !== data.itemId || item.data.type !== "login") {
-						return false;
-					}
-
-					return scoreHostMatch(activePage, item.data.url) >= 0;
-				});
+				const matchedItem = items.find((item) => item.id === data.itemId && item.data.type === "login");
 
 				if (!matchedItem || matchedItem.data.type !== "login") {
 					respond(CREDENTIAL_RESPONSE, {
 						status: "no_match",
+					});
+					return;
+				}
+
+				const hostScore = scoreHostMatch(activePage, matchedItem.data.url);
+				if (hostScore <= 0 && !data.forceFill) {
+					respond(CREDENTIAL_RESPONSE, {
+						status: "domain_mismatch",
+						itemId: matchedItem.id,
 					});
 					return;
 				}

@@ -83,10 +83,15 @@ function resolveRuntimeResponse(payload, { credential, domainValid }) {
   if (payload.type === "GET_LOGIN_CREDENTIAL") {
     return {
       ok: true,
-      payload: {
-        status: "ready",
-        credential,
-      },
+      payload: domainValid || payload.forceFill
+        ? {
+            status: "ready",
+            credential,
+          }
+        : {
+            status: "domain_mismatch",
+            itemId: payload.itemId,
+          },
     };
   }
 
@@ -155,7 +160,8 @@ test("blocks panel autofill and shows a phishing warning when the domain is inva
 
   assert.equal(content.window.document.querySelector("#password").value, "");
   assert.match(content.window.document.querySelector("#vaultmaster-inline-autofill").textContent, /Güvenlik Uyarısı/);
-  assert.equal(content.runtimeMessages.some((message) => message.type === "VALIDATE_CREDENTIAL_DOMAIN"), true);
+  assert.equal(content.runtimeMessages.some((message) => message.type === "GET_LOGIN_CREDENTIAL"), true);
+  assert.equal(content.runtimeMessages.some((message) => message.type === "VALIDATE_CREDENTIAL_DOMAIN"), false);
 });
 
 test("relays page-world passkey requests with consent-only messaging", async () => {

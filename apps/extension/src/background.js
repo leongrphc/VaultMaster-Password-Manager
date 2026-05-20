@@ -422,6 +422,7 @@ async function getLoginCredential(message, sender, sendResponse) {
 	const response = await requestVaultTab("VM_GET_LOGIN_CREDENTIAL_REQUEST", {
 		itemId: message.itemId,
 		pageUrl: message.pageUrl,
+		forceFill: message.forceFill === true,
 		sourceTabId: sender.tab?.id ?? null,
 	});
 
