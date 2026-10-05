@@ -1,0 +1,14 @@
+{
+  "$schema": "https://unpkg.com/wrangler/config-schema.json",
+  "name": "vaultmaster-web",
+  "account_id": "df414b176985bb15c627a0ac1f82e85d",
+  "compatibility_date": "2026-10-05",
+  "workers_dev": false,
+  "assets": {
+    "directory": "./apps/web/out",
+    "not_found_handling": "404-page"
+  },
+  "routes": [
+    { "pattern": "vaultmaster.mozkan.com.tr", "custom_domain": true }
+  ]
+}

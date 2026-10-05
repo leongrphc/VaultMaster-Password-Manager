@@ -1,8 +1,22 @@
 # VaultMaster deployment
 
-The web app runs as a Next.js static export on Cloudflare Pages. The Express API
+The web app runs as a Next.js static export using Cloudflare Workers Static Assets. The Express API
 runs on Render Free and connects to a new Neon PostgreSQL database. Secrets belong
 in Render environment variables, never in the web build or repository.
+
+Current deployment:
+
+- Web: https://vaultmaster.mozkan.com.tr
+- API: https://vaultmaster-api.onrender.com/api
+- Render service: `srv-db1touh42hec73e7qkg0`, Frankfurt, Free.
+- Neon project: `young-shape-45320139`, AWS Frankfurt, organization Free.
+- Cloudflare Worker: `vaultmaster-web`, configured in `wrangler.web.jsonc`.
+- Deployment branch: `deploy/free-hosting` (Render auto-deploys this branch).
+
+The Pages fallback is `https://vaultmaster-mozkan.pages.dev`. Its hostname was
+unreachable from the local network during setup, so the primary deployment uses
+the existing `mozkan.com.tr` zone. Wrangler creates the custom-domain DNS record
+and certificate for the Worker; no new domain purchase is needed.
 
 ## API
 
@@ -10,7 +24,8 @@ Use `render.yaml` to create the service from this repository. Supply:
 
 - `DATABASE_URL`: Neon's pooled PostgreSQL connection URL with TLS.
 - `DATABASE_DIRECT_URL`: Neon's direct connection URL with TLS.
-- `CORS_ORIGIN`: the exact HTTPS Pages production origin, without a trailing slash.
+- `CORS_ORIGIN`: the primary HTTPS production origin first, without a trailing slash.
+  Current value: `https://vaultmaster.mozkan.com.tr,https://vaultmaster-mozkan.pages.dev`.
 
 Render generates the JWT and application encryption secrets. Keep those values
 stable across deployments. `PORT` is supplied by Render. Startup applies committed
@@ -26,20 +41,21 @@ From the repository root in PowerShell:
 
 ```powershell
 $env:VAULTMASTER_STATIC_EXPORT = '1'
-$env:NEXT_PUBLIC_API_URL = 'https://YOUR-API.onrender.com/api'
+$env:NEXT_PUBLIC_API_URL = 'https://vaultmaster-api.onrender.com/api'
 pnpm --filter @vaultmaster/web... build
-npx wrangler pages deploy apps/web/out --project-name YOUR-PAGES-PROJECT --branch main
+npx wrangler deploy --config wrangler.web.jsonc
 ```
 
-Use the actual Render service URL, not a guessed hostname. Changes to the API URL
-require rebuilding the web app. For Cloudflare Git builds, set the two variables
-above, build using `pnpm --filter @vaultmaster/web... build`, and publish
-`apps/web/out` from the repository root.
+Changes to the API URL require rebuilding the web app. The web deployment is
+currently a direct upload: pushing to GitHub redeploys the API, but does not
+automatically publish a new web build. Run the build and Wrangler commands above
+for web changes. To publish the optional Pages fallback, run
+`npx wrangler pages deploy apps/web/out --project-name vaultmaster-mozkan --branch main`.
 
 ## Extension
 
 ```powershell
-$env:VAULTMASTER_APP_URL = 'https://YOUR-PAGES-PROJECT.pages.dev'
+$env:VAULTMASTER_APP_URL = 'https://vaultmaster.mozkan.com.tr'
 pnpm --filter @vaultmaster/extension build
 ```
 
