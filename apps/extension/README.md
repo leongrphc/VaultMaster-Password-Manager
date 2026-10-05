@@ -34,3 +34,13 @@ Autofill retrieves credentials on demand and rechecks the vault lock for each
 fill. Multi-step logins retain only selection metadata for 20 seconds, bound to
 the original tab, frame and exact origin; the password is requested again when
 the password field appears, including after a full-page navigation.
+
+Login submissions are captured before navigation. A pending save is encrypted
+with a random AES-GCM key in extension-only `chrome.storage.session`; its session
+key is stored alongside the ciphertext to survive service-worker restarts. This
+is transient browser-session protection, separate from the vault's master-key
+encryption. The content script receives only a draft ID and display metadata.
+Drafts expire after two minutes and are removed on save, dismissal, expiry checks,
+tab closure or browser exit. Confirmation requires the original tab, frame and
+origin, a real user click, and an unlocked vault. A failed save remains retryable.
+Both web-bridge response naming conventions are supported.

@@ -30,6 +30,7 @@ let prewarmTimer = null;
 let activeField = null;
 let activePanel = null;
 let activeLauncher = null;
+let pendingSavePromptId = null;
 let pageAutofillState = {
 	status: "initializing",
 	suggestions: [],
@@ -341,6 +342,13 @@ function initializeAutofillAssistant() {
 
 	scheduleEvaluation();
 	schedulePrewarm(120);
+	// Bounded retries cover captures still being encrypted during a fast navigation.
+	let saveChecks = 0;
+	const checkSave = () => {
+		void refreshPendingSavePrompt();
+		if (++saveChecks < 10 && !pendingSavePromptId) window.setTimeout(checkSave, 500);
+	};
+	checkSave();
 }
 
 function onFieldActivity(event) {
@@ -365,29 +373,34 @@ function onKeyDown(event) {
 	}
 }
 
-async function onFormSubmitCapture(event) {
+function onFormSubmitCapture(event) {
 	const form = event.target;
 	if (!(form instanceof HTMLFormElement)) return;
-	const hostname = normalizeHostname(window.location.href);
-	if (hostname && (await isNeverSaveHost(hostname))) return;
-
-	const detector = window.VaultMasterFormDetector;
 	const inputs = Array.from(form.querySelectorAll("input"));
-	const passwordInput = inputs.find((input) => detector?.normalizeInputType(input) === "password");
-	const usernameInput =
-		inputs.find((input) => detector?.isLikelyIdentifierInput(input)) ||
-		(passwordInput ? inputs.slice(0, inputs.indexOf(passwordInput)).reverse().find((input) => ["text", "email", "tel"].includes(detector?.normalizeInputType(input))) : null);
+	const passwordInput = inputs.find(input => normalizeInputType(input) === "password");
+	const usernameInput = inputs.find(input => isLikelyIdentifierInput(input)) ||
+		(passwordInput ? inputs.slice(0, inputs.indexOf(passwordInput)).reverse().find(input => ["text", "email", "tel"].includes(normalizeInputType(input))) : null);
+	if (!usernameInput?.value.trim() || !passwordInput?.value) return;
+	// Snapshot and send before any await or timer: a native submit can unload this document immediately.
+	const credential = {
+		title: document.title || formatHostname(window.location.href), url: window.location.origin,
+		username: usernameInput.value.trim(), password: passwordInput.value,
+	};
+	void sendRuntimeMessage({ type: "CAPTURE_LOGIN", credential }).then(response => {
+		if (response?.payload?.status === "captured") {
+			pendingSavePromptId = null;
+			return refreshPendingSavePrompt();
+		}
+	}).catch(() => null);
+}
 
-	if (!usernameInput || !passwordInput || !usernameInput.value.trim() || !passwordInput.value) return;
-
-	window.setTimeout(() => {
-		showSavePrompt({
-			title: document.title || formatHostname(window.location.href),
-			url: window.location.origin,
-			username: usernameInput.value.trim(),
-			password: passwordInput.value,
-		});
-	}, 800);
+async function refreshPendingSavePrompt() {
+	if (pendingSavePromptId) return;
+	const response = await sendRuntimeMessage({ type: "GET_PENDING_LOGIN_SAVE" }).catch(() => null);
+	const draft = response?.payload?.draft;
+	if (!draft || pendingSavePromptId || draft.expiresAt <= Date.now()) return;
+	pendingSavePromptId = draft.id;
+	showSavePrompt(draft);
 }
 
 function scheduleEvaluation() {
@@ -891,27 +904,45 @@ function showSavePrompt(credential) {
 			</div>
 	`;
 
-	panel.querySelector("[data-action='dismiss']")?.addEventListener("click", removePanel);
+	const dismissSave = async () => {
+		await sendRuntimeMessage({ type: "DISMISS_LOGIN_SAVE", draftId: credential.id }).catch(() => null);
+		removePanel();
+	};
+	panel.querySelector("[data-action='dismiss']")?.addEventListener("click", dismissSave);
 	panel.querySelector("[data-action='never-save']")?.addEventListener("click", async () => {
 		const hostname = normalizeHostname(credential.url);
 		if (hostname) {
 			await addNeverSaveHost(hostname);
 		}
-		removePanel();
+		await dismissSave();
 	});
-	panel.querySelector("[data-action='save']")?.addEventListener("click", async () => {
-		const response = await sendRuntimeMessage({ type: "SAVE_LOGIN_CREDENTIAL", credential }).catch(() => null);
+	panel.querySelector("[data-action='save']")?.addEventListener("click", async (event) => {
+		if (!event.isTrusted) return;
+		const button = event.currentTarget;
+		button.disabled = true;
+		const response = await sendRuntimeMessage({ type: "CONFIRM_LOGIN_SAVE", draftId: credential.id }).catch(() => null);
 		const status = response?.payload?.status;
 		if (response?.ok && (status === "created" || status === "updated")) {
 			updatePanelNotice(status === "updated" ? "Kayıt güncellendi." : "Kayıt kasaya eklendi.", false);
 			window.setTimeout(removePanel, 1200);
 			return;
 		}
-		updatePanelNotice("Kaydetme başarısız. VaultMaster sekmesinin açık ve kilitsiz olduğundan emin olun.", true);
+		button.disabled = false;
+		let error = panel.querySelector("[data-save-error]");
+		if (!error) {
+			error = document.createElement("div");
+			error.dataset.saveError = "true";
+			error.style.cssText = "padding:12px;color:#ff9aac";
+			panel.appendChild(error);
+		}
+		error.textContent = "Kaydetme başarısız. VaultMaster sekmesini açıp kasanın kilidini kaldırın ve tekrar deneyin.";
 	});
 
 	document.body.appendChild(panel);
-	activePanel = { element: panel, anchorInput: null, panelKey: `save|${window.location.hostname}`, fixed: true };
+	activePanel = { element: panel, anchorInput: null, panelKey: `save|${window.location.hostname}`, fixed: true, locked: true };
+	window.setTimeout(() => {
+		if (activePanel?.element === panel) removePanel();
+	}, Math.max(0, credential.expiresAt - Date.now()));
 }
 
 function showStructuredSuggestionPanel({ context, items, title, subtitle, fillAction }) {
@@ -1561,7 +1592,7 @@ function requestVaultBridge(type, payload, existingRequestId) {
 			const data = event.data;
 			if (
 				data?.source !== "vaultmaster-web" ||
-				data.type !== `${type}_RESPONSE` ||
+				!([`${type}_RESPONSE`, type.replace(/_REQUEST$/, "_RESPONSE")].includes(data.type)) ||
 				data.requestId !== requestId
 			) {
 				return;

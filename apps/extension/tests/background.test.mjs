@@ -242,3 +242,48 @@ test("rejects pending state claiming another origin", async () => {
   assert.equal(response.ok, false);
   assert.equal(background.sessionStorage.size, 0);
 });
+
+const capturedCredential = { title: "Example", url: "https://example.com", username: "octo", password: "captured-secret" };
+
+test("encrypts a submit snapshot and saves only after explicit confirmation", async () => {
+  const background = await loadBackground({ tabResponse: { ok: true, payload: { status: "created" } } });
+  assert.equal((await background.send({ type: "CAPTURE_LOGIN", credential: capturedCredential })).payload.status, "captured");
+  assert.equal(background.tabMessages.length, 0);
+  const stored = background.sessionStorage.get("vaultmasterPendingSaves")["42:0"];
+  assert.equal(JSON.stringify(stored).includes(capturedCredential.password), false);
+  assert.ok(stored.ciphertext);
+  const draft = (await background.send({ type: "GET_PENDING_LOGIN_SAVE" })).payload.draft;
+  assert.equal("key" in draft, false);
+  assert.equal("ciphertext" in draft, false);
+  assert.equal("password" in draft, false);
+  assert.equal((await background.send({ type: "CONFIRM_LOGIN_SAVE", draftId: "wrong" })).ok, false);
+  assert.equal(background.tabMessages.length, 0);
+  assert.equal((await background.send({ type: "CONFIRM_LOGIN_SAVE", draftId: draft.id })).payload.status, "created");
+  assert.deepEqual(background.tabMessages[0].credential, capturedCredential);
+  assert.equal((await background.send({ type: "GET_PENDING_LOGIN_SAVE" })).payload.draft, null);
+});
+
+for (const scenario of ["origin", "frame", "tab", "expiry", "dismiss"]) {
+  test(`pending save respects ${scenario}`, async () => {
+    const background = await loadBackground();
+    await background.send({ type: "CAPTURE_LOGIN", credential: capturedCredential });
+    const draft = (await background.send({ type: "GET_PENDING_LOGIN_SAVE" })).payload.draft;
+    if (scenario === "expiry") background.sessionStorage.get("vaultmasterPendingSaves")["42:0"].expiresAt = Date.now() - 1;
+    if (scenario === "dismiss") await background.send({ type: "DISMISS_LOGIN_SAVE", draftId: draft.id });
+    const sender = { tab: { id: scenario === "tab" ? 43 : 42 }, frameId: scenario === "frame" ? 1 : 0,
+      url: scenario === "origin" ? "https://evil.test" : "https://example.com/success" };
+    assert.equal((await background.send({ type: "GET_PENDING_LOGIN_SAVE" }, sender)).payload.draft, null);
+    assert.equal(background.tabMessages.length, 0);
+  });
+}
+
+test("never-save hosts are ignored and failed saves retain the draft for retry", async () => {
+  const background = await loadBackground({ tabResponse: { ok: true, payload: { status: "locked" } } });
+  await chrome.storage.local.set({ vaultmasterNeverSaveHosts: ["example.com"] });
+  assert.equal((await background.send({ type: "CAPTURE_LOGIN", credential: capturedCredential })).payload.status, "ignored");
+  await chrome.storage.local.set({ vaultmasterNeverSaveHosts: [] });
+  await background.send({ type: "CAPTURE_LOGIN", credential: capturedCredential });
+  const draft = (await background.send({ type: "GET_PENDING_LOGIN_SAVE" })).payload.draft;
+  assert.equal((await background.send({ type: "CONFIRM_LOGIN_SAVE", draftId: draft.id })).payload.status, "locked");
+  assert.equal((await background.send({ type: "GET_PENDING_LOGIN_SAVE" })).payload.draft.id, draft.id);
+});

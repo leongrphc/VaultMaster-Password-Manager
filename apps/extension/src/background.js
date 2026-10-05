@@ -2,6 +2,9 @@ const APP_URL = "http://localhost:3000/vault";
 const VAULTMASTER_URLS = ["http://localhost:3000/*", "http://127.0.0.1:3000/*"];
 const RECENT_SELECTIONS_KEY = "vaultmasterRecentSelections";
 const PENDING_AUTOFILL_KEY = "vaultmasterPendingAutofill";
+const PENDING_SAVE_KEY = "vaultmasterPendingSaves";
+const PENDING_SAVE_TTL_MS = 120000;
+let pendingSaveTasks = Promise.resolve();
 
 // Badge güncelleme periyodu (ms)
 const BADGE_UPDATE_INTERVAL = 5000;
@@ -94,6 +97,12 @@ function rejectInvalidPayload(sendResponse) {
 }
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+	if (["CAPTURE_LOGIN", "GET_PENDING_LOGIN_SAVE", "CONFIRM_LOGIN_SAVE", "DISMISS_LOGIN_SAVE"].includes(message?.type)) {
+		// Serialize read/modify/write so a navigation cannot race the submit capture.
+		pendingSaveTasks = pendingSaveTasks.then(() => handlePendingSave(message, sender, sendResponse))
+			.catch(() => sendResponse({ ok: false, payload: { status: "error" } }));
+		return true;
+	}
 	if (message?.type === "OPEN_VAULTMASTER") {
 		void openVaultMaster(sendResponse);
 		return true;
@@ -701,3 +710,93 @@ function reorderSuggestions(suggestions, preferredItemId) {
 			return (b.matchScore || 0) - (a.matchScore || 0);
 		});
 }
+
+function encodeBytes(bytes) {
+	return btoa(String.fromCharCode(...bytes));
+}
+
+function decodeBytes(value) {
+	return Uint8Array.from(atob(value), char => char.charCodeAt(0));
+}
+
+async function handlePendingSave(message, sender, sendResponse) {
+	if (sender.tab?.id === undefined || !isHttpUrlString(sender.url)) {
+		rejectInvalidPayload(sendResponse);
+		return;
+	}
+	const origin = new URL(sender.url).origin;
+	const slot = `${sender.tab.id}:${sender.frameId ?? 0}`;
+	const stored = (await chrome.storage.session.get(PENDING_SAVE_KEY))[PENDING_SAVE_KEY] || {};
+	for (const [key, entry] of Object.entries(stored)) {
+		if (entry.expiresAt <= Date.now()) delete stored[key];
+	}
+	if (message.type === "CAPTURE_LOGIN") {
+		const credential = message.credential;
+		if (!isLoginCredentialPayload(credential) || new URL(credential.url).origin !== origin || credential.password.length > 10000 || credential.username.length > 1024 || (credential.title?.length || 0) > 512) {
+			rejectInvalidPayload(sendResponse);
+			return;
+		}
+		const hosts = (await chrome.storage.local.get("vaultmasterNeverSaveHosts")).vaultmasterNeverSaveHosts || [];
+		if (hosts.includes(normalizeHostname(origin))) {
+			sendResponse({ ok: true, payload: { status: "ignored" } });
+			return;
+		}
+		const rawKey = crypto.getRandomValues(new Uint8Array(32));
+		const iv = crypto.getRandomValues(new Uint8Array(12));
+		const key = await crypto.subtle.importKey("raw", rawKey, "AES-GCM", false, ["encrypt"]);
+		const encrypted = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, new TextEncoder().encode(JSON.stringify(credential)));
+		stored[slot] = {
+			id: crypto.randomUUID(), origin, url: credential.url, title: credential.title || "", username: credential.username,
+			expiresAt: Date.now() + PENDING_SAVE_TTL_MS,
+			key: encodeBytes(rawKey), iv: encodeBytes(iv), ciphertext: encodeBytes(new Uint8Array(encrypted)),
+		};
+		await chrome.storage.session.set({ [PENDING_SAVE_KEY]: stored });
+		sendResponse({ ok: true, payload: { status: "captured" } });
+		return;
+	}
+	const draft = stored[slot];
+	if (!draft || draft.origin !== origin) {
+		delete stored[slot];
+		await chrome.storage.session.set({ [PENDING_SAVE_KEY]: stored });
+		sendResponse({ ok: true, payload: { status: "no_match", draft: null } });
+		return;
+	}
+	if (message.type === "GET_PENDING_LOGIN_SAVE") {
+		const { id, title, username, url, expiresAt } = draft;
+		sendResponse({ ok: true, payload: { draft: { id, title, username, url, expiresAt } } });
+		return;
+	}
+	if (message.draftId !== draft.id) {
+		rejectInvalidPayload(sendResponse);
+		return;
+	}
+	if (message.type === "DISMISS_LOGIN_SAVE") {
+		delete stored[slot];
+		await chrome.storage.session.set({ [PENDING_SAVE_KEY]: stored });
+		sendResponse({ ok: true });
+		return;
+	}
+	const key = await crypto.subtle.importKey("raw", decodeBytes(draft.key), "AES-GCM", false, ["decrypt"]);
+	const plaintext = await crypto.subtle.decrypt({ name: "AES-GCM", iv: decodeBytes(draft.iv) }, key, decodeBytes(draft.ciphertext));
+	const credential = JSON.parse(new TextDecoder().decode(plaintext));
+	const response = await requestVaultTab("VM_SAVE_LOGIN_REQUEST", { credential, sourceTabId: sender.tab.id });
+	if (response?.ok && ["created", "updated"].includes(response.payload?.status)) {
+		delete stored[slot];
+		await chrome.storage.session.set({ [PENDING_SAVE_KEY]: stored });
+	}
+	sendResponse(response);
+}
+
+
+chrome.tabs.onRemoved?.addListener(tabId => {
+	pendingSaveTasks = pendingSaveTasks.then(async () => {
+		const values = await chrome.storage.session.get([PENDING_SAVE_KEY, PENDING_AUTOFILL_KEY]);
+		for (const storageKey of [PENDING_SAVE_KEY, PENDING_AUTOFILL_KEY]) {
+			const entries = values[storageKey] || {};
+			for (const slot of Object.keys(entries)) {
+				if (slot.startsWith(`${tabId}:`)) delete entries[slot];
+			}
+			await chrome.storage.session.set({ [storageKey]: entries });
+		}
+	}).catch(() => undefined);
+});
