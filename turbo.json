@@ -2,24 +2,73 @@
   "$schema": "https://turbo.build/schema.json",
   "tasks": {
     "build": {
-      "dependsOn": ["^build"],
-      "outputs": ["dist/**", ".next/**", "!.next/cache/**"]
+      "dependsOn": [
+        "^build"
+      ],
+      "outputs": [
+        "dist/**",
+        ".next/**",
+        "!.next/cache/**",
+        "out/**"
+      ],
+      "env": [
+        "NEXT_PUBLIC_*",
+        "SENTRY_*"
+      ]
     },
     "dev": {
       "cache": false,
       "persistent": true
     },
     "lint": {
-      "dependsOn": ["^build"]
+      "dependsOn": [
+        "^build"
+      ]
     },
     "typecheck": {
-      "dependsOn": ["^build"]
+      "dependsOn": [
+        "^build"
+      ]
     },
     "test": {
-      "dependsOn": ["^build"]
+      "dependsOn": [
+        "^build"
+      ],
+      "env": [
+        "DATABASE_URL",
+        "DATABASE_DIRECT_URL",
+        "VAULTMASTER_TEST_DATABASE_URL",
+        "VAULTMASTER_TEST_DATABASE_DIRECT_URL",
+        "JWT_SECRET",
+        "JWT_REFRESH_SECRET",
+        "JWT_EXPIRES_IN",
+        "JWT_REFRESH_EXPIRES_IN",
+        "APP_ENCRYPTION_KEY",
+        "API_PORT",
+        "PORT",
+        "CORS_ORIGIN"
+      ],
+      "cache": false
     },
     "test:coverage": {
-      "dependsOn": ["^build"]
+      "dependsOn": [
+        "^build"
+      ],
+      "env": [
+        "DATABASE_URL",
+        "DATABASE_DIRECT_URL",
+        "VAULTMASTER_TEST_DATABASE_URL",
+        "VAULTMASTER_TEST_DATABASE_DIRECT_URL",
+        "JWT_SECRET",
+        "JWT_REFRESH_SECRET",
+        "JWT_EXPIRES_IN",
+        "JWT_REFRESH_EXPIRES_IN",
+        "APP_ENCRYPTION_KEY",
+        "API_PORT",
+        "PORT",
+        "CORS_ORIGIN"
+      ],
+      "cache": false
     },
     "db:generate": {
       "cache": false
@@ -33,5 +82,10 @@
     "db:seed": {
       "cache": false
     }
-  }
+  },
+  "globalEnv": [
+    "NODE_ENV",
+    "VAULTMASTER_STATIC_EXPORT",
+    "VAULTMASTER_APP_URL"
+  ]
 }
