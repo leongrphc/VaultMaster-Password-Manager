@@ -115,3 +115,41 @@ test("refresh token rotation rejects reused tokens and revokes the device", asyn
   assert.equal(afterReuseDetection.status, 401);
   assert.equal(afterReuseDetection.body.success, false);
 });
+
+test("logout immediately invalidates the access token even without a refresh-token body", async () => {
+  const user = await registerUser(baseUrl);
+  const headers = { authorization: `Bearer ${user.accessToken}` };
+  assert.equal((await request(baseUrl, "/api/auth/me", { headers })).status, 200);
+  assert.equal((await request(baseUrl, "/api/auth/logout", { method: "POST", headers, body: {} })).status, 200);
+  assert.equal((await request(baseUrl, "/api/auth/me", { headers })).status, 401);
+  assert.equal((await request(baseUrl, "/api/auth/refresh", { method: "POST", body: { refreshToken: user.refreshToken } })).status, 401);
+});
+
+test("revoking other devices is bound to the calling session and blocks their access immediately", async () => {
+  const user = await registerUser(baseUrl);
+  const other = await loginUser(baseUrl, user.payload);
+  const headers = { authorization: `Bearer ${user.accessToken}` };
+  const wrongSession = await request(baseUrl, "/api/devices/revoke-others", {
+    method: "POST", headers, body: { currentDeviceId: other.data.deviceId },
+  });
+  assert.equal(wrongSession.status, 403);
+  const revoked = await request(baseUrl, "/api/devices/revoke-others", {
+    method: "POST", headers, body: { currentDeviceId: user.data.deviceId },
+  });
+  assert.equal(revoked.status, 200);
+  assert.equal((await request(baseUrl, "/api/auth/me", { headers })).status, 200);
+  assert.equal((await request(baseUrl, "/api/auth/me", { headers: { authorization: `Bearer ${other.accessToken}` } })).status, 401);
+});
+
+test("changing the master password revokes other sessions", async () => {
+  const user = await registerUser(baseUrl);
+  const other = await loginUser(baseUrl, user.payload);
+  const headers = { authorization: `Bearer ${user.accessToken}` };
+  const changed = await request(baseUrl, "/api/auth/change-password", {
+    method: "POST", headers,
+    body: { currentAuthHash: user.payload.authHash, newAuthHash: "next-integration-auth-hash", kdfIterations: 600000, items: [] },
+  });
+  assert.equal(changed.status, 200);
+  assert.equal((await request(baseUrl, "/api/auth/me", { headers })).status, 200);
+  assert.equal((await request(baseUrl, "/api/auth/me", { headers: { authorization: `Bearer ${other.accessToken}` } })).status, 401);
+});

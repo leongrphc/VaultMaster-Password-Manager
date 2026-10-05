@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { Router, type Request, type Response } from "express";
 import argon2 from "argon2";
 import * as OTPAuth from "otpauth";
@@ -74,12 +75,14 @@ router.post("/register", async (req: Request, res: Response) => {
       },
     });
 
-    const tokenPayload = { userId: user.id, email: user.email };
+    const deviceId = randomUUID();
+    const tokenPayload = { userId: user.id, email: user.email, deviceId };
     const accessToken = generateAccessToken(tokenPayload);
     const refreshToken = generateRefreshToken(tokenPayload);
 
     const device = await prisma.device.create({
       data: {
+        id: deviceId,
         userId: user.id,
         deviceName: userAgent?.slice(0, 100) ?? "Unknown",
         deviceType: inferDeviceType(userAgent),
@@ -240,12 +243,14 @@ router.post("/login", async (req: Request, res: Response) => {
       }
     }
 
-    const tokenPayload = { userId: user.id, email: user.email };
+    const deviceId = randomUUID();
+    const tokenPayload = { userId: user.id, email: user.email, deviceId };
     const accessToken = generateAccessToken(tokenPayload);
     const refreshToken = generateRefreshToken(tokenPayload);
 
     const device = await prisma.device.create({
       data: {
+        id: deviceId,
         userId: user.id,
         deviceName: userAgent?.slice(0, 100) ?? "Unknown",
         deviceType: inferDeviceType(userAgent),
@@ -349,6 +354,7 @@ router.post("/change-password", authMiddleware, async (req: Request, res: Respon
       });
     }
 
+    await tx.device.deleteMany({ where: { userId: user.id, id: { not: req.user!.deviceId } } });
     await tx.user.update({
       where: { id: user.id },
       data: {
@@ -454,10 +460,11 @@ router.post("/refresh", async (req: Request, res: Response) => {
       where: { refreshTokenHash },
     });
 
-    if (!device || device.userId !== payload.userId) {
+    if (!device || device.userId !== payload.userId || device.id !== payload.deviceId) {
       const reusedDevice = await prisma.device.findFirst({
         where: {
           userId: payload.userId,
+          id: payload.deviceId,
           previousRefreshTokenHash: refreshTokenHash,
         },
       });
@@ -490,10 +497,12 @@ router.post("/refresh", async (req: Request, res: Response) => {
     const newAccessToken = generateAccessToken({
       userId: payload.userId,
       email: payload.email,
+      deviceId: device.id,
     });
     const newRefreshToken = generateRefreshToken({
       userId: payload.userId,
       email: payload.email,
+      deviceId: device.id,
     });
     const newRefreshTokenHash = hashRefreshToken(newRefreshToken);
 
@@ -537,34 +546,11 @@ router.post("/refresh", async (req: Request, res: Response) => {
 
 // POST /api/auth/logout
 router.post("/logout", authMiddleware, async (req: Request, res: Response) => {
-  const authHeader = req.headers.authorization;
-  if (authHeader) {
-    // Refresh token'ı da body'den al
-    const { refreshToken } = req.body as { refreshToken?: string };
-    if (refreshToken) {
-      const refreshTokenHash = hashRefreshToken(refreshToken);
-      const devices = await prisma.device.findMany({
-        where: { refreshTokenHash, userId: req.user!.userId },
-        select: { id: true },
-      });
-
-      for (const device of devices) {
-        await logAuditEvent({
-          userId: req.user!.userId,
-          deviceId: device.id,
-          action: "auth.logout",
-          status: "success",
-          ipAddress: getRequestIp(req),
-          userAgent: getRequestUserAgent(req),
-        });
-      }
-
-      await prisma.device.deleteMany({
-        where: { refreshTokenHash, userId: req.user!.userId },
-      });
-    }
-  }
-
+  await logAuditEvent({
+    userId: req.user!.userId, deviceId: req.user!.deviceId, action: "auth.logout", status: "success",
+    ipAddress: getRequestIp(req), userAgent: getRequestUserAgent(req),
+  });
+  await prisma.device.deleteMany({ where: { id: req.user!.deviceId, userId: req.user!.userId } });
   res.json({ success: true, data: { message: "Çıkış yapıldı" } });
 });
 

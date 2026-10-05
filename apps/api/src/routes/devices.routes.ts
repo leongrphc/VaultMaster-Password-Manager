@@ -86,6 +86,10 @@ router.patch("/:id", async (req: Request, res: Response) => {
 
 router.post("/revoke-others", async (req: Request, res: Response) => {
   const { currentDeviceId } = revokeOtherDevicesSchema.parse(req.body);
+  if (currentDeviceId !== req.user!.deviceId) {
+    res.status(403).json({ success: false, error: "Mevcut oturum kimliği eşleşmiyor" });
+    return;
+  }
 
   const currentDevice = await prisma.device.findFirst({
     where: {

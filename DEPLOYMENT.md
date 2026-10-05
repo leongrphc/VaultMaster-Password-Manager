@@ -88,3 +88,10 @@ pnpm test:web:browser
 
 The browser test serves the static export locally and intercepts all API calls;
 it does not use production accounts or data.
+
+
+API session tokens now carry a device ID, token purpose, issuer, audience and a
+random JWT ID. Protected requests check that device's current authorization;
+logout, device revocation and refresh-token reuse block its next API request.
+A master-password change revokes other devices. Deploying this token format
+requires existing sessions to sign in again. No database migration is needed.

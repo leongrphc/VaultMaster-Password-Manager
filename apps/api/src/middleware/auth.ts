@@ -1,3 +1,4 @@
+import { prisma } from "../config/prisma.js";
 import type { Request, Response, NextFunction } from "express";
 import { verifyAccessToken, type TokenPayload } from "../utils/jwt.js";
 
@@ -9,11 +10,11 @@ declare global {
   }
 }
 
-export function authMiddleware(
+export async function authMiddleware(
   req: Request,
   res: Response,
   next: NextFunction
-): void {
+): Promise<void> {
   const authHeader = req.headers.authorization;
 
   if (!authHeader?.startsWith("Bearer ")) {
@@ -23,11 +24,28 @@ export function authMiddleware(
 
   const token = authHeader.slice(7);
 
+  let payload: TokenPayload;
   try {
-    const payload = verifyAccessToken(token);
-    req.user = payload;
-    next();
+    payload = verifyAccessToken(token);
   } catch {
     res.status(401).json({ success: false, error: "Geçersiz veya süresi dolmuş token" });
+    return;
+  }
+
+  try {
+    const device = await prisma.device.findFirst({
+      where: { id: payload.deviceId, userId: payload.userId,
+        refreshTokenReusedAt: null, refreshTokenHash: { not: null } },
+      select: { id: true },
+    });
+    if (!device) {
+      res.status(401).json({ success: false, error: "Oturum sonlandırıldı. Tekrar giriş yapın." });
+      return;
+    }
+    req.user = payload;
+    next();
+  } catch (error) {
+    // A database outage is a server error, not an invalid login.
+    next(error);
   }
 }
