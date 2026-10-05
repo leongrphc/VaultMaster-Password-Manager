@@ -122,7 +122,8 @@ describe("login/register flow", () => {
       "device-1"
     );
     expect(setMasterKey).toHaveBeenCalledWith("master-key-base64");
-    expect(assign).toHaveBeenCalledWith("/vault");
+    expect(replace).toHaveBeenCalledWith("/vault");
+    expect(assign).not.toHaveBeenCalled();
   });
 
   test("login handles 2FA challenge before accepting a verification code", async () => {
@@ -146,6 +147,7 @@ describe("login/register flow", () => {
       code: "123456",
       recoveryCode: undefined,
     }));
-    expect(assign).toHaveBeenCalledWith("/vault");
+    expect(replace).toHaveBeenCalledWith("/vault");
+    expect(assign).not.toHaveBeenCalled();
   });
 });

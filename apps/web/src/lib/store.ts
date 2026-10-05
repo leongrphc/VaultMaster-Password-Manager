@@ -221,6 +221,18 @@ function sortFoldersByName(folders: FolderResponse[]): FolderResponse[] {
 }
 
 const SESSION_MASTER_KEY = "vaultmaster-session-master-key";
+let vaultSecurityEpoch = 0;
+
+function isCurrentVaultSession(state: AppStore, epoch: number, key: string | null) {
+  return epoch === vaultSecurityEpoch && state.isAuthenticated && !state.isLocked &&
+    Boolean(key) && state.masterKeyBase64 === key;
+}
+
+function requireCurrentVaultSession(state: AppStore, epoch: number, key: string | null): asserts key is string {
+  if (!isCurrentVaultSession(state, epoch, key)) {
+    throw new Error("Kasa kilitlendi veya oturum değişti. Kilidi açıp tekrar deneyin.");
+  }
+}
 
 let refreshInFlight: Promise<AuthTokens | null> | null = null;
 
@@ -260,25 +272,10 @@ function downloadBlob(data: Blob, fileName: string) {
   URL.revokeObjectURL(url);
 }
 
-function readSessionMasterKey(): string | null {
-  if (typeof window === "undefined") {
-    return null;
-  }
-
-  return sessionStorage.getItem(SESSION_MASTER_KEY);
-}
-
-function writeSessionMasterKey(value: string | null) {
-  if (typeof window === "undefined") {
-    return;
-  }
-
-  if (!value) {
+function clearLegacySessionMasterKey() {
+  if (typeof window !== "undefined") {
     sessionStorage.removeItem(SESSION_MASTER_KEY);
-    return;
   }
-
-  sessionStorage.setItem(SESSION_MASTER_KEY, value);
 }
 
 export const useStore = create<AppStore>()(
@@ -312,57 +309,38 @@ export const useStore = create<AppStore>()(
       sharedVaultItems: {},
       emergencyAccessGrants: [],
 
-      setAuth: (tokens, email, userId, deviceId = null) =>
+      setAuth: (tokens, email, userId, deviceId = null) => {
+        vaultSecurityEpoch++;
+        clearLegacySessionMasterKey();
         set({
-          isAuthenticated: true,
-          tokens,
-          userEmail: email,
-          userId,
-          currentDeviceId: deviceId,
-          isLocked: false,
-        }),
+          isAuthenticated: true, tokens, userEmail: email, userId,
+          currentDeviceId: deviceId, isLocked: true, masterKeyBase64: null,
+          items: [], folders: [], isLoading: false,
+        });
+      },
 
       setTokens: (tokens) => set({ tokens }),
 
       setMasterKey: (keyBase64) => {
-        set({ masterKeyBase64: keyBase64, isLocked: false });
-        writeSessionMasterKey(keyBase64);
-        void persistLockVerifier(keyBase64);
+        const epoch = ++vaultSecurityEpoch;
+        clearLegacySessionMasterKey();
+        set({ masterKeyBase64: keyBase64, isLocked: false, lastActivity: Date.now() });
+        void persistLockVerifier(keyBase64, () => isCurrentVaultSession(get(), epoch, keyBase64))
+          .catch(() => notify.error("Yerel kilit doğrulaması kaydedilemedi."));
       },
 
       bootstrapSessionSecurity: async () => {
-        const { isAuthenticated, masterKeyBase64 } = get();
-        if (!isAuthenticated) {
-          return;
+        clearLegacySessionMasterKey();
+        const state = get();
+        if (state.isAuthenticated && (!state.masterKeyBase64 || state.isLocked)) {
+          get().lockVault();
         }
-
-        const activeMasterKey = masterKeyBase64 || readSessionMasterKey();
-
-        if (activeMasterKey) {
-          try {
-            writeSessionMasterKey(activeMasterKey);
-            await persistLockVerifier(activeMasterKey);
-            set({ isLocked: false, masterKeyBase64: activeMasterKey });
-            return;
-          } catch (error) {
-            console.error("Oturum güvenliği hazırlanamadı:", error);
-          }
-        }
-
-        writeSessionMasterKey(null);
-        set({
-          isLocked: true,
-          masterKeyBase64: null,
-          items: [],
-          folders: [],
-          selectedFolderId: null,
-          showFavoritesOnly: false,
-        });
       },
 
       logout: () =>
         set(() => {
-          writeSessionMasterKey(null);
+          vaultSecurityEpoch++;
+          clearLegacySessionMasterKey();
           clearOfflineVaultSnapshot();
           clearLockVerifier();
           clearLocalUnlock();
@@ -376,6 +354,9 @@ export const useStore = create<AppStore>()(
             masterKeyBase64: null,
             items: [],
             folders: [],
+            isLoading: false,
+            selectedItemIds: [],
+            isSelectionMode: false,
             selectedFolderId: null,
             showFavoritesOnly: false,
             searchQuery: "",
@@ -404,6 +385,7 @@ export const useStore = create<AppStore>()(
             const response = (await api.auth.refresh(currentTokens.refreshToken)) as {
               data: { tokens: AuthTokens; deviceId?: string | null };
             };
+            if (get().tokens?.refreshToken !== currentTokens.refreshToken) return null;
             set({
               tokens: response.data.tokens,
               currentDeviceId: response.data.deviceId ?? get().currentDeviceId,
@@ -411,8 +393,10 @@ export const useStore = create<AppStore>()(
             return response.data.tokens;
           } catch (error) {
             console.error("Token yenileme hatası:", error);
-            notify.sessionExpired();
-            get().logout();
+            if (get().tokens?.refreshToken === currentTokens.refreshToken) {
+              notify.sessionExpired();
+              get().logout();
+            }
             return null;
           } finally {
             refreshInFlight = null;
@@ -516,6 +500,7 @@ export const useStore = create<AppStore>()(
       clearSelection: () => set({ selectedItemIds: [], isSelectionMode: false }),
       setLoading: (loading) => set({ isLoading: loading }),
       syncOfflineSnapshot: async () => {
+        const epoch = vaultSecurityEpoch;
         const { isAuthenticated, isLocked, items, folders, masterKeyBase64 } = get();
         if (!isAuthenticated || isLocked || !masterKeyBase64) {
           return;
@@ -526,9 +511,10 @@ export const useStore = create<AppStore>()(
             items,
             folders,
             masterKeyBase64,
+            isCurrent: () => isCurrentVaultSession(get(), epoch, masterKeyBase64),
           });
 
-          if (savedAt) {
+          if (savedAt && isCurrentVaultSession(get(), epoch, masterKeyBase64)) {
             set({ lastSyncedAt: savedAt });
           }
         } catch (error) {
@@ -537,8 +523,9 @@ export const useStore = create<AppStore>()(
       },
 
       loadVault: async () => {
+        const epoch = vaultSecurityEpoch;
         const { tokens, masterKeyBase64 } = get();
-        if (!tokens || !masterKeyBase64) {
+        if (!tokens || !masterKeyBase64 || !isCurrentVaultSession(get(), epoch, masterKeyBase64)) {
           return;
         }
 
@@ -557,6 +544,7 @@ export const useStore = create<AppStore>()(
             ),
           ]);
 
+          if (!isCurrentVaultSession(get(), epoch, masterKeyBase64)) return;
           const decryptedItems: DecryptedVaultItem[] = [];
           for (const item of vaultResponse.data) {
             try {
@@ -578,6 +566,7 @@ export const useStore = create<AppStore>()(
             }
           }
 
+          if (!isCurrentVaultSession(get(), epoch, masterKeyBase64)) return;
           set({
             items: decryptedItems,
             folders: sortFoldersByName(foldersResponse.data),
@@ -589,17 +578,19 @@ export const useStore = create<AppStore>()(
             items: decryptedItems,
             folders: foldersResponse.data,
             masterKeyBase64,
+            isCurrent: () => isCurrentVaultSession(get(), epoch, masterKeyBase64),
           });
 
-          if (savedAt) {
+          if (savedAt && isCurrentVaultSession(get(), epoch, masterKeyBase64)) {
             set({ lastSyncedAt: savedAt });
           }
         } catch (error) {
+          if (!isCurrentVaultSession(get(), epoch, masterKeyBase64)) return;
           console.error("Vault yükleme hatası:", error);
 
           try {
             const snapshot = await readOfflineVaultSnapshot(masterKeyBase64);
-            if (snapshot) {
+            if (snapshot && isCurrentVaultSession(get(), epoch, masterKeyBase64)) {
               set({
                 items: snapshot.items,
                 folders: sortFoldersByName(snapshot.folders),
@@ -614,20 +605,21 @@ export const useStore = create<AppStore>()(
             console.error("Offline snapshot okunamadı:", offlineError);
           }
 
+          if (!isCurrentVaultSession(get(), epoch, masterKeyBase64)) return;
           notify.error(getErrorMessage(error, "Kasa yüklenirken hata oluştu."));
           set({ isLoading: false });
         }
       },
 
       createVaultItem: async (data, folderId = null, favorite = false) => {
+        const epoch = vaultSecurityEpoch;
         const { masterKeyBase64 } = get();
-        if (!masterKeyBase64) {
-          return;
-        }
+        requireCurrentVaultSession(get(), epoch, masterKeyBase64);
 
         const masterKey = await importMasterKey(masterKeyBase64);
         const encrypted = await encryptJSON(data, masterKey);
 
+        requireCurrentVaultSession(get(), epoch, masterKeyBase64);
         const response = (await get().runWithValidAccessToken((accessToken) =>
           api.vault.create(
             {
@@ -640,6 +632,7 @@ export const useStore = create<AppStore>()(
           ) as Promise<{ data: VaultItemResponse }>
         )) as { data: VaultItemResponse };
 
+        requireCurrentVaultSession(get(), epoch, masterKeyBase64);
         get().addItem({
           id: response.data.id,
           folderId: response.data.folderId,
@@ -651,14 +644,14 @@ export const useStore = create<AppStore>()(
       },
 
       updateVaultItemFull: async (id, data, folderId = null) => {
+        const epoch = vaultSecurityEpoch;
         const { masterKeyBase64 } = get();
-        if (!masterKeyBase64) {
-          return;
-        }
+        requireCurrentVaultSession(get(), epoch, masterKeyBase64);
 
         const masterKey = await importMasterKey(masterKeyBase64);
         const encrypted = await encryptJSON(data, masterKey);
 
+        requireCurrentVaultSession(get(), epoch, masterKeyBase64);
         const response = (await get().runWithValidAccessToken((accessToken) =>
           api.vault.update(
             id,
@@ -671,6 +664,7 @@ export const useStore = create<AppStore>()(
           ) as Promise<{ data: VaultItemResponse }>
         )) as { data: VaultItemResponse };
 
+        requireCurrentVaultSession(get(), epoch, masterKeyBase64);
         get().updateItem(id, {
           data,
           folderId: response.data.folderId,
@@ -679,12 +673,12 @@ export const useStore = create<AppStore>()(
       },
 
       loadAttachments: async (itemId) => {
+        const epoch = vaultSecurityEpoch;
         const { masterKeyBase64 } = get();
-        if (!masterKeyBase64) {
-          return;
-        }
+        requireCurrentVaultSession(get(), epoch, masterKeyBase64);
 
         const masterKey = await importMasterKey(masterKeyBase64);
+        requireCurrentVaultSession(get(), epoch, masterKeyBase64);
         const response = (await get().runWithValidAccessToken((accessToken) =>
           api.vault.getAttachments(itemId, accessToken) as Promise<{ data: AttachmentResponse[] }>
         )) as { data: AttachmentResponse[] };
@@ -698,14 +692,14 @@ export const useStore = create<AppStore>()(
           }
         }
 
+        requireCurrentVaultSession(get(), epoch, masterKeyBase64);
         get().updateItem(itemId, { attachments });
       },
 
       uploadAttachment: async (itemId, file) => {
+        const epoch = vaultSecurityEpoch;
         const { masterKeyBase64 } = get();
-        if (!masterKeyBase64) {
-          return;
-        }
+        requireCurrentVaultSession(get(), epoch, masterKeyBase64);
 
         const masterKey = await importMasterKey(masterKeyBase64);
         const [metadata, encryptedFile] = await Promise.all([
@@ -713,6 +707,7 @@ export const useStore = create<AppStore>()(
           encryptBinary(await file.arrayBuffer(), masterKey),
         ]);
 
+        requireCurrentVaultSession(get(), epoch, masterKeyBase64);
         const response = (await get().runWithValidAccessToken((accessToken) =>
           api.vault.createAttachment(
             itemId,
@@ -728,6 +723,7 @@ export const useStore = create<AppStore>()(
         )) as { data: AttachmentResponse };
 
         const attachment = await decryptAttachmentMetadata(response.data, masterKey);
+        requireCurrentVaultSession(get(), epoch, masterKeyBase64);
         get().updateItem(itemId, {
           attachments: [
             attachment,
@@ -737,12 +733,12 @@ export const useStore = create<AppStore>()(
       },
 
       downloadAttachment: async (itemId, attachmentId) => {
+        const epoch = vaultSecurityEpoch;
         const { masterKeyBase64 } = get();
-        if (!masterKeyBase64) {
-          return;
-        }
+        requireCurrentVaultSession(get(), epoch, masterKeyBase64);
 
         const masterKey = await importMasterKey(masterKeyBase64);
+        requireCurrentVaultSession(get(), epoch, masterKeyBase64);
         const response = (await get().runWithValidAccessToken((accessToken) =>
           api.vault.getAttachment(itemId, attachmentId, accessToken) as Promise<{ data: AttachmentResponse }>
         )) as { data: AttachmentResponse };
@@ -752,6 +748,7 @@ export const useStore = create<AppStore>()(
           decryptBinary(response.data.encryptedBlob, response.data.blobIv, masterKey),
         ]);
 
+        requireCurrentVaultSession(get(), epoch, masterKeyBase64);
         downloadBlob(new Blob([data], { type: metadata.type }), metadata.name);
       },
 
@@ -997,7 +994,8 @@ export const useStore = create<AppStore>()(
 
       lockVault: () =>
         {
-          writeSessionMasterKey(null);
+          vaultSecurityEpoch++;
+          clearLegacySessionMasterKey();
           return set({
             isLocked: true,
             masterKeyBase64: null,
@@ -1005,10 +1003,18 @@ export const useStore = create<AppStore>()(
             folders: [],
             selectedFolderId: null,
             showFavoritesOnly: false,
+            isLoading: false,
+            selectedItemIds: [],
+            isSelectionMode: false,
+            searchQuery: "",
           });
         },
 
       unlockVault: async (password, email) => {
+        const epoch = vaultSecurityEpoch;
+        const userId = get().userId;
+        if (!get().isAuthenticated || !userId) return false;
+        const isCurrent = () => vaultSecurityEpoch === epoch && get().userId === userId && get().isAuthenticated;
         try {
           const masterKey = await deriveMasterKey(password, email);
           const keyBase64 = await exportMasterKeyBase64(masterKey);
@@ -1022,21 +1028,28 @@ export const useStore = create<AppStore>()(
             return false;
           }
 
-          await persistLockVerifier(keyBase64);
-          writeSessionMasterKey(keyBase64);
+          if (!isCurrent()) return false;
+          await persistLockVerifier(keyBase64, isCurrent);
+          if (!isCurrent()) return false;
+          const unlockedEpoch = ++vaultSecurityEpoch;
+          clearLegacySessionMasterKey();
           set({
             isLocked: false,
             masterKeyBase64: keyBase64,
             lastActivity: Date.now(),
           });
           await get().loadVault();
-          return true;
+          return isCurrentVaultSession(get(), unlockedEpoch, keyBase64);
         } catch {
           return false;
         }
       },
 
       unlockVaultLocally: async () => {
+        const epoch = vaultSecurityEpoch;
+        const userId = get().userId;
+        if (!get().isAuthenticated || !userId) return false;
+        const isCurrent = () => vaultSecurityEpoch === epoch && get().userId === userId && get().isAuthenticated;
         try {
           const keyBase64 = await unlockWithLocalAuthenticator();
           const verifierMatches = await verifyLockVerifier(keyBase64);
@@ -1044,20 +1057,24 @@ export const useStore = create<AppStore>()(
             ? null
             : await readOfflineVaultSnapshot(keyBase64);
 
+          if (!isCurrent()) return false;
           if (!verifierMatches && !offlineSnapshot) {
             clearLocalUnlock();
             return false;
           }
 
-          await persistLockVerifier(keyBase64);
-          writeSessionMasterKey(keyBase64);
+          if (!isCurrent()) return false;
+          await persistLockVerifier(keyBase64, isCurrent);
+          if (!isCurrent()) return false;
+          const unlockedEpoch = ++vaultSecurityEpoch;
+          clearLegacySessionMasterKey();
           set({
             isLocked: false,
             masterKeyBase64: keyBase64,
             lastActivity: Date.now(),
           });
           await get().loadVault();
-          return true;
+          return isCurrentVaultSession(get(), unlockedEpoch, keyBase64);
         } catch {
           return false;
         }
@@ -1090,27 +1107,27 @@ export const useStore = create<AppStore>()(
     }),
     {
       name: "vaultmaster-auth",
-      version: 3,
-      migrate: (persistedState: unknown) => {
+      version: 4,
+      migrate: (persistedState: unknown) => persistedState,
+      merge: (persistedState: unknown, currentState: AppStore) => {
+        clearLegacySessionMasterKey();
+        vaultSecurityEpoch++;
         const state = (persistedState ?? {}) as Partial<AppStore>;
-
         return {
-          ...state,
-          currentDeviceId:
-            typeof state.currentDeviceId === "string" ? state.currentDeviceId : null,
-          masterKeyBase64:
-            typeof state.masterKeyBase64 === "string" ? state.masterKeyBase64 : null,
-          isLocked: state.isAuthenticated ? !state.masterKeyBase64 : false,
+          ...currentState,
+          isAuthenticated: Boolean(state.isAuthenticated),
+          tokens: state.tokens ?? null,
+          userEmail: state.userEmail ?? null,
+          userId: state.userId ?? null,
+          currentDeviceId: state.currentDeviceId ?? null,
+          lockTimeoutMinutes: state.lockTimeoutMinutes ?? 5,
           showFavoritesOnly: false,
-          sortBy: typeof state.sortBy === "string" ? state.sortBy : "updated-desc",
-          viewMode:
-            state.viewMode === "comfortable" ||
-            state.viewMode === "compact" ||
-            state.viewMode === "grid"
-              ? state.viewMode
-              : "comfortable",
-          favoritesFirst:
-            typeof state.favoritesFirst === "boolean" ? state.favoritesFirst : true,
+          sortBy: state.sortBy ?? "updated-desc",
+          viewMode: state.viewMode ?? "comfortable",
+          favoritesFirst: state.favoritesFirst ?? true,
+          masterKeyBase64: null,
+          items: [], folders: [], isLoading: false,
+          isLocked: Boolean(state.isAuthenticated),
         };
       },
       partialize: (state: AppStore) => ({

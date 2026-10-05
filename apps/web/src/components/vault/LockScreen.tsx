@@ -70,7 +70,7 @@ export default function LockScreen() {
             Kasa Kilitli
           </h1>
           <p className="text-text-secondary text-sm mt-2">
-            İnaktiflik nedeniyle kasa otomatik olarak kilitlendi
+            Devam etmek için kasanın kilidini açın
           </p>
         </div>
 

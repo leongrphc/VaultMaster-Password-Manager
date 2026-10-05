@@ -69,3 +69,22 @@ WebAuthn credentials and browser local unlock are tied to their original origin.
 Check API readiness, register a disposable account, create a login item, lock and
 unlock the vault, and check autofill on a controlled test site. Delete the disposable
 account afterward. Test the real browser extension in addition to automated tests.
+
+
+## Session security regression checks
+
+The web vault's master key stays in memory. Client navigation after login retains
+the unlocked vault; a full page reload restores authentication with the vault
+locked. Legacy plaintext session keys are removed. Offline snapshots and lock
+verifiers remain encrypted. Delayed loads, saves, downloads and unlocks are
+invalidated when their unlocking session changes.
+
+```powershell
+pnpm --filter @vaultmaster/web test
+$env:VAULTMASTER_STATIC_EXPORT = "1"
+pnpm --filter @vaultmaster/web build
+pnpm test:web:browser
+```
+
+The browser test serves the static export locally and intercepts all API calls;
+it does not use production accounts or data.

@@ -26,6 +26,7 @@ export async function persistOfflineVaultSnapshot(params: {
   items: OfflineVaultItem[];
   folders: FolderResponse[];
   masterKeyBase64: string | null;
+  isCurrent?: () => boolean;
 }): Promise<string | null> {
   const { items, folders, masterKeyBase64 } = params;
   if (!masterKeyBase64 || typeof window === "undefined") {
@@ -43,6 +44,7 @@ export async function persistOfflineVaultSnapshot(params: {
     masterKey
   );
 
+  if (params.isCurrent && !params.isCurrent()) return null;
   localStorage.setItem(
     OFFLINE_SNAPSHOT_KEY,
     JSON.stringify({
@@ -56,7 +58,8 @@ export async function persistOfflineVaultSnapshot(params: {
 }
 
 export async function persistLockVerifier(
-  masterKeyBase64: string | null
+  masterKeyBase64: string | null,
+  isCurrent?: () => boolean
 ): Promise<boolean> {
   if (!masterKeyBase64 || typeof window === "undefined") {
     return false;
@@ -71,6 +74,7 @@ export async function persistLockVerifier(
     masterKey
   );
 
+  if (isCurrent && !isCurrent()) return false;
   localStorage.setItem(
     LOCK_VERIFIER_KEY,
     JSON.stringify({

@@ -100,7 +100,7 @@ export default function LoginPage() {
           response.data.deviceId ?? null
         );
         setMasterKey(masterKeyB64);
-        window.location.assign("/vault");
+        router.replace("/vault");
       }
     } catch (err: unknown) {
       const message = getErrorMessage(err, "WebAuthn doğrulaması tamamlanamadı");
@@ -174,7 +174,7 @@ export default function LoginPage() {
           response.data.deviceId ?? null
         );
         setMasterKey(masterKeyB64);
-        window.location.assign("/vault");
+        router.replace("/vault");
       }
     } catch (err: unknown) {
       const message = getErrorMessage(err, "Giriş işlemi tamamlanamadı");
