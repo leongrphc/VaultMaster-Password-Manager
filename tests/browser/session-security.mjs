@@ -38,6 +38,8 @@ test('web preserves its random data key through password change, reload and unlo
     let vaultKeyEnvelope;
     const backupId = crypto.randomUUID();
     let restoreCalls = 0;
+    let sessionExpired = false;
+    let refreshCalls = 0;
     const timestamp = '2026-10-05T00:00:00.000Z';
     browser = await chromium.launch({ channel: 'chromium', headless: true });
     const context = await browser.newContext();
@@ -48,6 +50,9 @@ test('web preserves its random data key through password change, reload and unlo
       assert.equal(route.request().headers()['x-vaultmaster-client'], 'web');
       assert.equal(route.request().headers()['authorization'], undefined);
       const pathname = new URL(route.request().url()).pathname;
+      if (sessionExpired && !pathname.endsWith('/auth/refresh')) {
+        return route.fulfill({ status: 401, contentType: 'application/json', body: JSON.stringify({ success: false, error: 'Expired fixture session' }) });
+      }
       let data;
       if (pathname.endsWith('/auth/register')) {
         vaultKeyEnvelope = { ...route.request().postDataJSON().vaultKeyEnvelope, version: 1 };
@@ -82,6 +87,13 @@ test('web preserves its random data key through password change, reload and unlo
       else if (pathname.endsWith('/devices') || pathname.endsWith('/audit-events') || pathname.endsWith('/auth/webauthn/credentials')) data = [];
       else if (pathname.endsWith('/auth/2fa/status')) data = { enabled: false, recoveryCodesRemaining: 0 };
       else if (pathname.endsWith('/auth/vault-key')) data = { vaultKeyEnvelope };
+      else if (pathname.endsWith('/auth/me')) data = { id: 'user-1', email };
+      else if (pathname.endsWith('/auth/refresh')) {
+        refreshCalls++;
+        await new Promise(done => setTimeout(done, 100));
+        sessionExpired = false;
+        data = { session: true, deviceId: 'device-1' };
+      }
       else if (pathname.endsWith('/auth/logout')) data = { message: 'Çıkış yapıldı' };
       else if (pathname.endsWith('/vault')) data = [{ id: 'item-1', folderId: null, favorite: false, encryptedData: encrypted.ciphertext, iv: encrypted.iv, createdAt: timestamp, updatedAt: timestamp }];
       else if (pathname.endsWith('/folders')) data = [];
@@ -173,6 +185,15 @@ test('web preserves its random data key through password change, reload and unlo
       await tab.getByRole('button', { name: 'Ana şifre ile kilidi aç' }).click();
       await expect(tab.getByRole('heading', { name: 'Kasa Kilitli' })).toHaveCount(0);
     }
+    await page.getByRole('button', { name: 'Kasayı Kilitle' }).click();
+    await expect(secondTab.getByRole('heading', { name: 'Kasa Kilitli' })).toBeVisible();
+    sessionExpired = true;
+    await Promise.all([page, secondTab].map(async tab => {
+      await tab.getByLabel('Ana Şifre', { exact: true }).fill('New-fixture-master-password-2026!');
+      await tab.getByRole('button', { name: 'Ana şifre ile kilidi aç' }).click();
+      await expect(tab.getByRole('heading', { name: 'Kasa Kilitli' })).toHaveCount(0);
+    }));
+    assert.equal(refreshCalls, 1, 'tabs must share one refresh rotation for the expired cookie');
     await page.getByRole('button', { name: 'Kasayı Kilitle' }).click();
     await expect(secondTab.getByRole('heading', { name: 'Kasa Kilitli' })).toBeVisible();
     await expect(secondTab.getByText('Encrypted browser fixture', { exact: true })).toHaveCount(0);
