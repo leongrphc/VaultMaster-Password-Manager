@@ -33,16 +33,19 @@ Bir özelliğin arayüzde bulunması, tüm hata ve güvenlik senaryolarının ta
 | Geçici PostgreSQL üzerinde GitHub CI; test veritabanının açıkça seçilmesi | Gerçek migrations, derleme, lint/typecheck, birim/entegrasyon testleri ve iki tarayıcı testi |
 
 Önceki turda kilit kontrolünü atlayan şifre önbelleği kaldırıldı; iki aşamalı giriş ve sayfa geçişinde şifrelenmiş kaydetme taslakları düzeltildi.
-Değişiklikler geliştirme dalında. Canlı yayına geçiş ve mevcut oturumların yeni token biçimine geçişi ayrı bir dağıtım işidir.
+Bu geliştirmeler 5 Ekim 2026'da `d1aaa23` sürümüyle canlıya alındı. API migration'ları,
+web/eklenti yayını ve geçici hesapla canlı doğrulama tamamlandı; test hesapları silindi.
+Eski web oturumları için yeniden giriş gerekiyor. 174 birim/entegrasyon testi ve gerçek
+tarayıcı testleri geçti. GitHub Actions'ın çalıştırıcı kesintisi nedeniyle CI yeniden
+başlatıldı; yayın doğrulaması yerel testler ve ayrı Neon test veritabanıyla tamamlandı.
+Dağıtım kimlikleri ve doğrulama kapsamı: [DEPLOYMENT.md](DEPLOYMENT.md).
 
 ## İlk sürümden önce öncelikli eksikler
 
 | Öncelik | Eksik / kodda görülen durum | Tamamlanma koşulu |
 | --- | --- | --- |
-| P0 | Güvenli ana şifre değişimi geliştirme dalında tamamlandı; canlıya kontrollü geçiş gerekiyor. | Yeni migration ve API önce; web sonra. Mevcut eski oturumların yeniden girişi, şifre değişimi ve geçmiş/ek smoke testi. Eski istemciye doğrudan geri alma güvenli değil. |
-| P0 | HttpOnly web oturumu ve CSP geliştirme dalında tamamlandı; canlıya kontrollü geçiş gerekiyor. | API önce, aynı köken Worker proxy ve web sonra; eski web oturumlarında yeniden giriş ve canlı çerez/CSP smoke testi. |
 | P0 | Bağımlılık taramasında hâlâ yüksek/orta/düşük bulgular var. Kritik sayısının sıfır olması tüm bulguların giderildiği anlamına gelmez. | Doğrudan/dolaylı ve üretim/geliştirme bağımlılıklarını ayırıp düzeltme veya somut uygulanabilirlik değerlendirmesi; düzenli güncellemeler. |
-| P0 | Tam kişisel kasa yedeği geliştirme dalında tamamlandı; büyük kasalar ve operasyonel sunucu yedekleri ayrı iş. | 16 MiB üzerindeki kasalar için akış/parça desteği; planlı yedek ve geri dönüş tatbikatı. Hesap güvenliği ve paylaşım ayarları bu kişisel arşive dahil değil. |
+| P0 | Tam kişisel kasa yedeği canlıda; büyük kasalar ve operasyonel sunucu yedekleri ayrı iş. | 16 MiB üzerindeki kasalar için akış/parça desteği; planlı yedek ve geri dönüş tatbikatı. Hesap güvenliği ve paylaşım ayarları bu kişisel arşive dahil değil. |
 | P1 | Bağımsız eklenti çekirdeği tamamlandı; mağaza dağıtımı ve çevrimdışı kullanım sonraki kapsam. | Chrome/Edge ZIP paketi mevcut. Şu an giriş/açma/doldurma için API gerekir; tarayıcı yeniden başlayınca yeni giriş gerekir. Mağaza kimliği ve izin/otomatik güncelleme süreci ayrı doğrulanmalı. |
 | P1 | iframe ve Shadow DOM formları yeterince desteklenmiyor; inline panel hedef sayfanın DOM'unda. | Frame seçimi ve kaynak doğrulaması; başka kökenden frame için açık karar; Shadow DOM testleri ve sayfanın değiştiremeyeceği seçim arayüzü. Sadece `all_frames` eklemek yeterli değil. |
 | P1 | Yeni hesap/şifre değiştirme formlarında birden çok şifre alanı ve SPA geçişleri tam ele alınmıyor. | `current-password` / `new-password` ayrımı, formdan şifre üretme, güvenilir güncelleme teklifi ve farklı form türleri için geniş fixture seti. |
@@ -58,9 +61,9 @@ Tarayıcı/işletim sistemi ele geçirilmesini veya kullanıcı onayıyla bir sa
 
 ## Önerilen sıra
 
-1. **Veri kaybını önleme:** tamamlanan kasa anahtarı geçişini kontrollü yayımlamak; geçmiş/çöp/ekler dahil sürümlü şifreli yedekten geri dönüşü kanıtlamak.
-2. **Web oturumu ve üretim güvenliği:** token saklama, CSP, sekmeler arası eşgüdüm ve kalan uygulanabilir bağımlılık açıkları.
-3. **Bağımsız eklenti:** web sekmesi gerekmeyen giriş/kilit/senkronizasyon; ardından iframe, Shadow DOM ve şifre değiştirme form desteği.
+1. **Veri kaybını önleme:** canlıdaki kişisel yedeği büyük kasalara genişletmek; operasyonel yedek ve geri dönüş tatbikatını tamamlamak.
+2. **Üretim güvenliği:** kalan uygulanabilir bağımlılık açıkları, saldırı sınırlaması ve hassas işlem doğrulaması.
+3. **Otomatik doldurma:** bağımsız eklentiyi iframe, Shadow DOM ve şifre değiştirme form desteğiyle genişletmek; mağaza dağıtımını hazırlamak.
 4. **Günlük kullanım:** kaydet/güncelle akışları, şifre üretme, arama, içe aktarma ve hata mesajlarını gerçek kullanım senaryolarıyla iyileştirmek.
 5. **Yayın ölçütleri:** bağımsız güvenlik incelemesi, geri dönüş tatbikatı, geniş tarayıcı testleri ve kontrol edilen sürümlü dağıtımlar.
 

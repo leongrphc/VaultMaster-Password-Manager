@@ -13,6 +13,34 @@ Current deployment:
 - Cloudflare Worker: `vaultmaster-web`, configured in `wrangler.web.jsonc`.
 - Deployment branch: `deploy/free-hosting` (Render auto-deploys this branch).
 
+### Verified release — 2026-10-05
+
+- Production code: `d1aaa236303dfce6ce762d410aff342c59fcc475`.
+- Render deploy: `dep-db206fbbc2fs73eo09sg`, live; both new key-envelope and
+  backup-receipt migrations applied successfully before the web cutover.
+- Cloudflare version: `e5ce251d-f556-44b0-a13c-86b6d8be6ec3`.
+- Chrome/Edge extension 1.1.0:
+  https://vaultmaster.mozkan.com.tr/downloads/vaultmaster-extension.zip.
+- Validation: 174 unit/integration tests, real Chromium web and MV3 extension
+  tests, production builds and Worker deployment validation passed. All 45 API
+  tests ran against an empty database on a temporary schema-only Neon branch;
+  the branch was deleted afterward. Production data was not used for these tests.
+- Live verification used disposable accounts: HttpOnly cookies, CSRF/CSP,
+  exact ZIP digest, web login/reload lock/unlock, extension login/lock/unlock
+  without a web vault tab, HTTPS fixture autofill, password change preserving
+  encrypted data, device revocation and idempotent backup restore all passed.
+  The accounts and fixture data were deleted.
+- GitHub Actions run [37366208999](https://github.com/leongrphc/VaultMaster-Password-Manager/actions/runs/37366208999)
+  initially ended before any step ran because no hosted runner acquired the job
+  during an Actions incident. It was retried; the release used the independent
+  local/browser and isolated PostgreSQL verification above, not a claimed green
+  CI result.
+
+Existing web sessions require a fresh login after this release. To install the
+extension, extract the ZIP, enable Developer mode at `chrome://extensions` or
+`edge://extensions`, then load the extracted directory as an unpacked extension.
+It is not published in either browser's extension store yet.
+
 The Pages fallback is `https://vaultmaster-mozkan.pages.dev`. Its hostname was
 unreachable from the local network during setup, so the primary deployment uses
 the existing `mozkan.com.tr` zone. Wrangler creates the custom-domain DNS record
@@ -41,6 +69,8 @@ From the repository root in PowerShell:
 
 ```powershell
 $env:VAULTMASTER_STATIC_EXPORT = '1'
+$env:VAULTMASTER_APP_URL = 'https://vaultmaster.mozkan.com.tr'
+$env:VAULTMASTER_API_URL = 'https://vaultmaster-api.onrender.com/api'
 pnpm --filter @vaultmaster/web... build
 npx wrangler deploy --config wrangler.web.jsonc
 ```
@@ -100,7 +130,7 @@ account afterward. Test the real browser extension in addition to automated test
 
 ## Session security regression checks
 
-The development branch now uses `__Host-` HttpOnly, Secure, SameSite=Strict
+The production release uses `__Host-` HttpOnly, Secure, SameSite=Strict
 cookies for web access and refresh credentials. Web responses contain a session
 flag rather than JWTs; browser storage contains public session metadata only.
 Mutations require `X-VaultMaster-Client: web`, an exact allowed Origin and a
@@ -113,7 +143,7 @@ Deploy the compatible API first, then the Worker and static web assets together.
 Storage version 5 drops earlier persisted JWT sessions and requires a fresh login.
 Keep the primary web origin in `CORS_ORIGIN`. Secure cookies require HTTPS in
 production; local development uses the Next same-origin proxy to port 4000.
-These changes are not live until promoted from the development branch.
+These changes are live in the verified release recorded above.
 
 Static builds generate a hash-based Content-Security-Policy from exported HTML.
 Script execution allows self and exact build hashes, with no unsafe-inline/eval
@@ -189,8 +219,8 @@ After any envelope is active, rolling back to an API or client that ignores it
 can cause unreadable writes. Keep the envelope-aware API when reverting unrelated
 changes, or restore the entire database and matching application from a verified
 backup. The older item export is not a complete server-loss backup. Use the version 3
-full personal backup described below for history, trash, files and key recovery. Cross-tab coordination and independent extension
-unlock remain separate work.
+full personal backup described below for history, trash, files and key recovery.
+Cross-tab coordination and independent extension unlock are included in this release.
 
 Envelope regression tests live in the crypto, web and API test suites. API tests
 run only against the explicitly selected disposable database. The real Chromium
