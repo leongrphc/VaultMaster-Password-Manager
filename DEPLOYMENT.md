@@ -95,3 +95,13 @@ random JWT ID. Protected requests check that device's current authorization;
 logout, device revocation and refresh-token reuse block its next API request.
 A master-password change revokes other devices. Deploying this token format
 requires existing sessions to sign in again. No database migration is needed.
+
+
+## Isolated CI database
+
+GitHub Actions provisions an ephemeral PostgreSQL 17 service, applies the real
+Prisma migrations, and runs API integration tests plus web/extension regression
+checks. Integration tests require `VAULTMASTER_TEST_DATABASE_URL` explicitly;
+they never select the deployment connection from `.env`. For local testing, point
+this variable and `DATABASE_URL` / `DATABASE_DIRECT_URL` at a dedicated database,
+apply migrations there, build the API, then run its tests.

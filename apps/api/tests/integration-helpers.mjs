@@ -1,18 +1,20 @@
-import dotenv from "dotenv";
-import { resolve } from "node:path";
-
 const TEST_EMAIL_DOMAIN = "example.integration.test";
 const DEFAULT_AUTH_HASH = "integration-auth-hash";
 
-dotenv.config({ path: resolve(process.cwd(), ".env") });
-dotenv.config({ path: resolve(process.cwd(), "apps/api/.env") });
+// Integration tests must explicitly select their database. Never fall back to a
+// deployment .env, which may contain the production vault connection string.
+if (!process.env.VAULTMASTER_TEST_DATABASE_URL) {
+  throw new Error("VAULTMASTER_TEST_DATABASE_URL is required; use a dedicated test database");
+}
+process.env.DATABASE_URL = process.env.VAULTMASTER_TEST_DATABASE_URL;
+process.env.DATABASE_DIRECT_URL = process.env.VAULTMASTER_TEST_DATABASE_DIRECT_URL || process.env.DATABASE_URL;
 
 process.env.NODE_ENV = "test";
 process.env.JWT_SECRET ||= "a".repeat(32);
 process.env.JWT_REFRESH_SECRET ||= "b".repeat(32);
 process.env.JWT_EXPIRES_IN ||= "15m";
 process.env.JWT_REFRESH_EXPIRES_IN ||= "7d";
-process.env.API_PORT ||= "0";
+process.env.API_PORT ||= "4000";
 process.env.CORS_ORIGIN ||= "http://localhost:3000";
 process.env.APP_ENCRYPTION_KEY ||= "Iqgdnj6zTOno1qTzP6+46sh4Vhvs13bWVeLD5TbLWXA=";
 
