@@ -47,7 +47,7 @@ async function loadBackground({ vaultTab = { id: 7, windowId: 1 }, tabResponse =
   return {
     tabMessages,
     sessionStorage,
-    async send(message, sender = { tab: { id: 42 } }) {
+    async send(message, sender = { tab: { id: 42 }, url: "https://example.com/login", frameId: 0 }) {
       return new Promise((resolve) => {
         for (const listener of listeners) {
           if (listener(message, sender, resolve) === true) {
@@ -87,6 +87,7 @@ test("stores pending autofill without sensitive fields", async () => {
       title: "GitHub",
       username: "octo",
       hostname: "example.com",
+      origin: "https://example.com",
       expiresAt: Date.now() + 20000,
       password: "secret-password",
       totp: "123456",
@@ -97,12 +98,12 @@ test("stores pending autofill without sensitive fields", async () => {
 
   assert.deepEqual(response, { ok: true });
   const stored = background.sessionStorage.get("vaultmasterPendingAutofill");
-  assert.equal(stored["42"].itemId, "item-1");
-  assert.equal(stored["42"].nonce, "nonce-1");
-  assert.equal("password" in stored["42"], false);
-  assert.equal("totp" in stored["42"], false);
-  assert.equal("totpCode" in stored["42"], false);
-  assert.equal("cvv" in stored["42"], false);
+  assert.equal(stored["42:0"].itemId, "item-1");
+  assert.equal(stored["42:0"].nonce, "nonce-1");
+  assert.equal("password" in stored["42:0"], false);
+  assert.equal("totp" in stored["42:0"], false);
+  assert.equal("totpCode" in stored["42:0"], false);
+  assert.equal("cvv" in stored["42:0"], false);
 });
 
 test("rejects invalid domain validation payloads", async () => {
@@ -218,4 +219,26 @@ test("blocks passkey intercepts when rpId is outside the page origin", async () 
 
   assert.deepEqual(response, { ok: false, payload: { status: "rp_mismatch" } });
   assert.equal(background.tabMessages.length, 0);
+});
+
+for (const scenario of ["origin", "frame", "tab", "expiry"]) {
+  test(`pending autofill cannot cross ${scenario}`, async () => {
+    const background = await loadBackground();
+    const pendingAutofill = { itemId: "item-1", nonce: "n", origin: "https://example.com", expiresAt: Date.now() + 20000 };
+    assert.equal((await background.send({ type: "SET_PENDING_AUTOFILL", pendingAutofill })).ok, true);
+    const sender = { tab: { id: scenario === "tab" ? 43 : 42 }, frameId: scenario === "frame" ? 1 : 0,
+      url: scenario === "origin" ? "http://example.com/password" : "https://example.com/password" };
+    if (scenario === "expiry") background.sessionStorage.get("vaultmasterPendingAutofill")["42:0"].expiresAt = Date.now() - 1;
+    const response = await background.send({ type: "GET_PENDING_AUTOFILL" }, sender);
+    assert.equal(response.payload.pendingAutofill, null);
+  });
+}
+
+test("rejects pending state claiming another origin", async () => {
+  const background = await loadBackground();
+  const response = await background.send({ type: "SET_PENDING_AUTOFILL", pendingAutofill: {
+    itemId: "item-1", nonce: "n", origin: "https://other.test", expiresAt: Date.now() + 20000,
+  } });
+  assert.equal(response.ok, false);
+  assert.equal(background.sessionStorage.size, 0);
 });

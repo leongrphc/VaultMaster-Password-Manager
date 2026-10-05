@@ -4,7 +4,7 @@ import { resolve } from "node:path";
 import test from "node:test";
 import { JSDOM } from "jsdom";
 
-async function loadContent({ credential, domainValid = true } = {}) {
+async function loadContent({ credential, domainValid = true, state = {} } = {}) {
   const dom = new JSDOM(
     `<!doctype html><html><body>
       <form>
@@ -30,7 +30,15 @@ async function loadContent({ credential, domainValid = true } = {}) {
       onMessage: { addListener: (listener) => listeners.push(listener) },
       sendMessage: (payload, callback) => {
         runtimeMessages.push(payload);
-        callback(resolveRuntimeResponse(payload, { credential, domainValid }));
+        if (payload.type === "SET_PENDING_AUTOFILL") state.pending = payload.pendingAutofill;
+        if (payload.type === "CLEAR_PENDING_AUTOFILL") state.pending = null;
+        if (payload.type === "GET_PENDING_AUTOFILL") {
+          callback({ ok: true, payload: { pendingAutofill: state.pending } });
+          return;
+        }
+        callback(state.locked && payload.type === "GET_LOGIN_CREDENTIAL"
+          ? { ok: true, payload: { status: "locked" } }
+          : resolveRuntimeResponse(payload, { credential, domainValid }));
       },
     },
   };
@@ -193,3 +201,37 @@ test("relays page-world passkey requests with consent-only messaging", async () 
   notice.querySelector("[data-action='select-passkey']").click();
   assert.match(notice.textContent, /imzalı assertion olarak döndürmez/i);
 });
+
+const loginCredential = { itemId: "item-1", title: "Example", username: "octo", password: "secret-password", hasTotp: false };
+
+test("checks the vault again when filling after it locks", async (t) => {
+  const state = {};
+  const content = await loadContent({ credential: loginCredential, state });
+  t.after(() => content.window.close());
+  assert.equal((await content.send({ type: "FILL_LOGIN_CREDENTIAL", itemId: "item-1" })).ok, true);
+  content.window.document.querySelector("#password").value = "";
+  state.locked = true;
+  assert.equal((await content.send({ type: "FILL_LOGIN_CREDENTIAL", itemId: "item-1" })).ok, false);
+  assert.equal(content.window.document.querySelector("#password").value, "");
+  assert.equal(content.runtimeMessages.filter(m => m.type === "GET_LOGIN_CREDENTIAL").length, 2);
+});
+
+for (const locked of [false, true]) {
+  test(`two-step login survives a new document and respects locked=${locked}`, async (t) => {
+    const state = {};
+    const first = await loadContent({ credential: loginCredential, state });
+    t.after(() => first.window.close());
+    first.window.document.querySelector("#password").remove();
+    assert.equal((await first.send({ type: "FILL_LOGIN_CREDENTIAL", itemId: "item-1" })).ok, true);
+    assert.equal(state.pending.itemId, "item-1");
+    assert.equal(JSON.stringify(state.pending).includes(loginCredential.password), false);
+    first.window.close();
+    state.locked = locked;
+    const next = await loadContent({ credential: loginCredential, state });
+    t.after(() => next.window.close());
+    await new Promise(resolve => next.window.setTimeout(resolve, 600));
+    assert.equal(next.window.document.querySelector("#password").value, locked ? "" : loginCredential.password);
+    assert.equal(state.pending, null);
+    assert.ok(next.runtimeMessages.some(m => m.type === "GET_LOGIN_CREDENTIAL"));
+  });
+}

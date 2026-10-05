@@ -82,8 +82,10 @@ function isPendingAutofillPayload(value) {
 		isObject(value) &&
 		isString(value.itemId) &&
 		isString(value.nonce) &&
-		isString(value.hostname) &&
-		typeof value.expiresAt === "number"
+		isHttpUrlString(value.origin) &&
+		Number.isFinite(value.expiresAt) &&
+		value.expiresAt > Date.now() &&
+		value.expiresAt <= Date.now() + 120000
 	);
 }
 
@@ -510,14 +512,16 @@ async function trackAutofillSelection(message, sendResponse) {
 
 async function setPendingAutofill(message, sender, sendResponse) {
 	const tabId = sender.tab?.id;
-	if (!tabId || !isPendingAutofillPayload(message.pendingAutofill)) {
+	if (tabId === undefined || !isPendingAutofillPayload(message.pendingAutofill) ||
+		!isHttpUrlString(sender.url) || new URL(sender.url).origin !== message.pendingAutofill.origin) {
 		rejectInvalidPayload(sendResponse);
 		return;
 	}
 
-	const { password, totp, totpCode, cvv, ...safePendingAutofill } = message.pendingAutofill;
+	const { itemId, nonce, title, username, hasTotp, origin, expiresAt } = message.pendingAutofill;
+	const safePendingAutofill = { itemId, nonce, title, username, hasTotp, origin, expiresAt };
 	const stored = await getPendingAutofillMap();
-	stored[String(tabId)] = safePendingAutofill;
+	stored[`${tabId}:${sender.frameId ?? 0}`] = safePendingAutofill;
 	await chrome.storage.session.set({
 		[PENDING_AUTOFILL_KEY]: stored,
 	});
@@ -533,10 +537,18 @@ async function getPendingAutofill(sender, sendResponse) {
 	}
 
 	const stored = await getPendingAutofillMap();
+	const key = `${tabId}:${sender.frameId ?? 0}`;
+	const pending = stored[key];
+	const valid = pending && pending.expiresAt > Date.now() && isHttpUrlString(sender.url) &&
+		new URL(sender.url).origin === pending.origin;
+	if (pending && !valid) {
+		delete stored[key];
+		await chrome.storage.session.set({ [PENDING_AUTOFILL_KEY]: stored });
+	}
 	sendResponse({
 		ok: true,
 		payload: {
-			pendingAutofill: stored[String(tabId)] || null,
+			pendingAutofill: valid ? pending : null,
 		},
 	});
 }
@@ -549,7 +561,7 @@ async function clearPendingAutofill(sender, sendResponse) {
 	}
 
 	const stored = await getPendingAutofillMap();
-	delete stored[String(tabId)];
+	delete stored[`${tabId}:${sender.frameId ?? 0}`];
 	await chrome.storage.session.set({
 		[PENDING_AUTOFILL_KEY]: stored,
 	});

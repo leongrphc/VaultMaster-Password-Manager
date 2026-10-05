@@ -1,0 +1,84 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { cp, mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { resolve, join } from 'node:path';
+import { chromium, expect } from '@playwright/test';
+
+// Run from the repository root. The real MV3 extension communicates with a mocked
+// unlocked vault page; no production account, database or secret is required.
+test('real extension rechecks locks across fills and full-page two-step navigation', { timeout: 60000 }, async () => {
+  const temp = await mkdtemp(join(tmpdir(), 'vaultmaster-browser-'));
+  const extension = join(temp, 'extension');
+  let context;
+  try {
+    await cp(resolve('apps/extension/src'), extension, { recursive: true });
+    context = await chromium.launchPersistentContext(join(temp, 'profile'), {
+      channel: 'chromium', headless: true,
+      args: [`--disable-extensions-except=${extension}`, `--load-extension=${extension}`],
+    });
+    context.setDefaultTimeout(10000);
+    const credential = { itemId: 'fixture-login', title: 'Fixture', username: 'octo', password: 'fixture-secret', hasTotp: false };
+    await context.route('http://localhost:3000/**', route => route.fulfill({ contentType: 'text/html', body: `<!doctype html><script>
+      window.locked = false;
+      window.credentialRequests = 0;
+      const credential = ${JSON.stringify(credential)};
+      window.addEventListener('message', event => {
+        const data = event.data;
+        if (event.source !== window || data?.source !== 'vaultmaster-extension') return;
+        let payload = { status: 'ready', suggestions: [], isLocked: window.locked };
+        if (data.type === 'VM_LIST_LOGIN_SUGGESTIONS_REQUEST') payload.suggestions = [{...credential, password: undefined}];
+        if (data.type === 'VM_GET_LOGIN_CREDENTIAL_REQUEST') {
+          window.credentialRequests++;
+          payload = window.locked ? { status: 'locked' } : { status: 'ready', credential };
+        }
+        window.postMessage({ source: 'vaultmaster-web', type: data.type + '_RESPONSE', requestId: data.requestId, payload }, location.origin);
+      });
+    </script>` }));
+    await context.route('https://example.test/**', route => {
+      const step = new URL(route.request().url()).pathname;
+      return route.fulfill({ contentType: 'text/html', body: `<!doctype html><form>
+        ${step !== '/password' ? '<input id="email" autocomplete="username" type="email">' : ''}
+        ${step !== '/identifier' ? '<input id="password" autocomplete="current-password" type="password">' : ''}
+        </form>` });
+    });
+    const vault = await context.newPage();
+    await vault.goto('http://localhost:3000/vault');
+    const worker = context.serviceWorkers()[0] || await context.waitForEvent('serviceworker');
+    const target = await context.newPage();
+    async function fill() {
+      return worker.evaluate(async () => {
+        const tabs = await chrome.tabs.query({ url: 'https://example.test/*' });
+        return chrome.tabs.sendMessage(tabs[0].id, { type: 'FILL_LOGIN_CREDENTIAL', itemId: 'fixture-login' });
+      });
+    }
+    await target.goto('https://example.test/login');
+    await target.locator('#email').focus();
+    await target.locator('[data-action="fill"]').click();
+    await expect(target.locator('#password')).toHaveValue(credential.password);
+    await target.locator('#password').fill('');
+    await vault.evaluate(() => window.locked = true);
+    assert.equal((await fill()).ok, false);
+    await expect(target.locator('#password')).toHaveValue('');
+    assert.ok(await vault.evaluate(() => window.credentialRequests >= 2));
+
+    await vault.evaluate(() => window.locked = false);
+    await target.goto('https://example.test/identifier');
+    assert.equal((await fill()).ok, true);
+    await expect(target.locator('#email')).toHaveValue(credential.username);
+    const pending = await worker.evaluate(async () => (await chrome.storage.session.get('vaultmasterPendingAutofill')).vaultmasterPendingAutofill);
+    assert.equal(JSON.stringify(pending).includes(credential.password), false);
+    await target.goto('https://example.test/password');
+    await expect(target.locator('#password')).toHaveValue(credential.password);
+
+    await target.goto('https://example.test/identifier');
+    assert.equal((await fill()).ok, true);
+    await vault.evaluate(() => window.locked = true);
+    await target.goto('https://example.test/password');
+    await expect.poll(() => worker.evaluate(async () => Object.keys((await chrome.storage.session.get('vaultmasterPendingAutofill')).vaultmasterPendingAutofill || {}).length)).toBe(0);
+    await expect(target.locator('#password')).toHaveValue('');
+  } finally {
+    await context?.close();
+    await rm(temp, { recursive: true, force: true });
+  }
+});

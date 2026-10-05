@@ -40,13 +40,10 @@ const PENDING_AUTOFILL_TTL_MS = 20000;
 const AUTOFILL_SUPPRESSION_TTL_MS = 15000;
 const NEVER_SAVE_HOSTS_KEY = "vaultmasterNeverSaveHosts";
 const SUGGESTION_CACHE_TTL_MS = 5000;
-const CREDENTIAL_CACHE_TTL_MS = 30000;
 const autofillSuppressions = new Map();
 const suggestionCache = new Map();
-const credentialCache = new Map();
 const suggestionRequests = new Map();
 const credentialRequests = new Map();
-const pendingCredentialNonces = new Map();
 const PASSKEY_INJECTED_SOURCE = "vaultmaster-passkey-injected";
 const PASSKEY_CONTENT_SOURCE = "vaultmaster-passkey-content";
 
@@ -536,9 +533,6 @@ async function evaluateAutofillOpportunity() {
 }
 
 function showSuggestionPanel({ context, panelKey, typedIdentifier, suggestions, isUsingOfflineData }) {
-	for (const suggestion of suggestions) {
-		void getCachedCredential(suggestion.itemId);
-	}
 	const shouldReuse =
 		activePanel &&
 		activePanel.panelKey === panelKey &&
@@ -658,7 +652,7 @@ async function fillCredentialFromMessage(message, sendResponse) {
 
 	const result = await fillCredentialIntoContext(itemId, context, { forceFill: false });
 	if (result.ok) {
-		suppressAutofillForContext(context);
+		if (result.filledFields?.includes("password")) suppressAutofillForContext(context);
 		removePanel();
 		removeLauncher();
 	}
@@ -688,9 +682,7 @@ async function handleCredentialFill(itemId, context, panelKey, options = {}) {
 }
 
 async function fillCredentialIntoContext(itemId, context, options = {}) {
-	const credentialResult = options.credential
-		? { status: "ready", credential: options.credential }
-		: await getCachedCredential(itemId, { forceFill: options.forceFill });
+	const credentialResult = await requestCredential(itemId, { forceFill: options.forceFill });
 	const credential = credentialResult?.credential;
 	if (!credential) {
 		return {
@@ -740,11 +732,7 @@ async function fillCredentialIntoContext(itemId, context, options = {}) {
 	};
 }
 
-async function getCachedCredential(itemId, options = {}) {
-	const cached = credentialCache.get(itemId);
-	if (!options.forceFill && cached && cached.expiresAt > Date.now()) {
-		return { status: "ready", credential: cached.credential };
-	}
+async function requestCredential(itemId, options = {}) {
 
 	const requestKey = `${itemId}|${options.forceFill ? "force" : "strict"}`;
 	if (credentialRequests.has(requestKey)) {
@@ -762,14 +750,9 @@ async function getCachedCredential(itemId, options = {}) {
 			const payload = response?.payload;
 			const credential = payload?.credential;
 			if (!response?.ok || payload?.status !== "ready" || !credential) {
-				credentialCache.delete(itemId);
 				return { status: payload?.status || "error", credential: null };
 			}
 
-			credentialCache.set(itemId, {
-				credential,
-				expiresAt: Date.now() + CREDENTIAL_CACHE_TTL_MS,
-			});
 			return { status: "ready", credential };
 		})
 		.finally(() => {
@@ -1292,11 +1275,6 @@ function generatePendingNonce() {
 async function rememberPendingAutofill(credential) {
 	const nonce = generatePendingNonce();
 	const expiresAt = Date.now() + PENDING_AUTOFILL_TTL_MS;
-	pendingCredentialNonces.set(nonce, {
-		itemId: credential.itemId,
-		password: credential.password,
-		expiresAt,
-	});
 
 	const pendingAutofill = {
 		itemId: credential.itemId,
@@ -1305,6 +1283,7 @@ async function rememberPendingAutofill(credential) {
 		username: credential.username,
 		hasTotp: credential.hasTotp,
 		hostname: window.location.hostname,
+		origin: window.location.origin,
 		expiresAt,
 	};
 
@@ -1325,7 +1304,7 @@ async function getPendingAutofill() {
 	}
 
 	if (
-		pendingAutofill.hostname !== window.location.hostname ||
+		pendingAutofill.origin !== window.location.origin ||
 		pendingAutofill.expiresAt <= Date.now()
 	) {
 		await clearPendingAutofill();
@@ -1341,36 +1320,34 @@ async function clearPendingAutofill() {
 	}).catch(() => null);
 }
 
+let applyingPendingAutofill = false;
+
 async function tryApplyPendingAutofill(context) {
-	const pending = await getPendingAutofill();
-	const pendingCredential = pending?.nonce ? pendingCredentialNonces.get(pending.nonce) : null;
-	if (
-		!pending ||
-		!context?.passwordInput ||
-		!pendingCredential ||
-		pendingCredential.itemId !== pending.itemId ||
-		pendingCredential.expiresAt <= Date.now()
-	) {
-		if (pending?.nonce) {
-			pendingCredentialNonces.delete(pending.nonce);
+	if (applyingPendingAutofill || !context?.passwordInput) return false;
+	applyingPendingAutofill = true;
+	try {
+		const pending = await getPendingAutofill();
+		if (!pending) return false;
+		if (context.passwordInput.value.trim()) {
 			await clearPendingAutofill();
+			return false;
 		}
-		return false;
-	}
-
-	if (context.passwordInput.value.trim()) {
-		pendingCredentialNonces.delete(pending.nonce);
+		// Retrieve again after navigation so the vault's current lock and domain checks apply.
+		const result = await requestCredential(pending.itemId);
+		if (!result.credential) {
+			await clearPendingAutofill();
+			return false;
+		}
+		if (!context.passwordInput.isConnected || context.passwordInput.value.trim()) return false;
+		setNativeValue(context.passwordInput, result.credential.password);
+		context.passwordInput.focus();
 		await clearPendingAutofill();
-		return false;
+		suppressAutofillForContext(context);
+		updatePanelNotice(buildFilledNotice(pending.title, pending.hasTotp, ["password"]), false);
+		return true;
+	} finally {
+		applyingPendingAutofill = false;
 	}
-
-	setNativeValue(context.passwordInput, pendingCredential.password);
-	context.passwordInput.focus();
-	pendingCredentialNonces.delete(pending.nonce);
-	await clearPendingAutofill();
-	suppressAutofillForContext(context);
-	updatePanelNotice(buildFilledNotice(pending.title, pending.hasTotp, ["password"]), false);
-	return true;
 }
 
 function suppressAutofillForContext(context) {
