@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { Fingerprint, Lock, ArrowRight, Shield } from "lucide-react";
+import { api } from "@/lib/api";
 import { useStore } from "@/lib/store";
 import { useShallow } from "zustand/shallow";
 
@@ -140,7 +141,8 @@ export default function LockScreen() {
 
           <div className="mt-4 pt-4 border-t border-border text-center">
             <button
-              onClick={() => {
+              onClick={async () => {
+                try { await api.auth.logout(); } catch {}
                 logout();
                 window.location.assign("/");
               }}

@@ -114,7 +114,7 @@ test("keeps the vault key in memory, removes legacy storage and preserves it on 
 });
 
 for (const version of [1, 3, 4]) {
-  test(`restores an authenticated but locked session from persisted version ${version}`, async () => {
+  test(`requires cookie sign-in and purges bearer credentials from persisted version ${version}`, async () => {
     localStorage.setItem("vaultmaster-auth", JSON.stringify({ version, state: {
       isAuthenticated: true, userId: "user-1", userEmail: "user@example.test", tokens,
       masterKeyBase64: "legacy-key", isLocked: false,
@@ -123,13 +123,14 @@ for (const version of [1, 3, 4]) {
     sessionStorage.setItem("vaultmaster-session-master-key", "legacy-key");
     await useStore.persist.rehydrate();
     await useStore.getState().bootstrapSessionSecurity();
-    expect(useStore.getState().isAuthenticated).toBe(true);
-    expect(useStore.getState().tokens).toEqual(tokens);
-    expect(useStore.getState().isLocked).toBe(true);
+    expect(useStore.getState().isAuthenticated).toBe(false);
+    expect(useStore.getState().tokens).toBeNull();
+    expect(useStore.getState().isLocked).toBe(false);
     expect(useStore.getState().masterKeyBase64).toBeNull();
     expect(useStore.getState().items).toEqual([]);
     expect(sessionStorage.length).toBe(0);
     expect(localStorage.getItem("vaultmaster-auth")).not.toContain("legacy-key");
+    expect(JSON.parse(localStorage.getItem("vaultmaster-auth")!).state).not.toHaveProperty("tokens");
   });
 }
 
@@ -206,4 +207,36 @@ test("a late refresh cannot restore tokens after logout", async () => {
   response.resolve({ data: { tokens: { accessToken: "late-access", refreshToken: "late-refresh" } } });
   expect(await refreshing).toBeNull();
   expect(useStore.getState().tokens).toBeNull();
+});
+
+
+test("rehydrates cookie sessions locked without storing or restoring JWT credentials", async () => {
+  login();
+  expect(JSON.parse(localStorage.getItem("vaultmaster-auth")!).state).not.toHaveProperty("tokens");
+  await useStore.persist.rehydrate();
+  expect(useStore.getState().isAuthenticated).toBe(true);
+  expect(useStore.getState().masterKeyBase64).toBeNull();
+  expect(useStore.getState().isLocked).toBe(true);
+});
+
+for (const event of ["lock", "logout", "account-change"]) {
+  test(`an external tab ${event} clears plaintext without writing another synchronization event`, () => {
+    login();
+    const previous = localStorage.getItem("vaultmaster-auth");
+    useStore.getState().syncExternalSession(event === "lock" ? { isAuthenticated: true, userId: "user-1", isLocked: true, lockSignal: "new-lock" }
+      : event === "logout" ? { isAuthenticated: false, userId: null }
+      : { isAuthenticated: true, userId: "user-2", userEmail: "other@example.test", currentDeviceId: "device-2" });
+    expect(useStore.getState().masterKeyBase64).toBeNull();
+    expect(useStore.getState().items).toEqual([]);
+    expect(localStorage.getItem("vaultmaster-auth")).toBe(previous);
+  });
+}
+
+test("ordinary updates from a locked tab do not reapply an already-observed lock", () => {
+  login();
+  useStore.getState().syncExternalSession({ isAuthenticated: true, userId: "user-1", lockSignal: "observed-lock", isLocked: true });
+  useStore.getState().setMasterKey("memory-only-key");
+  useStore.getState().syncExternalSession({ isAuthenticated: true, userId: "user-1", lockSignal: "observed-lock", isLocked: true });
+  expect(useStore.getState().isLocked).toBe(false);
+  expect(useStore.getState().masterKeyBase64).toBe("memory-only-key");
 });

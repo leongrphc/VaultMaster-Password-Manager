@@ -18,6 +18,8 @@ Bir özelliğin arayüzde bulunması, tüm hata ve güvenlik senaryolarının ta
 
 | Geliştirme | Doğrulama |
 | --- | --- |
+| Web için HttpOnly/Secure çerez oturumu, aynı köken API proxy ve hash tabanlı CSP | JWT içermeyen web yanıtları, CSRF kaynak reddi, çerez yenileme/iptal, izinsiz script engeli ve gerçek Chromium akışları |
+| Sekmeler arasında kilit/çıkış/hesap değişimi ve Web Locks ile oturum yenileme eşgüdümü | Çözülmüş verinin temizlenmesi, depolama döngüsünün engellenmesi ve iki sekmeli tarayıcı kilit/çıkış testi |
 | Taşınabilir tam kişisel kasa yedeği; bağımsız yedek şifresi ve atomik eklemeli geri yükleme | Kaynak hesap silindikten sonra yeni anahtarla geçmiş/çöp/ek çözme; tekrar denemede kopya engeli; rollback ve tarayıcı indirme/geri yükleme |
 | Sabit kasa anahtarı ve sürümlü ana şifre zarfı; eski hesapların veri yazmadan geçişi | Geçmiş/çöp/ek ciphertext koruması, gerçek şifre çözme, eşzamanlı değişim, çevrimdışı kilit açma ve kayıp HTTP yanıtı testleri |
 | Anahtarın yalnızca bellekte tutulması; eski düz metin `sessionStorage` anahtarının kaldırılması | Girişten kasaya istemci geçişi, tam yenilemeden sonra kilit, yanlış/doğru şifre ve eski depolama sürümleri |
@@ -37,13 +39,12 @@ Değişiklikler geliştirme dalında. Canlı yayına geçiş ve mevcut oturumlar
 | Öncelik | Eksik / kodda görülen durum | Tamamlanma koşulu |
 | --- | --- | --- |
 | P0 | Güvenli ana şifre değişimi geliştirme dalında tamamlandı; canlıya kontrollü geçiş gerekiyor. | Yeni migration ve API önce; web sonra. Mevcut eski oturumların yeniden girişi, şifre değişimi ve geçmiş/ek smoke testi. Eski istemciye doğrudan geri alma güvenli değil. |
-| P0 | Erişim ve yenileme token'ları web `localStorage` içinde tutuluyor. Anahtarı belleğe taşımak tek başına XSS koruması sağlamaz. | Web için HttpOnly/Secure oturum tasarımı ve uygun aynı köken API erişimi; CSRF/CORS testleri; üretimde güçlü CSP ve veri sızıntısı testleri. |
+| P0 | HttpOnly web oturumu ve CSP geliştirme dalında tamamlandı; canlıya kontrollü geçiş gerekiyor. | API önce, aynı köken Worker proxy ve web sonra; eski web oturumlarında yeniden giriş ve canlı çerez/CSP smoke testi. |
 | P0 | Bağımlılık taramasında hâlâ yüksek/orta/düşük bulgular var. Kritik sayısının sıfır olması tüm bulguların giderildiği anlamına gelmez. | Doğrudan/dolaylı ve üretim/geliştirme bağımlılıklarını ayırıp düzeltme veya somut uygulanabilirlik değerlendirmesi; düzenli güncellemeler. |
 | P0 | Tam kişisel kasa yedeği geliştirme dalında tamamlandı; büyük kasalar ve operasyonel sunucu yedekleri ayrı iş. | 16 MiB üzerindeki kasalar için akış/parça desteği; planlı yedek ve geri dönüş tatbikatı. Hesap güvenliği ve paylaşım ayarları bu kişisel arşive dahil değil. |
 | P1 | Eklenti hâlâ açık ve kilitsiz web sekmesine bağımlı. | Eklenti içinde giriş, yerel kilit açma, şifreli senkronizasyon, otomatik kilit ve yeniden başlayan service worker için güvenli anahtar yaşam döngüsü. |
 | P1 | iframe ve Shadow DOM formları yeterince desteklenmiyor; inline panel hedef sayfanın DOM'unda. | Frame seçimi ve kaynak doğrulaması; başka kökenden frame için açık karar; Shadow DOM testleri ve sayfanın değiştiremeyeceği seçim arayüzü. Sadece `all_frames` eklemek yeterli değil. |
 | P1 | Yeni hesap/şifre değiştirme formlarında birden çok şifre alanı ve SPA geçişleri tam ele alınmıyor. | `current-password` / `new-password` ayrımı, formdan şifre üretme, güvenilir güncelleme teklifi ve farklı form türleri için geniş fixture seti. |
-| P1 | Sekmeler arasında kilit ve yenileme eşgüdümü eksik. | Bir sekmenin çıkışı/kilidi diğer sekmelere taşınmalı; eşzamanlı yenilemeler meşru oturumları gereksiz yere iptal etmemeli. |
 | P1 | KDF verileri hesapta mevcut, fakat giriş/kilit açma akışı 600.000 tur ve e-posta salt varsayımına bağlı. | Sürümlü KDF metadatası, mevcut hesaplarla uyumlu güvenli parametre geçişi ve cihazlarda süre/bellek ölçümü. Algoritmayı doğrudan değiştirmek mevcut kasaları bozabilir. |
 | P1 | Hassas işlemlerde yeniden doğrulama, hesap e-postası doğrulaması, saldırı sınırlama ve kullanıcı bildirimleri tamamlanmalı. | Silme/dışa aktarma/şifre değişimi için tutarlı yeniden doğrulama; kalıcı ve hesap/IP bazlı saldırı sınırlaması; oturum ve güvenlik değişikliklerinde anlaşılır bildirimler. |
 | P1 | Üretim gözlemleme araçları var; alarm ve geri dönüş süreci uçtan uca doğrulanmış değil. | Sağlık kontrolü, başarısız senkronizasyon alarmı, gizli veri içermeyen loglar, dağıtım geri alma ve veri kurtarma tatbikatı. |

@@ -64,7 +64,7 @@ function mockAuthResponse(email: string) {
     success: true,
     data: {
       user: { id: "user-1", email, createdAt: "2026-05-17T00:00:00.000Z" },
-      tokens: { accessToken: "access-token", refreshToken: "refresh-token" },
+      session: true,
       deviceId: "device-1",
       kdfSalt: "salt",
       kdfIterations: 600000,
@@ -120,7 +120,7 @@ describe("login/register flow", () => {
       vaultKeyEnvelope: { ciphertext: "wrapped-key", iv: "key-iv" },
     }));
     expect(setAuth).toHaveBeenCalledWith(
-      { accessToken: "access-token", refreshToken: "refresh-token" },
+      null,
       "user@example.com",
       "user-1",
       "device-1",

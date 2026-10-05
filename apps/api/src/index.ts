@@ -20,6 +20,7 @@ import auditRoutes from "./routes/audit.routes.js";
 import sharedVaultRoutes from "./routes/shared-vault.routes.js";
 import emergencyAccessRoutes from "./routes/emergency-access.routes.js";
 import backupsRoutes from "./routes/backups.routes.js";
+import { webSessionProtection } from "./utils/web-session.js";
 import { logInfo } from "./utils/logger.js";
 import { initSentry } from "./utils/sentry.js";
 
@@ -52,9 +53,10 @@ export function createApp(): Express {
   app.use(requestLoggingMiddleware);
   app.use(helmet());
   app.use(cors({ origin: env.CORS_ORIGIN, credentials: true }));
+  app.use(cookieParser());
+  app.use(webSessionProtection);
   app.use("/api/backups/restore", express.json({ limit: "16mb" }));
   app.use(express.json({ limit: "10mb" }));
-  app.use(cookieParser());
 
   const limiter = rateLimit({
     windowMs: 15 * 60 * 1000,

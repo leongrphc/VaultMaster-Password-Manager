@@ -41,16 +41,18 @@ From the repository root in PowerShell:
 
 ```powershell
 $env:VAULTMASTER_STATIC_EXPORT = '1'
-$env:NEXT_PUBLIC_API_URL = 'https://vaultmaster-api.onrender.com/api'
 pnpm --filter @vaultmaster/web... build
 npx wrangler deploy --config wrangler.web.jsonc
 ```
 
-Changes to the API URL require rebuilding the web app. The web deployment is
+The web client always uses same-origin `/api`. `API_ORIGIN` in
+`wrangler.web.jsonc` selects the upstream API; the Worker forwards cookie and
+Origin headers without redirects or caching. Only `/api/*` invokes the Worker;
+static files use direct asset delivery. The web deployment is
 currently a direct upload: pushing to GitHub redeploys the API, but does not
 automatically publish a new web build. Run the build and Wrangler commands above
-for web changes. To publish the optional Pages fallback, run
-`npx wrangler pages deploy apps/web/out --project-name vaultmaster-mozkan --branch main`.
+for web changes. The old Pages fallback cannot serve this client without an
+equivalent same-origin API proxy; do not publish this build there alone.
 
 ## Extension
 
@@ -72,6 +74,29 @@ account afterward. Test the real browser extension in addition to automated test
 
 
 ## Session security regression checks
+
+The development branch now uses `__Host-` HttpOnly, Secure, SameSite=Strict
+cookies for web access and refresh credentials. Web responses contain a session
+flag rather than JWTs; browser storage contains public session metadata only.
+Mutations require `X-VaultMaster-Client: web`, an exact allowed Origin and a
+non-cross-site fetch. Native bearer clients retain their existing API contract.
+Browser Web Locks serialize login, logout and refresh across tabs; before rotating,
+refresh checks whether another tab already renewed the access cookie. Storage
+events propagate lock, logout and account changes without propagating keys.
+
+Deploy the compatible API first, then the Worker and static web assets together.
+Storage version 5 drops earlier persisted JWT sessions and requires a fresh login.
+Keep the primary web origin in `CORS_ORIGIN`. Secure cookies require HTTPS in
+production; local development uses the Next same-origin proxy to port 4000.
+These changes are not live until promoted from the development branch.
+
+Static builds generate a hash-based Content-Security-Policy from exported HTML.
+Script execution allows self and exact build hashes, with no unsafe-inline/eval
+or inline event handlers. Styles retain unsafe-inline for the existing UI.
+External connections allow only the password leak API and the configured HTTPS
+Sentry DSN origin. The build fails if CSP exceeds Cloudflare's 2,000-character
+header line limit. Chromium checks blocked injected scripts, working navigation,
+cookie invisibility, and two-tab lock/logout alongside password and backup flows.
 
 The web vault's master key stays in memory. Client navigation after login retains
 the unlocked vault; a full page reload restores authentication with the vault

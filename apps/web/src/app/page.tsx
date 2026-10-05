@@ -95,12 +95,12 @@ export default function LoginPage() {
         webAuthnChallengeToken: webAuthnOptions.challengeToken,
       })) as { success: boolean; data: LoginResponse };
 
-      if (response.data.tokens && response.data.user) {
+      if (response.data.session && response.data.user) {
         const vaultKey = response.data.vaultKeyEnvelope
           ? await unwrapVaultKey(response.data.vaultKeyEnvelope, masterKey) : masterKey;
         const masterKeyB64 = await exportMasterKeyBase64(vaultKey);
         setAuth(
-          response.data.tokens,
+          null,
           response.data.user.email,
           response.data.user.id,
           response.data.deviceId ?? null,
@@ -176,12 +176,12 @@ export default function LoginPage() {
         }
       }
 
-      if (response.data.tokens && response.data.user) {
+      if (response.data.session && response.data.user) {
         const vaultKey = response.data.vaultKeyEnvelope
           ? await unwrapVaultKey(response.data.vaultKeyEnvelope, masterKey) : masterKey;
         const masterKeyB64 = await exportMasterKeyBase64(vaultKey);
         setAuth(
-          response.data.tokens,
+          null,
           response.data.user.email,
           response.data.user.id,
           response.data.deviceId ?? null,

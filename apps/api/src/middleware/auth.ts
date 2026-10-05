@@ -1,6 +1,7 @@
 import { prisma } from "../config/prisma.js";
 import type { Request, Response, NextFunction } from "express";
 import { verifyAccessToken, type TokenPayload } from "../utils/jwt.js";
+import { ACCESS_COOKIE, isWebClient } from "../utils/web-session.js";
 
 declare global {
   namespace Express {
@@ -17,12 +18,11 @@ export async function authMiddleware(
 ): Promise<void> {
   const authHeader = req.headers.authorization;
 
-  if (!authHeader?.startsWith("Bearer ")) {
+  const token = isWebClient(req) ? req.cookies?.[ACCESS_COOKIE] : authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : undefined;
+  if (typeof token !== "string" || !token) {
     res.status(401).json({ success: false, error: "Yetkilendirme gerekli" });
     return;
   }
-
-  const token = authHeader.slice(7);
 
   let payload: TokenPayload;
   try {

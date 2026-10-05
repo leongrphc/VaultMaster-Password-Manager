@@ -226,6 +226,7 @@ export interface EmergencyAccessGrantResponse {
 }
 
 export interface LoginResponse {
+  session?: boolean;
   vaultKeyEnvelope?: VaultKeyEnvelope | null;
   requires2FA?: boolean;
   webAuthnOptions?: unknown;

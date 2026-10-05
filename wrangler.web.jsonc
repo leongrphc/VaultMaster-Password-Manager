@@ -1,10 +1,14 @@
 {
   "$schema": "https://unpkg.com/wrangler/config-schema.json",
   "name": "vaultmaster-web",
+  "main": "workers/web.mjs",
+  "vars": { "API_ORIGIN": "https://vaultmaster-api.onrender.com" },
   "account_id": "df414b176985bb15c627a0ac1f82e85d",
   "compatibility_date": "2026-10-05",
   "workers_dev": false,
   "assets": {
+    "binding": "ASSETS",
+    "run_worker_first": ["/api/*"],
     "directory": "./apps/web/out",
     "not_found_handling": "404-page"
   },

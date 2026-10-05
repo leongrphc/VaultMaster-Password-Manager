@@ -1,5 +1,5 @@
 import type { PasswordChangeInput, RegisterInput, VaultKeyEnvelope, RestoreBackupInput, PersonalSnapshot, BackupCounts } from "@vaultmaster/shared";
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000/api";
+const API_BASE = "/api";
 
 interface ApiErrorOptions {
   requestId?: string;
@@ -50,20 +50,18 @@ async function request<T>(
   endpoint: string,
   options: RequestOptions = {}
 ): Promise<T> {
-  const { method = "GET", body, token } = options;
+  const { method = "GET", body } = options;
 
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
+    "X-VaultMaster-Client": "web",
   };
-
-  if (token) {
-    headers["Authorization"] = `Bearer ${token}`;
-  }
 
   let res: Response;
   try {
     res = await fetch(`${API_BASE}${endpoint}`, {
       method,
+      credentials: "same-origin",
       headers,
       body: body ? JSON.stringify(body) : undefined,
     });
@@ -90,6 +88,11 @@ async function request<T>(
   return data;
 }
 
+async function mutateSession<T>(operation: () => Promise<T>): Promise<T> {
+  return typeof navigator !== "undefined" && navigator.locks
+    ? navigator.locks.request("vaultmaster-cookie-refresh", operation) : operation();
+}
+
 export const api = {
   backups: {
     snapshot: (token: string) => request<{ data: { backupId: string; exportedAt: string; sourceEmail: string; snapshot: PersonalSnapshot } }>("/backups/snapshot", { token }),
@@ -97,7 +100,7 @@ export const api = {
   },
   auth: {
     register: (body: RegisterInput) =>
-      request("/auth/register", { method: "POST", body }),
+      mutateSession(() => request("/auth/register", { method: "POST", body })),
 
     login: (body: {
       vaultKeyProtocol: 1;
@@ -107,13 +110,14 @@ export const api = {
       recoveryCode?: string;
       webAuthnResponse?: unknown;
       webAuthnChallengeToken?: string;
-    }) => request("/auth/login", { method: "POST", body }),
+    }) => mutateSession(() => request("/auth/login", { method: "POST", body })),
 
-    refresh: (refreshToken: string) =>
-      request("/auth/refresh", { method: "POST", body: { refreshToken } }),
+    refresh: () => request("/auth/refresh", { method: "POST" }),
 
-    logout: (token: string, refreshToken: string) =>
-      request("/auth/logout", { method: "POST", body: { refreshToken }, token }),
+    logout: (token?: string, refreshToken?: string) => {
+      void token; void refreshToken; // Compatibility for callers; credentials stay in cookies.
+      return mutateSession(() => request("/auth/logout", { method: "POST" }));
+    },
 
     me: (token: string) => request("/auth/me", { token }),
     getVaultKey: (token: string) => request<{ data: { vaultKeyEnvelope: VaultKeyEnvelope | null } }>("/auth/vault-key", { token }),

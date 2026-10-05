@@ -33,6 +33,8 @@ import {
   verifyWebAuthnLogin,
 } from "./webauthn.routes.js";
 
+import { isWebClient, setWebSession, clearWebSession, REFRESH_COOKIE } from "../utils/web-session.js";
+
 const router: Router = Router();
 
 function vaultKeyEnvelope(user: { wrappedVaultKey: string | null; wrappedVaultKeyIv: string | null; vaultKeyVersion: number }) {
@@ -108,6 +110,7 @@ router.post("/register", async (req: Request, res: Response) => {
       userAgent,
     });
 
+    if (isWebClient(req)) setWebSession(res, accessToken, refreshToken);
     res.status(201).json({
       success: true,
       data: {
@@ -116,7 +119,7 @@ router.post("/register", async (req: Request, res: Response) => {
           email: user.email,
           createdAt: user.createdAt.toISOString(),
         },
-        tokens: { accessToken, refreshToken },
+        ...(isWebClient(req) ? { session: true } : { tokens: { accessToken, refreshToken } }),
         deviceId: device.id,
         kdfSalt: user.kdfSalt,
         kdfIterations: user.kdfIterations,
@@ -291,6 +294,7 @@ router.post("/login", async (req: Request, res: Response) => {
       userAgent,
     });
 
+    if (isWebClient(req)) setWebSession(res, accessToken, refreshToken);
     res.json({
       success: true,
       data: {
@@ -299,7 +303,7 @@ router.post("/login", async (req: Request, res: Response) => {
           email: user.email,
           createdAt: user.createdAt.toISOString(),
         },
-        tokens: { accessToken, refreshToken },
+        ...(isWebClient(req) ? { session: true } : { tokens: { accessToken, refreshToken } }),
         deviceId: device.id,
         kdfSalt: user.kdfSalt,
         kdfIterations: user.kdfIterations,
@@ -428,6 +432,7 @@ router.post("/delete-account", authMiddleware, async (req: Request, res: Respons
     where: { id: user.id },
   });
 
+  if (isWebClient(req)) clearWebSession(res);
   res.json({
     success: true,
     data: { message: "Hesap kalıcı olarak silindi" },
@@ -437,7 +442,7 @@ router.post("/delete-account", authMiddleware, async (req: Request, res: Respons
 // POST /api/auth/refresh
 router.post("/refresh", async (req: Request, res: Response) => {
   try {
-    const { refreshToken } = refreshTokenSchema.parse(req.body);
+    const { refreshToken } = refreshTokenSchema.parse(isWebClient(req) ? { refreshToken: req.cookies?.[REFRESH_COOKIE] } : req.body);
 
     const payload = verifyRefreshToken(refreshToken);
     const refreshTokenHash = hashRefreshToken(refreshToken);
@@ -515,13 +520,11 @@ router.post("/refresh", async (req: Request, res: Response) => {
       userAgent: getRequestUserAgent(req),
     });
 
+    if (isWebClient(req)) setWebSession(res, newAccessToken, newRefreshToken);
     res.json({
       success: true,
       data: {
-        tokens: {
-          accessToken: newAccessToken,
-          refreshToken: newRefreshToken,
-        },
+        ...(isWebClient(req) ? { session: true } : { tokens: { accessToken: newAccessToken, refreshToken: newRefreshToken } }),
         deviceId: device.id,
       },
     });
@@ -531,12 +534,27 @@ router.post("/refresh", async (req: Request, res: Response) => {
 });
 
 // POST /api/auth/logout
-router.post("/logout", authMiddleware, async (req: Request, res: Response) => {
+router.post("/logout", async (req: Request, res: Response, next: NextFunction) => {
+  if (!isWebClient(req)) { next(); return; }
+  try {
+    let payload;
+    try { payload = verifyRefreshToken(req.cookies?.[REFRESH_COOKIE]); }
+    catch { /* Missing, expired or invalid cookies still need clearing. */ }
+    if (payload) {
+      await prisma.device.deleteMany({ where: { id: payload.deviceId, userId: payload.userId } });
+      await logAuditEvent({ userId: payload.userId, deviceId: payload.deviceId, action: "auth.logout", status: "success",
+        ipAddress: getRequestIp(req), userAgent: getRequestUserAgent(req) });
+    }
+    clearWebSession(res);
+    res.json({ success: true, data: { message: "Çıkış yapıldı" } });
+  } catch (error) { next(error); }
+}, authMiddleware, async (req: Request, res: Response) => {
   await logAuditEvent({
     userId: req.user!.userId, deviceId: req.user!.deviceId, action: "auth.logout", status: "success",
     ipAddress: getRequestIp(req), userAgent: getRequestUserAgent(req),
   });
   await prisma.device.deleteMany({ where: { id: req.user!.deviceId, userId: req.user!.userId } });
+  if (isWebClient(req)) clearWebSession(res);
   res.json({ success: true, data: { message: "Çıkış yapıldı" } });
 });
 

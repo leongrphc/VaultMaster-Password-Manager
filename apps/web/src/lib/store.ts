@@ -1,7 +1,7 @@
 "use client";
 
 import { create } from "zustand";
-import { persist } from "zustand/middleware";
+import { persist, createJSONStorage } from "zustand/middleware";
 import type {
   VaultKeyEnvelope,
   BackupCounts,
@@ -99,6 +99,7 @@ interface VaultState {
   selectedItemIds: string[];
   isLoading: boolean;
   isLocked: boolean;
+  lockSignal: string | null;
   isUsingOfflineData: boolean;
   lastSyncedAt: string | null;
   lockTimeoutMinutes: number;
@@ -114,7 +115,7 @@ interface AppStore extends AuthState, VaultState {
   masterKeyBase64: string | null;
 
   setAuth: (
-    tokens: AuthTokens,
+    tokens: AuthTokens | null,
     email: string,
     userId: string,
     deviceId?: string | null,
@@ -123,6 +124,7 @@ interface AppStore extends AuthState, VaultState {
   changeMasterPassword: (currentPassword: string, newPassword: string) => Promise<void>;
   exportFullBackup: (password: string) => Promise<void>;
   getVaultOperationGuard: () => () => void;
+  syncExternalSession: (state: unknown) => void;
   restoreFullBackup: (archive: BackupArchive) => Promise<{ alreadyRestored: boolean; counts: BackupCounts }>;
   setTokens: (tokens: AuthTokens) => void;
   setMasterKey: (keyBase64: string) => void;
@@ -235,6 +237,11 @@ function sortFoldersByName(folders: FolderResponse[]): FolderResponse[] {
 
 const SESSION_MASTER_KEY = "vaultmaster-session-master-key";
 let vaultSecurityEpoch = 0;
+let authSessionEpoch = 0;
+let syncingExternalSession = false;
+// Non-secret compatibility marker for existing UI/bridge session checks.
+// Real credentials are always supplied by HttpOnly cookies, never this value.
+export const COOKIE_SESSION: AuthTokens = { accessToken: "cookie-session", refreshToken: "cookie-session" };
 
 function isCurrentVaultSession(state: AppStore, epoch: number, key: string | null) {
   return epoch === vaultSecurityEpoch && state.isAuthenticated && !state.isLocked &&
@@ -314,6 +321,7 @@ export const useStore = create<AppStore>()(
       selectedItemIds: [],
       isLoading: false,
       isLocked: false,
+      lockSignal: null,
       isUsingOfflineData: false,
       lastSyncedAt: null,
       lockTimeoutMinutes: 5,
@@ -323,14 +331,32 @@ export const useStore = create<AppStore>()(
       sharedVaultItems: {},
       emergencyAccessGrants: [],
 
-      setAuth: (tokens, email, userId, deviceId = null, envelope = null) => {
+      setAuth: (_tokens, email, userId, deviceId = null, envelope = null) => {
         vaultSecurityEpoch++;
+        authSessionEpoch++;
         clearLegacySessionMasterKey();
         set({
-          isAuthenticated: true, tokens, userEmail: email, userId,
+          isAuthenticated: true, tokens: COOKIE_SESSION, userEmail: email, userId,
           vaultKeyEnvelope: envelope, currentDeviceId: deviceId, isLocked: true, masterKeyBase64: null,
           items: [], folders: [], isLoading: false,
         });
+      },
+
+      syncExternalSession: (input) => {
+        const incoming = input as Partial<AppStore> | null;
+        if (!incoming || typeof incoming.isAuthenticated !== "boolean") return;
+        const changed = incoming.isAuthenticated !== get().isAuthenticated || incoming.userId !== get().userId ||
+          ("currentDeviceId" in incoming && incoming.currentDeviceId !== get().currentDeviceId);
+        const newLock = typeof incoming.lockSignal === "string" && incoming.lockSignal !== get().lockSignal;
+        if (!changed && !newLock) return;
+        syncingExternalSession = true;
+        try {
+          if (!incoming.isAuthenticated) get().logout();
+          else if (changed && typeof incoming.userId === "string" && typeof incoming.userEmail === "string") {
+            get().setAuth(null, incoming.userEmail, incoming.userId, incoming.currentDeviceId, incoming.vaultKeyEnvelope);
+          } else get().lockVault();
+          if (typeof incoming.lockSignal === "string") set({ lockSignal: incoming.lockSignal });
+        } finally { syncingExternalSession = false; }
       },
 
       getVaultOperationGuard: () => {
@@ -398,7 +424,7 @@ export const useStore = create<AppStore>()(
         }
       },
 
-      setTokens: (tokens) => set({ tokens }),
+      setTokens: (tokens) => { void tokens; set({ tokens: get().isAuthenticated ? COOKIE_SESSION : null }); },
 
       setMasterKey: (keyBase64) => {
         const epoch = ++vaultSecurityEpoch;
@@ -419,6 +445,7 @@ export const useStore = create<AppStore>()(
       logout: () =>
         set(() => {
           vaultSecurityEpoch++;
+          authSessionEpoch++;
           clearLegacySessionMasterKey();
           clearOfflineVaultSnapshot();
           clearLockVerifier();
@@ -451,62 +478,46 @@ export const useStore = create<AppStore>()(
         }),
 
       refreshAuthTokens: async () => {
-        if (refreshInFlight) {
-          return refreshInFlight;
-        }
-
-        const currentTokens = get().tokens;
-        if (!currentTokens) {
-          return null;
-        }
-
+        if (!get().isAuthenticated) return null;
+        if (refreshInFlight) return refreshInFlight;
+        const epoch = authSessionEpoch;
+        const refresh = async () => {
+          if (epoch !== authSessionEpoch || !get().isAuthenticated) return null;
+          // Other tabs may have renewed the access cookie while waiting for
+          // the browser-wide lock. Avoid rotating their refresh token again.
+          if (typeof navigator !== "undefined" && navigator.locks) {
+            try { await api.auth.me("cookie-session"); return epoch === authSessionEpoch ? COOKIE_SESSION : null; }
+            catch (error) { if (!isUnauthorizedError(error)) throw error; }
+          }
+          const response = (await api.auth.refresh()) as { data: { session: boolean; deviceId?: string } };
+          if (epoch !== authSessionEpoch || !get().isAuthenticated) return null;
+          if (!response.data.session) throw new Error("Geçersiz web oturumu");
+          set({ tokens: COOKIE_SESSION, currentDeviceId: response.data.deviceId ?? get().currentDeviceId });
+          return COOKIE_SESSION;
+        };
         refreshInFlight = (async () => {
           try {
-            const response = (await api.auth.refresh(currentTokens.refreshToken)) as {
-              data: { tokens: AuthTokens; deviceId?: string | null };
-            };
-            if (get().tokens?.refreshToken !== currentTokens.refreshToken) return null;
-            set({
-              tokens: response.data.tokens,
-              currentDeviceId: response.data.deviceId ?? get().currentDeviceId,
-            });
-            return response.data.tokens;
+            return typeof navigator !== "undefined" && navigator.locks
+              ? await navigator.locks.request("vaultmaster-cookie-refresh", refresh) : await refresh();
           } catch (error) {
-            console.error("Token yenileme hatası:", error);
-            if (get().tokens?.refreshToken === currentTokens.refreshToken) {
-              notify.sessionExpired();
-              get().logout();
+            if (epoch === authSessionEpoch && isUnauthorizedError(error)) {
+              notify.sessionExpired(); get().logout();
             }
             return null;
-          } finally {
-            refreshInFlight = null;
-          }
+          } finally { refreshInFlight = null; }
         })();
-
         return refreshInFlight;
       },
 
-      runWithValidAccessToken: async <T>(
-        operation: (accessToken: string) => Promise<T>
-      ) => {
-        const currentTokens = get().tokens;
-        if (!currentTokens) {
-          throw new Error("Oturum bulunamadı");
-        }
-
-        try {
-          return await operation(currentTokens.accessToken);
-        } catch (error) {
-          if (!isUnauthorizedError(error)) {
-            throw error;
-          }
-
-          const refreshedTokens = await get().refreshAuthTokens();
-          if (!refreshedTokens) {
-            throw new Error("Oturum süresi doldu. Lütfen tekrar giriş yapın.");
-          }
-
-          return operation(refreshedTokens.accessToken);
+      runWithValidAccessToken: async <T>(operation: (accessToken: string) => Promise<T>) => {
+        if (!get().isAuthenticated) throw new Error("Oturum bulunamadı");
+        const epoch = authSessionEpoch;
+        try { return await operation("cookie-session"); }
+        catch (error) {
+          if (!isUnauthorizedError(error)) throw error;
+          const refreshed = await get().refreshAuthTokens();
+          if (!refreshed || epoch !== authSessionEpoch) throw new Error("Oturum süresi doldu. Lütfen tekrar giriş yapın.");
+          return operation("cookie-session");
         }
       },
 
@@ -1078,6 +1089,7 @@ export const useStore = create<AppStore>()(
           clearLegacySessionMasterKey();
           return set({
             isLocked: true,
+            lockSignal: crypto.randomUUID(),
             masterKeyBase64: null,
             items: [],
             folders: [],
@@ -1202,16 +1214,23 @@ export const useStore = create<AppStore>()(
     }),
     {
       name: "vaultmaster-auth",
-      version: 4,
-      migrate: (persistedState: unknown) => persistedState,
+      storage: createJSONStorage(() => {
+        const storage = localStorage;
+        return { getItem: (name: string) => storage.getItem(name),
+          setItem: (name: string, value: string) => { if (!syncingExternalSession) storage.setItem(name, value); },
+          removeItem: (name: string) => storage.removeItem(name) };
+      }),
+      version: 5,
+      migrate: (persistedState: unknown) => ({ ...(persistedState as object), isAuthenticated: false, tokens: null }),
       merge: (persistedState: unknown, currentState: AppStore) => {
         clearLegacySessionMasterKey();
         vaultSecurityEpoch++;
+        authSessionEpoch++;
         const state = (persistedState ?? {}) as Partial<AppStore>;
         return {
           ...currentState,
           isAuthenticated: Boolean(state.isAuthenticated),
-          tokens: state.tokens ?? null,
+          tokens: state.isAuthenticated ? COOKIE_SESSION : null,
           userEmail: state.userEmail ?? null,
           userId: state.userId ?? null,
           currentDeviceId: state.currentDeviceId ?? null,
@@ -1224,11 +1243,13 @@ export const useStore = create<AppStore>()(
           masterKeyBase64: null,
           items: [], folders: [], isLoading: false,
           isLocked: Boolean(state.isAuthenticated),
+          lockSignal: state.lockSignal ?? null,
         };
       },
       partialize: (state: AppStore) => ({
         isAuthenticated: state.isAuthenticated,
-        tokens: state.tokens,
+        isLocked: state.isLocked,
+        lockSignal: state.lockSignal,
         userEmail: state.userEmail,
         userId: state.userId,
         currentDeviceId: state.currentDeviceId,

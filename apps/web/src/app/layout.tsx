@@ -3,6 +3,7 @@ import "./globals.css";
 import { Toaster } from "sonner";
 import SentryInit from "@/components/app/SentryInit";
 import ServiceWorkerRegister from "@/components/app/ServiceWorkerRegister";
+import SessionCoordinator from "@/components/app/SessionCoordinator";
 
 export const metadata: Metadata = {
   title: "VaultMaster — Secure Password Manager",
@@ -29,6 +30,7 @@ export default function RootLayout({
       <body className="antialiased">
         <SentryInit />
         <ServiceWorkerRegister />
+        <SessionCoordinator />
         <Toaster
           position="bottom-right"
           richColors

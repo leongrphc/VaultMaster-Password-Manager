@@ -1,5 +1,5 @@
-const STATIC_CACHE = "vaultmaster-static-v2";
-const PAGE_CACHE = "vaultmaster-pages-v2";
+const STATIC_CACHE = "vaultmaster-static-v3";
+const PAGE_CACHE = "vaultmaster-pages-v3";
 const STATIC_ROUTES = [
   "/",
   "/vault",

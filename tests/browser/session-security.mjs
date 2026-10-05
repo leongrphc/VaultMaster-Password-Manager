@@ -12,6 +12,9 @@ test('web preserves its random data key through password change, reload and unlo
   const root = resolve('apps/web/out');
   await stat(join(root, 'index.html'));
   const mime = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.txt': 'text/plain', '.woff2': 'font/woff2', '.svg': 'image/svg+xml' };
+  const headersText = await readFile(join(root, '_headers'), 'utf8');
+  const csp = headersText.match(/Content-Security-Policy: ([^\r\n]+)/)?.[1];
+  assert.ok(csp && !csp.match(/script-src[^;]*'unsafe-/));
   const server = createServer(async (req, res) => {
     try {
       const pathname = decodeURIComponent(new URL(req.url, 'http://localhost').pathname);
@@ -20,7 +23,7 @@ test('web preserves its random data key through password change, reload and unlo
       try { if ((await stat(file)).isDirectory()) file = join(file, 'index.html'); }
       catch { file += '.html'; }
       const bytes = await readFile(file);
-      res.writeHead(200, { 'content-type': mime[extname(file)] || 'application/octet-stream' });
+      res.writeHead(200, { 'content-type': mime[extname(file)] || 'application/octet-stream', 'content-security-policy': csp });
       res.end(bytes);
     } catch { res.writeHead(404); res.end(); }
   });
@@ -37,10 +40,13 @@ test('web preserves its random data key through password change, reload and unlo
     let restoreCalls = 0;
     const timestamp = '2026-10-05T00:00:00.000Z';
     browser = await chromium.launch({ channel: 'chromium', headless: true });
-    const page = await browser.newPage();
+    const context = await browser.newContext();
+    const page = await context.newPage();
     const pageErrors = [];
     page.on('pageerror', error => pageErrors.push(error.message));
-    await page.route('**/api/**', async route => {
+    await page.context().route('**/api/**', async route => {
+      assert.equal(route.request().headers()['x-vaultmaster-client'], 'web');
+      assert.equal(route.request().headers()['authorization'], undefined);
       const pathname = new URL(route.request().url()).pathname;
       let data;
       if (pathname.endsWith('/auth/register')) {
@@ -48,7 +54,7 @@ test('web preserves its random data key through password change, reload and unlo
         const key = await unwrapVaultKey(vaultKeyEnvelope, passwordKey);
         keyBase64 = await exportMasterKeyBase64(key);
         encrypted = await encryptJSON({ type: 'login', title: 'Encrypted browser fixture', username: 'octo', password: 'fixture-secret', url: 'https://example.test' }, key);
-        data = { user: { id: 'user-1', email, createdAt: timestamp }, tokens: { accessToken: 'fixture-access', refreshToken: 'fixture-refresh' }, deviceId: 'device-1', kdfSalt: email, kdfIterations: 600000, vaultKeyEnvelope };
+        data = { user: { id: 'user-1', email, createdAt: timestamp }, session: true, deviceId: 'device-1', kdfSalt: email, kdfIterations: 600000, vaultKeyEnvelope };
       }
       else if (pathname.endsWith('/backups/snapshot')) {
         data = { backupId, exportedAt: timestamp, sourceEmail: email, snapshot: { folders: [], items: [{
@@ -76,11 +82,12 @@ test('web preserves its random data key through password change, reload and unlo
       else if (pathname.endsWith('/devices') || pathname.endsWith('/audit-events') || pathname.endsWith('/auth/webauthn/credentials')) data = [];
       else if (pathname.endsWith('/auth/2fa/status')) data = { enabled: false, recoveryCodesRemaining: 0 };
       else if (pathname.endsWith('/auth/vault-key')) data = { vaultKeyEnvelope };
+      else if (pathname.endsWith('/auth/logout')) data = { message: 'Çıkış yapıldı' };
       else if (pathname.endsWith('/vault')) data = [{ id: 'item-1', folderId: null, favorite: false, encryptedData: encrypted.ciphertext, iv: encrypted.iv, createdAt: timestamp, updatedAt: timestamp }];
       else if (pathname.endsWith('/folders')) data = [];
       else throw new Error(`Unexpected API request: ${pathname}`);
       return route.fulfill({ status: pathname.endsWith('/register') ? 201 : 200,
-        headers: { 'access-control-allow-origin': '*', 'access-control-allow-headers': 'authorization,content-type' },
+        headers: pathname.endsWith('/register') ? { 'set-cookie': '__Host-vaultmaster-access=fixture-cookie; Path=/; HttpOnly; Secure; SameSite=Strict' } : {},
         contentType: 'application/json', body: JSON.stringify({ success: true, data }) });
     });
     await page.goto(`http://127.0.0.1:${server.address().port}`);
@@ -95,6 +102,12 @@ test('web preserves its random data key through password change, reload and unlo
     assert.ok(!persisted.local.includes(keyBase64));
     assert.ok(!persisted.session.includes(keyBase64));
     assert.ok(!persisted.local.includes('fixture-secret'));
+    assert.ok(!persisted.local.includes('fixture-cookie'));
+    assert.ok(!JSON.parse(await page.evaluate(() => localStorage.getItem('vaultmaster-auth'))).state.tokens);
+    assert.ok(!(await page.evaluate(() => document.cookie)).includes('fixture-cookie'));
+    await page.evaluate(() => { window.cspViolations = []; document.addEventListener('securitypolicyviolation', event => window.cspViolations.push(event.violatedDirective)); const script = document.createElement('script'); script.textContent = 'window.untrustedScriptExecuted = true'; document.body.appendChild(script); });
+    await expect.poll(() => page.evaluate(() => window.cspViolations)).toContain('script-src-elem');
+    assert.equal(await page.evaluate(() => window.untrustedScriptExecuted), undefined);
     await page.evaluate(value => sessionStorage.setItem('vaultmaster-session-master-key', value), keyBase64);
     await page.reload();
     await expect(page.getByRole('heading', { name: 'Kasa Kilitli' })).toBeVisible();
@@ -149,6 +162,22 @@ test('web preserves its random data key through password change, reload and unlo
     await page.getByRole('button', { name: 'Mevcut Kasaya Ekle' }).click();
     await expect(page.getByText('Tam yedek başarıyla geri yüklendi.', { exact: true })).toBeVisible();
     assert.equal(restoreCalls, 1);
+    const secondTab = await page.context().newPage();
+    secondTab.on('pageerror', error => pageErrors.push(error.message));
+    await secondTab.goto(`http://127.0.0.1:${server.address().port}/vault/`);
+    await expect(secondTab.getByRole('heading', { name: 'Kasa Kilitli' })).toBeVisible();
+    // Rehydration starts locked and propagates that lock to the existing tab.
+    await expect(page.getByRole('heading', { name: 'Kasa Kilitli' })).toBeVisible();
+    for (const tab of [page, secondTab]) {
+      await tab.getByLabel('Ana Şifre', { exact: true }).fill('New-fixture-master-password-2026!');
+      await tab.getByRole('button', { name: 'Ana şifre ile kilidi aç' }).click();
+      await expect(tab.getByRole('heading', { name: 'Kasa Kilitli' })).toHaveCount(0);
+    }
+    await page.getByRole('button', { name: 'Kasayı Kilitle' }).click();
+    await expect(secondTab.getByRole('heading', { name: 'Kasa Kilitli' })).toBeVisible();
+    await expect(secondTab.getByText('Encrypted browser fixture', { exact: true })).toHaveCount(0);
+    await secondTab.getByRole('button', { name: 'Farklı hesap ile giriş yap' }).click();
+    await expect(page.getByLabel('E-posta')).toBeVisible();
     assert.deepEqual(pageErrors, []);
   } finally {
     await browser?.close();
