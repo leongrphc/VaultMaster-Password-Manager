@@ -21,3 +21,10 @@ describe("autofill hostname validation", () => {
     expect(scoreHostMatch(null, "https://github.com")).toBeLessThan(0);
   });
 });
+
+
+it("rejects downgrading an HTTPS login to HTTP", () => {
+  expect(scoreHostMatch({ hostname: "github.com", protocol: "http:" }, "https://github.com")).toBeLessThan(0);
+  expect(scoreHostMatch({ hostname: "github.com", protocol: "https:" }, "https://github.com")).toBe(3);
+  expect(scoreHostMatch({ hostname: "localhost", protocol: "http:" }, "http://localhost")).toBe(3);
+});

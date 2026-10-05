@@ -128,7 +128,7 @@ test("forwards valid domain validation requests to the vault tab", async () => {
       itemId: "item-1",
       expectedUrl: "https://phishing.example/login",
     },
-    { tab: { id: 99 } }
+    { tab: { id: 99 }, url: "https://phishing.example/login" }
   );
 
   assert.deepEqual(response, { ok: true, payload: { valid: false } });
@@ -287,3 +287,28 @@ test("never-save hosts are ignored and failed saves retain the draft for retry",
   assert.equal((await background.send({ type: "CONFIRM_LOGIN_SAVE", draftId: draft.id })).payload.status, "locked");
   assert.equal((await background.send({ type: "GET_PENDING_LOGIN_SAVE" })).payload.draft.id, draft.id);
 });
+
+for (const type of ["GET_LOGIN_CREDENTIAL", "GET_PASSWORD_FOR_FILL", "VALIDATE_CREDENTIAL_DOMAIN"]) {
+  test(`${type} rejects an origin supplied by a different site`, async () => {
+    const background = await loadBackground();
+    const response = await background.send({ type, itemId: "item-1", pageUrl: "https://trusted.test/login", expectedUrl: "https://trusted.test/login" });
+    assert.equal(response.ok, false);
+    assert.equal(background.tabMessages.length, 0);
+  });
+}
+
+test("credential lookup uses the actual frame document, not the claimed path or top-level URL", async () => {
+  const background = await loadBackground();
+  await background.send({ type: "GET_LOGIN_CREDENTIAL", itemId: "item-1", pageUrl: "https://example.com/claimed" }, {
+    tab: { id: 42, url: "https://other.test" }, url: "https://example.com/actual", frameId: 3,
+  });
+  assert.equal(background.tabMessages[0].pageUrl, "https://example.com/actual");
+});
+
+for (const sender of [{}, { tab: { id: 42 }, url: "about:blank" }, { tab: { id: 42 }, url: "https://example.com", documentLifecycle: "cached" }]) {
+  test(`credential lookup rejects a missing or inactive document: ${JSON.stringify(sender)}`, async () => {
+    const background = await loadBackground();
+    assert.equal((await background.send({ type: "GET_LOGIN_CREDENTIAL", itemId: "item-1", pageUrl: "https://example.com" }, sender)).ok, false);
+    assert.equal(background.tabMessages.length, 0);
+  });
+}

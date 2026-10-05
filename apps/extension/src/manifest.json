@@ -1,9 +1,14 @@
 {
 	"manifest_version": 3,
 	"name": "VaultMaster Autofill",
-	"version": "1.0.1",
+	"version": "1.0.2",
 	"description": "Uses an unlocked VaultMaster web tab to suggest and autofill matching credentials.",
-	"permissions": ["tabs", "storage", "activeTab", "contextMenus"],
+	"permissions": [
+		"tabs",
+		"storage",
+		"activeTab",
+		"contextMenus"
+	],
 	"host_permissions": [
 		"http://localhost:3000/*",
 		"http://127.0.0.1:3000/*",
@@ -19,15 +24,24 @@
 	},
 	"content_scripts": [
 		{
-			"matches": ["<all_urls>"],
-			"js": ["form-detector.js", "content.js"],
+			"matches": [
+				"<all_urls>"
+			],
+			"js": [
+				"form-detector.js",
+				"content.js"
+			],
 			"run_at": "document_start"
 		}
 	],
 	"web_accessible_resources": [
 		{
-			"resources": ["passkey-injected.js"],
-			"matches": ["<all_urls>"]
+			"resources": [
+				"passkey-injected.js"
+			],
+			"matches": [
+				"<all_urls>"
+			]
 		}
 	],
 	"commands": {

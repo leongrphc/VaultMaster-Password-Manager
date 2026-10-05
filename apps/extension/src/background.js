@@ -34,6 +34,15 @@ function isHttpUrlString(value) {
 	}
 }
 
+// Chrome supplies the document URL; never let a request claim another site's origin.
+function getContentPageUrl(sender, claimedUrl) {
+	if (!Number.isInteger(sender.tab?.id) || !isHttpUrlString(sender.url) ||
+		(sender.documentLifecycle && sender.documentLifecycle !== "active")) return null;
+	if (claimedUrl !== undefined && (!isHttpUrlString(claimedUrl) ||
+		new URL(claimedUrl).origin !== new URL(sender.url).origin)) return null;
+	return sender.url;
+}
+
 function isLoginCredentialPayload(value) {
 	return (
 		isObject(value) &&
@@ -383,10 +392,13 @@ async function resolvePasswordForFill(message, sender, sendResponse) {
 		return;
 	}
 
+	const pageUrl = getContentPageUrl(sender, message.pageUrl);
+	if (!pageUrl) { rejectInvalidPayload(sendResponse); return; }
+
 	const response = await requestVaultTab("VM_GET_PASSWORD_REQUEST", {
 		itemId: message.itemId,
 		identifier: message.identifier,
-		pageUrl: message.pageUrl,
+		pageUrl,
 		sourceTabId: sender.tab?.id ?? null,
 	});
 
@@ -430,9 +442,12 @@ async function getLoginCredential(message, sender, sendResponse) {
 		return;
 	}
 
+	const pageUrl = getContentPageUrl(sender, message.pageUrl);
+	if (!pageUrl) { rejectInvalidPayload(sendResponse); return; }
+
 	const response = await requestVaultTab("VM_GET_LOGIN_CREDENTIAL_REQUEST", {
 		itemId: message.itemId,
-		pageUrl: message.pageUrl,
+		pageUrl,
 		forceFill: message.forceFill === true,
 		sourceTabId: sender.tab?.id ?? null,
 	});
@@ -449,7 +464,7 @@ async function listCreditCards(sender, sendResponse) {
 }
 
 async function getCreditCard(message, sender, sendResponse) {
-	if (!isString(message.itemId)) {
+	if (!isString(message.itemId) || !getContentPageUrl(sender)) {
 		rejectInvalidPayload(sendResponse);
 		return;
 	}
@@ -471,7 +486,7 @@ async function listIdentities(sender, sendResponse) {
 }
 
 async function getIdentity(message, sender, sendResponse) {
-	if (!isString(message.itemId)) {
+	if (!isString(message.itemId) || !getContentPageUrl(sender)) {
 		rejectInvalidPayload(sendResponse);
 		return;
 	}
@@ -485,7 +500,7 @@ async function getIdentity(message, sender, sendResponse) {
 }
 
 async function saveLoginCredential(message, sender, sendResponse) {
-	if (!isLoginCredentialPayload(message.credential)) {
+	if (!isLoginCredentialPayload(message.credential) || !getContentPageUrl(sender, message.credential.url)) {
 		rejectInvalidPayload(sendResponse);
 		return;
 	}
@@ -585,9 +600,12 @@ async function validateCredentialDomain(message, sender, sendResponse) {
 		return;
 	}
 
+	const pageUrl = getContentPageUrl(sender, message.expectedUrl);
+	if (!pageUrl) { rejectInvalidPayload(sendResponse); return; }
+
 	const response = await requestVaultTab("VM_VALIDATE_CREDENTIAL_DOMAIN_REQUEST", {
 		itemId: message.itemId,
-		pageUrl: message.expectedUrl,
+		pageUrl,
 		sourceTabId: sender.tab?.id ?? null,
 	});
 
@@ -596,7 +614,7 @@ async function validateCredentialDomain(message, sender, sendResponse) {
 
 // TOTP code isteme
 async function getTotpCode(message, sender, sendResponse) {
-	if (!isString(message.itemId)) {
+	if (!isString(message.itemId) || !getContentPageUrl(sender)) {
 		rejectInvalidPayload(sendResponse);
 		return;
 	}

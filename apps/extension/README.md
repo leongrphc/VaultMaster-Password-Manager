@@ -44,3 +44,10 @@ Drafts expire after two minutes and are removed on save, dismissal, expiry check
 tab closure or browser exit. Confirmation requires the original tab, frame and
 origin, a real user click, and an unlocked vault. A failed save remains retryable.
 Both web-bridge response naming conventions are supported.
+
+Secret requests require an active HTTP(S) content-script document and use Chrome's
+`MessageSender.url`, rather than trusting an origin in the request. Inline login,
+card, identity and forced-fill buttons ignore synthetic page-script clicks.
+HTTPS logins cannot automatically match an HTTP page; any override still needs
+an explicit trusted click on the security warning. These safeguards are covered
+by the real-extension browser test as well as unit tests.

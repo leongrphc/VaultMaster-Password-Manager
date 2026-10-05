@@ -46,6 +46,7 @@ function normalizeUrl(value?: string) {
 		return {
 			hostname: url.hostname.replace(/^www\./, "").toLowerCase(),
 			href: url.href.toLowerCase(),
+			protocol: url.protocol,
 		};
 	} catch {
 		return null;

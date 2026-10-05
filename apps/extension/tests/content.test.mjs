@@ -125,7 +125,7 @@ function resolveRuntimeResponse(payload, { credential, domainValid }) {
   return { ok: true, payload: { status: "ready", suggestions: [] } };
 }
 
-test("fills a credential after an explicit extension message", async () => {
+test("fills a credential after an explicit extension message", async (t) => {
   const content = await loadContent({
     credential: {
       itemId: "item-1",
@@ -135,6 +135,7 @@ test("fills a credential after an explicit extension message", async () => {
       hasTotp: false,
     },
   });
+  t.after(() => content.window.close());
   await content.send({ type: "TRIGGER_AUTOFILL" });
 
   const response = await content.send({ type: "FILL_LOGIN_CREDENTIAL", itemId: "item-1" });
@@ -146,7 +147,7 @@ test("fills a credential after an explicit extension message", async () => {
   assert.equal(content.runtimeMessages.some((message) => message.type === "GET_LOGIN_CREDENTIAL"), true);
 });
 
-test("blocks panel autofill and shows a phishing warning when the domain is invalid", async () => {
+test("ignores a page-script click on the autofill panel", async (t) => {
   const content = await loadContent({
     domainValid: false,
     credential: {
@@ -157,6 +158,7 @@ test("blocks panel autofill and shows a phishing warning when the domain is inva
       hasTotp: false,
     },
   });
+  t.after(() => content.window.close());
 
   content.window.document.querySelector("#email").focus();
   await new Promise((resolve) => content.window.setTimeout(resolve, 300));
@@ -167,13 +169,16 @@ test("blocks panel autofill and shows a phishing warning when the domain is inva
   await new Promise((resolve) => content.window.setTimeout(resolve, 0));
 
   assert.equal(content.window.document.querySelector("#password").value, "");
-  assert.match(content.window.document.querySelector("#vaultmaster-inline-autofill").textContent, /Güvenlik Uyarısı/);
-  assert.equal(content.runtimeMessages.some((message) => message.type === "GET_LOGIN_CREDENTIAL"), true);
+  assert.equal(content.runtimeMessages.some((message) => message.type === "GET_LOGIN_CREDENTIAL"), false);
+  const denied = await content.send({ type: "FILL_LOGIN_CREDENTIAL", itemId: "item-1" });
+  assert.equal(denied.ok, false);
+  assert.equal(denied.status, "domain_mismatch");
   assert.equal(content.runtimeMessages.some((message) => message.type === "VALIDATE_CREDENTIAL_DOMAIN"), false);
 });
 
-test("relays page-world passkey requests with consent-only messaging", async () => {
+test("relays page-world passkey requests with consent-only messaging", async (t) => {
   const content = await loadContent();
+  t.after(() => content.window.close());
 
   content.window.dispatchEvent(
     new content.window.MessageEvent("message", {

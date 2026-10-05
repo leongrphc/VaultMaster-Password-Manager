@@ -624,7 +624,8 @@ function showSuggestionPanel({ context, panelKey, typedIdentifier, suggestions, 
 	});
 
 	panel.querySelectorAll("[data-action='fill']").forEach((node) => {
-		node.addEventListener("click", async () => {
+		node.addEventListener("click", async (event) => {
+			if (!event.isTrusted) return;
 			const itemId = node.getAttribute("data-item-id");
 			if (!itemId) {
 				return;
@@ -807,7 +808,7 @@ function showPhishingWarning(itemId, context, panelKey) {
     <div style="padding:12px;border-radius:14px;background:rgba(255,77,106,0.12);border:1px solid rgba(255,77,106,0.35);color:#ff9aac;">
       <div style="font-weight:700;margin-bottom:6px;">⚠️ Güvenlik Uyarısı</div>
       <div style="font-size:12px;line-height:1.5;">
-        Bu kayıt farklı bir site için kaydedilmiş. Credential'ı farklı bir domaine doldurmak güvenlik riski oluşturabilir.
+        Bu kayıt, bu sayfa için güvenli eşleşme olarak doğrulanamadı. Site adresini ve HTTPS kullanımını kontrol edin.
       </div>
       <div style="margin-top:10px;display:flex;gap:8px;">
         <button data-action="dismiss-warning" style="flex:1;padding:8px;border-radius:8px;border:1px solid rgba(255,77,106,0.3);background:transparent;color:#ff9aac;cursor:pointer;font-size:12px;font-weight:600;">
@@ -825,7 +826,8 @@ function showPhishingWarning(itemId, context, panelKey) {
 		removePanel();
 	});
 
-	activePanel.element.querySelector("[data-action='force-fill']")?.addEventListener("click", async () => {
+	activePanel.element.querySelector("[data-action='force-fill']")?.addEventListener("click", async (event) => {
+		if (!event.isTrusted) return;
 		const forceItemId = activePanel.element.querySelector("[data-action='force-fill']")?.getAttribute("data-item-id");
 		if (forceItemId) {
 			await handleCredentialFill(forceItemId, context, panelKey, { forceFill: true });
@@ -989,7 +991,8 @@ function showStructuredSuggestionPanel({ context, items, title, subtitle, fillAc
 
 	panel.querySelector("[data-action='dismiss']")?.addEventListener("click", removePanel);
 	panel.querySelectorAll("[data-action='fill-structured']").forEach((node) => {
-		node.addEventListener("click", async () => {
+		node.addEventListener("click", async (event) => {
+			if (!event.isTrusted) return;
 			const itemId = node.getAttribute("data-item-id");
 			if (itemId) await fillAction(itemId, context);
 		});
@@ -1076,7 +1079,8 @@ function ensureLauncher(suggestions) {
 			"cursor:pointer",
 		].join(";");
 
-		launcher.addEventListener("click", async () => {
+		launcher.addEventListener("click", async (event) => {
+			if (!event.isTrusted) return;
 			const focusTarget = getBestAnchorInput();
 			if (focusTarget) {
 				activeField = focusTarget;

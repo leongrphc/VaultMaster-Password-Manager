@@ -21,6 +21,7 @@ test('real extension rechecks locks across fills and full-page two-step navigati
     const credential = { itemId: 'fixture-login', title: 'Fixture', username: 'octo', password: 'fixture-secret', hasTotp: false };
     await context.route('http://localhost:3000/**', route => route.fulfill({ contentType: 'text/html', body: `<!doctype html><script>
       window.locked = false;
+      window.domainValid = true;
       window.credentialRequests = 0;
       window.saved = [];
       const credential = ${JSON.stringify(credential)};
@@ -31,7 +32,7 @@ test('real extension rechecks locks across fills and full-page two-step navigati
         if (data.type === 'VM_LIST_LOGIN_SUGGESTIONS_REQUEST') payload.suggestions = [{...credential, password: undefined}];
         if (data.type === 'VM_GET_LOGIN_CREDENTIAL_REQUEST') {
           window.credentialRequests++;
-          payload = window.locked ? { status: 'locked' } : { status: 'ready', credential };
+          payload = window.locked ? { status: 'locked' } : (!window.domainValid && !data.forceFill ? { status: 'domain_mismatch' } : { status: 'ready', credential });
         }
         if (data.type === 'VM_SAVE_LOGIN_REQUEST') {
           if (window.locked) payload = { status: 'locked' };
@@ -62,6 +63,10 @@ test('real extension rechecks locks across fills and full-page two-step navigati
     }
     await target.goto('https://example.test/login');
     await target.locator('#email').focus();
+    await expect(target.locator('[data-action="fill"]')).toBeVisible();
+    await target.locator('[data-action="fill"]').evaluate(button => button.click());
+    assert.equal(await vault.evaluate(() => window.credentialRequests), 0);
+    await expect(target.locator('#password')).toHaveValue('');
     await target.locator('[data-action="fill"]').click();
     await expect(target.locator('#password')).toHaveValue(credential.password);
     await target.locator('#password').fill('');
@@ -70,7 +75,17 @@ test('real extension rechecks locks across fills and full-page two-step navigati
     await expect(target.locator('#password')).toHaveValue('');
     assert.ok(await vault.evaluate(() => window.credentialRequests >= 2));
 
-    await vault.evaluate(() => window.locked = false);
+    await vault.evaluate(() => { window.locked = false; window.domainValid = false; });
+    await target.goto('https://example.test/login');
+    await target.locator('#email').focus();
+    await target.locator('[data-action="fill"]').click();
+    await expect(target.locator('[data-action="force-fill"]')).toBeVisible();
+    await expect(target.locator('#password')).toHaveValue('');
+    await target.locator('[data-action="force-fill"]').evaluate(button => button.click());
+    await expect(target.locator('#password')).toHaveValue('');
+    await target.locator('[data-action="force-fill"]').click();
+    await expect(target.locator('#password')).toHaveValue(credential.password);
+    await vault.evaluate(() => window.domainValid = true);
     await target.goto('https://example.test/identifier');
     assert.equal((await fill()).ok, true);
     await expect(target.locator('#email')).toHaveValue(credential.username);
