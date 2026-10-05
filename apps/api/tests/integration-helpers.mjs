@@ -146,6 +146,7 @@ export async function loginUser(baseUrl, payload, overrides = {}) {
     body: {
       email: payload.email,
       authHash: payload.authHash,
+      vaultKeyProtocol: 1,
       ...overrides,
     },
   });

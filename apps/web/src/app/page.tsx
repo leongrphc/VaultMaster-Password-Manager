@@ -4,6 +4,9 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Shield, Eye, EyeOff, ArrowRight, Lock, Mail, AlertTriangle, KeyRound } from "lucide-react";
 import {
+  createVaultKey,
+  wrapVaultKey,
+  unwrapVaultKey,
   deriveMasterKey,
   exportMasterKeyBase64,
 } from "@vaultmaster/crypto";
@@ -81,11 +84,11 @@ export default function LoginPage() {
     try {
       const masterKey = await deriveMasterKey(password, email);
       const authHash = await generateAuthHash(masterKey, password);
-      const masterKeyB64 = await exportMasterKeyBase64(masterKey);
       const webAuthnResponse = await startAuthentication({
         optionsJSON: webAuthnOptions.options,
       });
       const response = (await api.auth.login({
+        vaultKeyProtocol: 1,
         email,
         authHash,
         webAuthnResponse,
@@ -93,11 +96,15 @@ export default function LoginPage() {
       })) as { success: boolean; data: LoginResponse };
 
       if (response.data.tokens && response.data.user) {
+        const vaultKey = response.data.vaultKeyEnvelope
+          ? await unwrapVaultKey(response.data.vaultKeyEnvelope, masterKey) : masterKey;
+        const masterKeyB64 = await exportMasterKeyBase64(vaultKey);
         setAuth(
           response.data.tokens,
           response.data.user.email,
           response.data.user.id,
-          response.data.deviceId ?? null
+          response.data.deviceId ?? null,
+          response.data.vaultKeyEnvelope ?? null
         );
         setMasterKey(masterKeyB64);
         router.replace("/vault");
@@ -135,19 +142,22 @@ export default function LoginPage() {
     try {
       const masterKey = await deriveMasterKey(password, email);
       const authHash = await generateAuthHash(masterKey, password);
-      const masterKeyB64 = await exportMasterKeyBase64(masterKey);
 
       let response: { success: boolean; data: LoginResponse };
 
       if (isRegister) {
+        const vaultKey = await createVaultKey();
+        const vaultKeyEnvelope = await wrapVaultKey(vaultKey, masterKey);
         response = (await api.auth.register({
           email,
           authHash,
           kdfSalt: email.toLowerCase().trim(),
           kdfIterations: 600_000,
+          vaultKeyEnvelope,
         })) as { success: boolean; data: LoginResponse };
       } else {
         response = (await api.auth.login({
+          vaultKeyProtocol: 1,
           email,
           authHash,
           code: requires2FA && !useRecoveryCode ? twoFactorCode : undefined,
@@ -167,11 +177,15 @@ export default function LoginPage() {
       }
 
       if (response.data.tokens && response.data.user) {
+        const vaultKey = response.data.vaultKeyEnvelope
+          ? await unwrapVaultKey(response.data.vaultKeyEnvelope, masterKey) : masterKey;
+        const masterKeyB64 = await exportMasterKeyBase64(vaultKey);
         setAuth(
           response.data.tokens,
           response.data.user.email,
           response.data.user.id,
-          response.data.deviceId ?? null
+          response.data.deviceId ?? null,
+          response.data.vaultKeyEnvelope ?? null
         );
         setMasterKey(masterKeyB64);
         router.replace("/vault");

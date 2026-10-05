@@ -1,6 +1,12 @@
 import { z } from "zod";
 
+const wrappedKeySchema = z.object({
+  ciphertext: z.string().regex(/^[A-Za-z0-9+/]{64}$/),
+  iv: z.string().regex(/^[A-Za-z0-9+/]{16}$/),
+});
+
 export const registerSchema = z.object({
+  vaultKeyEnvelope: wrappedKeySchema.optional(),
   email: z
     .string()
     .email("Geçerli bir e-posta adresi girin")
@@ -20,6 +26,7 @@ export const registerSchema = z.object({
 });
 
 export const loginSchema = z.object({
+  vaultKeyProtocol: z.literal(1).optional(),
   email: z
     .string()
     .email("Geçerli bir e-posta adresi girin"),
@@ -60,15 +67,10 @@ export const revokeOtherDevicesSchema = z.object({
 export const passwordChangeSchema = z.object({
   currentAuthHash: z.string().min(1),
   newAuthHash: z.string().min(1),
-  kdfIterations: z.number().int().min(100_000).max(2_000_000),
-  items: z.array(
-    z.object({
-      id: z.string().uuid(),
-      encryptedData: z.string().min(1),
-      iv: z.string().min(1),
-    })
-  ),
-});
+  kdfIterations: z.literal(600_000),
+  expectedVaultKeyVersion: z.number().int().nonnegative(),
+  vaultKeyEnvelope: wrappedKeySchema,
+}).strict();
 
 export const accountDeleteSchema = z.object({
   authHash: z.string().min(1),

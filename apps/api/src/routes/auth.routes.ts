@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { Router, type Request, type Response } from "express";
+import { Router, type Request, type Response, type NextFunction } from "express";
 import argon2 from "argon2";
 import * as OTPAuth from "otpauth";
 import {
@@ -34,6 +34,12 @@ import {
 } from "./webauthn.routes.js";
 
 const router: Router = Router();
+
+function vaultKeyEnvelope(user: { wrappedVaultKey: string | null; wrappedVaultKeyIv: string | null; vaultKeyVersion: number }) {
+  return user.vaultKeyVersion === 0 ? null : {
+    ciphertext: user.wrappedVaultKey!, iv: user.wrappedVaultKeyIv!, version: user.vaultKeyVersion,
+  };
+}
 
 const passwordHashOptions =
   process.env.NODE_ENV === "test"
@@ -72,6 +78,9 @@ router.post("/register", async (req: Request, res: Response) => {
         masterPasswordHash: serverHash,
         kdfSalt: body.kdfSalt,
         kdfIterations: body.kdfIterations,
+        wrappedVaultKey: body.vaultKeyEnvelope?.ciphertext,
+        wrappedVaultKeyIv: body.vaultKeyEnvelope?.iv,
+        vaultKeyVersion: body.vaultKeyEnvelope ? 1 : 0,
       },
     });
 
@@ -111,6 +120,7 @@ router.post("/register", async (req: Request, res: Response) => {
         deviceId: device.id,
         kdfSalt: user.kdfSalt,
         kdfIterations: user.kdfIterations,
+        vaultKeyEnvelope: vaultKeyEnvelope(user),
       },
     });
   } catch (error) {
@@ -151,6 +161,11 @@ router.post("/login", async (req: Request, res: Response) => {
         metadata: { reason: "invalid_auth_hash" },
       });
       res.status(401).json({ success: false, error: "E-posta veya şifre hatalı" });
+      return;
+    }
+
+    if (user.vaultKeyVersion > 0 && body.vaultKeyProtocol !== 1) {
+      res.status(409).json({ success: false, error: "Kasa anahtarını açmak için uygulamayı güncelleyin." });
       return;
     }
 
@@ -248,15 +263,24 @@ router.post("/login", async (req: Request, res: Response) => {
     const accessToken = generateAccessToken(tokenPayload);
     const refreshToken = generateRefreshToken(tokenPayload);
 
-    const device = await prisma.device.create({
-      data: {
-        id: deviceId,
-        userId: user.id,
-        deviceName: userAgent?.slice(0, 100) ?? "Unknown",
-        deviceType: inferDeviceType(userAgent),
-        refreshTokenHash: hashRefreshToken(refreshToken),
-      },
+    const device = await prisma.$transaction(async (tx) => {
+      // Serialize session creation with password changes. A login that verified
+      // an old hash must not create a new session after other devices are revoked.
+      const matching = await tx.$queryRaw<Array<{ id: string }>>`
+        SELECT id FROM users WHERE id = ${user.id}
+          AND "masterPasswordHash" = ${user.masterPasswordHash}
+          AND "vaultKeyVersion" = ${user.vaultKeyVersion} FOR UPDATE
+      `;
+      if (matching.length !== 1) return null;
+      return tx.device.create({ data: {
+        id: deviceId, userId: user.id, deviceName: userAgent?.slice(0, 100) ?? "Unknown",
+        deviceType: inferDeviceType(userAgent), refreshTokenHash: hashRefreshToken(refreshToken),
+      } });
     });
+    if (!device) {
+      res.status(401).json({ success: false, error: "Kimlik doğrulama bilgileri değişti. Yeniden giriş yapın." });
+      return;
+    }
 
     await logAuditEvent({
       userId: user.id,
@@ -279,6 +303,7 @@ router.post("/login", async (req: Request, res: Response) => {
         deviceId: device.id,
         kdfSalt: user.kdfSalt,
         kdfIterations: user.kdfIterations,
+        vaultKeyEnvelope: vaultKeyEnvelope(user),
       },
     });
   } catch (error) {
@@ -290,92 +315,53 @@ router.post("/login", async (req: Request, res: Response) => {
   }
 });
 
-// POST /api/auth/change-password
-router.post("/change-password", authMiddleware, async (req: Request, res: Response) => {
-  const body = passwordChangeSchema.parse(req.body);
-  const user = await prisma.user.findUnique({
-    where: { id: req.user!.userId },
-  });
+// Password changes rewrap the stable data key, never rewrite vault ciphertext.
+router.get("/vault-key", authMiddleware, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const user = await prisma.user.findUnique({ where: { id: req.user!.userId } });
+    if (!user) { res.status(401).json({ success: false, error: "Oturum geçersiz" }); return; }
+    res.json({ success: true, data: { vaultKeyEnvelope: vaultKeyEnvelope(user) } });
+  } catch (error) { next(error); }
+});
 
-  if (!user) {
-    res.status(404).json({ success: false, error: "Kullanıcı bulunamadı" });
-    return;
-  }
-
-  const valid = await argon2.verify(user.masterPasswordHash, body.currentAuthHash);
-  if (!valid) {
-    res.status(401).json({ success: false, error: "Mevcut ana şifre doğrulanamadı" });
-    return;
-  }
-
-  const requestedIds = new Set(body.items.map((item) => item.id));
-  const currentItems = await prisma.vaultItem.findMany({
-    where: {
-      userId: user.id,
-      deletedAt: null,
-    },
-  });
-
-  if (currentItems.length !== body.items.length) {
-    res.status(400).json({ success: false, error: "Tüm aktif kasa öğeleri yeniden şifrelenmeli" });
-    return;
-  }
-
-  for (const item of currentItems) {
-    if (!requestedIds.has(item.id)) {
-      res.status(400).json({ success: false, error: "Eksik yeniden şifreleme verisi" });
+router.post("/change-password", authMiddleware, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const body = passwordChangeSchema.parse(req.body);
+    const user = await prisma.user.findUnique({ where: { id: req.user!.userId } });
+    if (!user || !await argon2.verify(user.masterPasswordHash, body.currentAuthHash)) {
+      res.status(401).json({ success: false, error: "Mevcut ana şifre doğrulanamadı" });
       return;
     }
-  }
-
-  const nextServerHash = await argon2.hash(body.newAuthHash, passwordHashOptions);
-
-  await prisma.$transaction(async (tx) => {
-    for (const currentItem of currentItems) {
-      await tx.vaultItemVersion.create({
+    const nextServerHash = await argon2.hash(body.newAuthHash, passwordHashOptions);
+    const changed = await prisma.$transaction(async (tx) => {
+      // CAS also checks the verified hash: two simultaneous changes cannot both
+      // succeed or overwrite each other's envelope. A revoked caller cannot win.
+      const device = await tx.device.findFirst({ where: {
+        id: req.user!.deviceId, userId: user.id, refreshTokenHash: { not: null }, refreshTokenReusedAt: null,
+      } });
+      if (!device) return false;
+      const updated = await tx.user.updateMany({
+        where: { id: user.id, vaultKeyVersion: body.expectedVaultKeyVersion, masterPasswordHash: user.masterPasswordHash },
         data: {
-          vaultItemId: currentItem.id,
-          encryptedData: currentItem.encryptedData,
-          iv: currentItem.iv,
-          folderId: currentItem.folderId,
-          favorite: currentItem.favorite,
-          reason: "password_change",
+          masterPasswordHash: nextServerHash, kdfIterations: body.kdfIterations,
+          wrappedVaultKey: body.vaultKeyEnvelope.ciphertext, wrappedVaultKeyIv: body.vaultKeyEnvelope.iv,
+          vaultKeyVersion: { increment: 1 },
         },
       });
-    }
-
-    for (const item of body.items) {
-      await tx.vaultItem.update({
-        where: { id: item.id },
-        data: {
-          encryptedData: item.encryptedData,
-          iv: item.iv,
-        },
-      });
-    }
-
-    await tx.device.deleteMany({ where: { userId: user.id, id: { not: req.user!.deviceId } } });
-    await tx.user.update({
-      where: { id: user.id },
-      data: {
-        masterPasswordHash: nextServerHash,
-        kdfIterations: body.kdfIterations,
-      },
+      if (updated.count !== 1) return false;
+      await tx.device.deleteMany({ where: { userId: user.id, id: { not: req.user!.deviceId } } });
+      return true;
     });
-  });
-
-  await logAuditEvent({
-    userId: user.id,
-    action: "security.password.change",
-    status: "success",
-    ipAddress: getRequestIp(req),
-    userAgent: getRequestUserAgent(req),
-  });
-
-  res.json({
-    success: true,
-    data: { message: "Ana şifre güncellendi" },
-  });
+    if (!changed) {
+      res.status(409).json({ success: false, error: "Kasa anahtarı veya oturum değişti. Yeniden giriş yapın." });
+      return;
+    }
+    await logAuditEvent({ userId: user.id, action: "security.password.change", status: "success",
+      ipAddress: getRequestIp(req), userAgent: getRequestUserAgent(req) });
+    res.json({ success: true, data: { message: "Ana şifre güncellendi", vaultKeyEnvelope: {
+      ...body.vaultKeyEnvelope, version: body.expectedVaultKeyVersion + 1,
+    } } });
+  } catch (error) { next(error); }
 });
 
 // POST /api/auth/delete-account

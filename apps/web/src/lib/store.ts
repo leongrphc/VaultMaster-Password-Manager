@@ -3,6 +3,7 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type {
+  VaultKeyEnvelope,
   VaultItemResponse,
   FolderResponse,
   VaultItemData,
@@ -14,6 +15,9 @@ import type {
   SharedVaultResponse,
 } from "@vaultmaster/shared";
 import {
+  unwrapVaultKey,
+  wrapVaultKey,
+  generateAuthHash,
   deriveMasterKey,
   exportMasterKeyBase64,
   importMasterKey,
@@ -22,7 +26,7 @@ import {
   encryptJSON,
   decryptJSON,
 } from "@vaultmaster/crypto";
-import { api, getErrorMessage, isUnauthorizedError } from "./api";
+import { api, ApiError, getErrorMessage, isUnauthorizedError } from "./api";
 import { notify } from "./notify";
 import {
   clearLockVerifier,
@@ -66,6 +70,7 @@ interface AuthState {
   userEmail: string | null;
   userId: string | null;
   currentDeviceId: string | null;
+  vaultKeyEnvelope: VaultKeyEnvelope | null;
 }
 
 type VaultSortBy =
@@ -103,14 +108,17 @@ interface VaultState {
 }
 
 interface AppStore extends AuthState, VaultState {
+  // In-memory data key (DEK); it is not the password-derived wrapping key.
   masterKeyBase64: string | null;
 
   setAuth: (
     tokens: AuthTokens,
     email: string,
     userId: string,
-    deviceId?: string | null
+    deviceId?: string | null,
+    envelope?: VaultKeyEnvelope | null
   ) => void;
+  changeMasterPassword: (currentPassword: string, newPassword: string) => Promise<void>;
   setTokens: (tokens: AuthTokens) => void;
   setMasterKey: (keyBase64: string) => void;
   bootstrapSessionSecurity: () => Promise<void>;
@@ -287,6 +295,7 @@ export const useStore = create<AppStore>()(
       userId: null,
       currentDeviceId: null,
       masterKeyBase64: null,
+      vaultKeyEnvelope: null,
 
       items: [],
       folders: [],
@@ -309,14 +318,43 @@ export const useStore = create<AppStore>()(
       sharedVaultItems: {},
       emergencyAccessGrants: [],
 
-      setAuth: (tokens, email, userId, deviceId = null) => {
+      setAuth: (tokens, email, userId, deviceId = null, envelope = null) => {
         vaultSecurityEpoch++;
         clearLegacySessionMasterKey();
         set({
           isAuthenticated: true, tokens, userEmail: email, userId,
-          currentDeviceId: deviceId, isLocked: true, masterKeyBase64: null,
+          vaultKeyEnvelope: envelope, currentDeviceId: deviceId, isLocked: true, masterKeyBase64: null,
           items: [], folders: [], isLoading: false,
         });
+      },
+
+      changeMasterPassword: async (currentPassword, newPassword) => {
+        const epoch = vaultSecurityEpoch;
+        const { masterKeyBase64, userEmail, userId, currentDeviceId, vaultKeyEnvelope } = get();
+        requireCurrentVaultSession(get(), epoch, masterKeyBase64);
+        if (!userEmail || newPassword.length < 8) throw new Error("Geçersiz ana şifre");
+        const passwordKey = await deriveMasterKey(currentPassword, userEmail);
+        const currentVaultKey = vaultKeyEnvelope ? await unwrapVaultKey(vaultKeyEnvelope, passwordKey) : passwordKey;
+        if (await exportMasterKeyBase64(currentVaultKey) !== masterKeyBase64) throw new Error("Mevcut ana şifre doğrulanamadı");
+        const nextPasswordKey = await deriveMasterKey(newPassword, userEmail);
+        const wrapped = await wrapVaultKey(currentVaultKey, nextPasswordKey);
+        // Verify the new envelope locally before committing anything remotely.
+        if (await exportMasterKeyBase64(await unwrapVaultKey(wrapped, nextPasswordKey)) !== masterKeyBase64) {
+          throw new Error("Kasa anahtarı doğrulanamadı");
+        }
+        const currentAuthHash = await generateAuthHash(passwordKey, currentPassword);
+        const newAuthHash = await generateAuthHash(nextPasswordKey, newPassword);
+        requireCurrentVaultSession(get(), epoch, masterKeyBase64);
+        await get().runWithValidAccessToken(accessToken => {
+          requireCurrentVaultSession(get(), epoch, masterKeyBase64);
+          return api.auth.changePassword({ currentAuthHash, newAuthHash, kdfIterations: 600000,
+            expectedVaultKeyVersion: vaultKeyEnvelope?.version ?? 0, vaultKeyEnvelope: wrapped }, accessToken);
+        });
+        // An in-flight change may finish after locking. Update only the encrypted
+        // envelope for this session, without restoring any plaintext or key.
+        if (get().isAuthenticated && get().userId === userId && get().currentDeviceId === currentDeviceId) {
+          set({ vaultKeyEnvelope: { ...wrapped, version: (vaultKeyEnvelope?.version ?? 0) + 1 } });
+        }
       },
 
       setTokens: (tokens) => set({ tokens }),
@@ -351,6 +389,7 @@ export const useStore = create<AppStore>()(
             userEmail: null,
             userId: null,
             currentDeviceId: null,
+            vaultKeyEnvelope: null,
             masterKeyBase64: null,
             items: [],
             folders: [],
@@ -1016,7 +1055,22 @@ export const useStore = create<AppStore>()(
         if (!get().isAuthenticated || !userId) return false;
         const isCurrent = () => vaultSecurityEpoch === epoch && get().userId === userId && get().isAuthenticated;
         try {
-          const masterKey = await deriveMasterKey(password, email);
+          // Refresh encrypted metadata before unlock. This also recovers after a
+          // successful password change whose HTTP response was lost.
+          try {
+            const response = await get().runWithValidAccessToken(token => api.auth.getVaultKey(token));
+            if (!isCurrent()) return false;
+            const envelope = response.data.vaultKeyEnvelope;
+            if ((envelope?.version ?? 0) < (get().vaultKeyEnvelope?.version ?? 0)) return false;
+            set({ vaultKeyEnvelope: envelope });
+          } catch (error) {
+            // Only an unreachable API allows the encrypted offline envelope.
+            // Authentication or server errors must not silently bypass checks.
+            if (!(error instanceof ApiError) || error.status !== 0) return false;
+          }
+          const passwordKey = await deriveMasterKey(password, email);
+          const envelope = get().vaultKeyEnvelope;
+          const masterKey = envelope ? await unwrapVaultKey(envelope, passwordKey) : passwordKey;
           const keyBase64 = await exportMasterKeyBase64(masterKey);
 
           const verifierMatches = await verifyLockVerifier(keyBase64);
@@ -1120,6 +1174,7 @@ export const useStore = create<AppStore>()(
           userEmail: state.userEmail ?? null,
           userId: state.userId ?? null,
           currentDeviceId: state.currentDeviceId ?? null,
+          vaultKeyEnvelope: state.vaultKeyEnvelope ?? null,
           lockTimeoutMinutes: state.lockTimeoutMinutes ?? 5,
           showFavoritesOnly: false,
           sortBy: state.sortBy ?? "updated-desc",
@@ -1136,6 +1191,7 @@ export const useStore = create<AppStore>()(
         userEmail: state.userEmail,
         userId: state.userId,
         currentDeviceId: state.currentDeviceId,
+        vaultKeyEnvelope: state.vaultKeyEnvelope,
         lockTimeoutMinutes: state.lockTimeoutMinutes,
         showFavoritesOnly: state.showFavoritesOnly,
         sortBy: state.sortBy,

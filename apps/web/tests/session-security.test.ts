@@ -6,10 +6,11 @@ import { unlockWithLocalAuthenticator } from "../src/lib/local-unlock";
 
 vi.mock("../src/lib/api", () => ({
   api: {
-    auth: { refresh: vi.fn() },
+    auth: { refresh: vi.fn(), getVaultKey: vi.fn(async () => ({ data: { vaultKeyEnvelope: null } })) },
     vault: { getAll: vi.fn(), create: vi.fn(), update: vi.fn(), getAttachments: vi.fn(), getAttachment: vi.fn() },
     folders: { getAll: vi.fn() },
   },
+  ApiError: class extends Error { status = 0; },
   getErrorMessage: (_error: unknown, fallback: string) => fallback,
   isUnauthorizedError: () => false,
 }));

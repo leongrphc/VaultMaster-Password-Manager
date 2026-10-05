@@ -1,3 +1,4 @@
+import type { PasswordChangeInput, RegisterInput, VaultKeyEnvelope } from "@vaultmaster/shared";
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000/api";
 
 interface ApiErrorOptions {
@@ -91,10 +92,11 @@ async function request<T>(
 
 export const api = {
   auth: {
-    register: (body: { email: string; authHash: string; kdfSalt: string; kdfIterations: number }) =>
+    register: (body: RegisterInput) =>
       request("/auth/register", { method: "POST", body }),
 
     login: (body: {
+      vaultKeyProtocol: 1;
       email: string;
       authHash: string;
       code?: string;
@@ -110,6 +112,7 @@ export const api = {
       request("/auth/logout", { method: "POST", body: { refreshToken }, token }),
 
     me: (token: string) => request("/auth/me", { token }),
+    getVaultKey: (token: string) => request<{ data: { vaultKeyEnvelope: VaultKeyEnvelope | null } }>("/auth/vault-key", { token }),
 
     twoFactorSetup: (token: string) =>
       request("/auth/2fa/setup", { method: "POST", token }),
@@ -145,12 +148,7 @@ export const api = {
       request(`/auth/webauthn/credentials/${id}`, { method: "DELETE", token }),
 
     changePassword: (
-      body: {
-        currentAuthHash: string;
-        newAuthHash: string;
-        kdfIterations: number;
-        items: Array<{ id: string; encryptedData: string; iv: string }>;
-      },
+      body: PasswordChangeInput,
       token: string
     ) => request("/auth/change-password", { method: "POST", body, token }),
 

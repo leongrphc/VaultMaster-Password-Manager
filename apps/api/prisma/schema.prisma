@@ -14,6 +14,9 @@ model User {
   masterPasswordHash String
   kdfSalt            String
   kdfIterations      Int          @default(600000)
+  wrappedVaultKey    String?
+  wrappedVaultKeyIv  String?
+  vaultKeyVersion    Int          @default(0)
   twoFactorSecret    String?
   twoFactorEnabled   Boolean      @default(false)
   twoFactorRecoveryCodes Json?

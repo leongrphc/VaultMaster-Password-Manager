@@ -226,6 +226,7 @@ export interface EmergencyAccessGrantResponse {
 }
 
 export interface LoginResponse {
+  vaultKeyEnvelope?: VaultKeyEnvelope | null;
   requires2FA?: boolean;
   webAuthnOptions?: unknown;
   user?: UserResponse;
@@ -234,6 +235,12 @@ export interface LoginResponse {
   recoveryCodes?: string[];
   kdfSalt?: string;
   kdfIterations?: number;
+}
+
+export interface VaultKeyEnvelope {
+  ciphertext: string;
+  iv: string;
+  version: number;
 }
 
 export interface ApiResponse<T = unknown> {

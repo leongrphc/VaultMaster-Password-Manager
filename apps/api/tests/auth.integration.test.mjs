@@ -147,7 +147,7 @@ test("changing the master password revokes other sessions", async () => {
   const headers = { authorization: `Bearer ${user.accessToken}` };
   const changed = await request(baseUrl, "/api/auth/change-password", {
     method: "POST", headers,
-    body: { currentAuthHash: user.payload.authHash, newAuthHash: "next-integration-auth-hash", kdfIterations: 600000, items: [] },
+    body: { currentAuthHash: user.payload.authHash, newAuthHash: "next-integration-auth-hash", kdfIterations: 600000, expectedVaultKeyVersion: 0, vaultKeyEnvelope: { ciphertext: "A".repeat(64), iv: "B".repeat(16) } },
   });
   assert.equal(changed.status, 200);
   assert.equal((await request(baseUrl, "/api/auth/me", { headers })).status, 200);

@@ -4,11 +4,11 @@ import { createServer } from 'node:http';
 import { readFile, stat } from 'node:fs/promises';
 import { resolve, join, extname, sep } from 'node:path';
 import { chromium, expect } from '@playwright/test';
-import { deriveMasterKey, encryptJSON, exportMasterKeyBase64 } from '../../packages/crypto/dist/index.js';
+import { deriveMasterKey, encryptJSON, exportMasterKeyBase64, unwrapVaultKey } from '../../packages/crypto/dist/index.js';
 
 // Uses the built static export and intercepts every API request. No live account
 // or production database is accessed. Run a static web build before this test.
-test('web keeps its key in memory and requires unlock after a full reload', { timeout: 60000 }, async () => {
+test('web preserves its random data key through password change, reload and unlock', { timeout: 90000 }, async () => {
   const root = resolve('apps/web/out');
   await stat(join(root, 'index.html'));
   const mime = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.txt': 'text/plain', '.woff2': 'font/woff2', '.svg': 'image/svg+xml' };
@@ -29,18 +29,37 @@ test('web keeps its key in memory and requires unlock after a full reload', { ti
   try {
     const email = 'session-fixture@example.test';
     const password = 'Fixture-master-password-2026!';
-    const key = await deriveMasterKey(password, email);
-    const keyBase64 = await exportMasterKeyBase64(key);
-    const encrypted = await encryptJSON({ type: 'login', title: 'Encrypted browser fixture', username: 'octo', password: 'fixture-secret', url: 'https://example.test' }, key);
+    const passwordKey = await deriveMasterKey(password, email);
+    let keyBase64;
+    let encrypted;
+    let vaultKeyEnvelope;
     const timestamp = '2026-10-05T00:00:00.000Z';
     browser = await chromium.launch({ channel: 'chromium', headless: true });
     const page = await browser.newPage();
     const pageErrors = [];
     page.on('pageerror', error => pageErrors.push(error.message));
-    await page.route('**/api/**', route => {
+    await page.route('**/api/**', async route => {
       const pathname = new URL(route.request().url()).pathname;
       let data;
-      if (pathname.endsWith('/auth/register')) data = { user: { id: 'user-1', email, createdAt: timestamp }, tokens: { accessToken: 'fixture-access', refreshToken: 'fixture-refresh' }, deviceId: 'device-1', kdfSalt: email, kdfIterations: 600000 };
+      if (pathname.endsWith('/auth/register')) {
+        vaultKeyEnvelope = { ...route.request().postDataJSON().vaultKeyEnvelope, version: 1 };
+        const key = await unwrapVaultKey(vaultKeyEnvelope, passwordKey);
+        keyBase64 = await exportMasterKeyBase64(key);
+        encrypted = await encryptJSON({ type: 'login', title: 'Encrypted browser fixture', username: 'octo', password: 'fixture-secret', url: 'https://example.test' }, key);
+        data = { user: { id: 'user-1', email, createdAt: timestamp }, tokens: { accessToken: 'fixture-access', refreshToken: 'fixture-refresh' }, deviceId: 'device-1', kdfSalt: email, kdfIterations: 600000, vaultKeyEnvelope };
+      }
+      else if (pathname.endsWith('/auth/change-password')) {
+        const body = route.request().postDataJSON();
+        assert.equal(body.expectedVaultKeyVersion, 1);
+        assert.ok(!('items' in body));
+        const nextPasswordKey = await deriveMasterKey('New-fixture-master-password-2026!', email);
+        assert.equal(await exportMasterKeyBase64(await unwrapVaultKey(body.vaultKeyEnvelope, nextPasswordKey)), keyBase64);
+        vaultKeyEnvelope = { ...body.vaultKeyEnvelope, version: 2 };
+        data = { message: 'Ana şifre güncellendi', vaultKeyEnvelope };
+      }
+      else if (pathname.endsWith('/devices') || pathname.endsWith('/audit-events') || pathname.endsWith('/auth/webauthn/credentials')) data = [];
+      else if (pathname.endsWith('/auth/2fa/status')) data = { enabled: false, recoveryCodesRemaining: 0 };
+      else if (pathname.endsWith('/auth/vault-key')) data = { vaultKeyEnvelope };
       else if (pathname.endsWith('/vault')) data = [{ id: 'item-1', folderId: null, favorite: false, encryptedData: encrypted.ciphertext, iv: encrypted.iv, createdAt: timestamp, updatedAt: timestamp }];
       else if (pathname.endsWith('/folders')) data = [];
       else throw new Error(`Unexpected API request: ${pathname}`);
@@ -72,6 +91,26 @@ test('web keeps its key in memory and requires unlock after a full reload', { ti
     await page.getByRole('button', { name: 'Ana şifre ile kilidi aç' }).click();
     await expect(page.getByText('Encrypted browser fixture', { exact: true }).first()).toBeVisible();
     assert.equal(await page.evaluate(() => sessionStorage.getItem('vaultmaster-session-master-key')), null);
+    await page.getByRole('link', { name: 'Ayarlar' }).click();
+    await page.getByRole('button', { name: 'Güvenlik', exact: true }).click();
+    await page.getByPlaceholder('Mevcut ana şifre', { exact: true }).fill(password);
+    await page.getByPlaceholder('Yeni ana şifre', { exact: true }).fill('New-fixture-master-password-2026!');
+    await page.getByPlaceholder('Yeni ana şifre (tekrar)', { exact: true }).fill('New-fixture-master-password-2026!');
+    await page.getByRole('button', { name: 'Ana Şifreyi Güncelle', exact: true }).click();
+    await expect(page.getByText('Ana şifre güncellendi', { exact: true })).toBeVisible();
+    const storedAfterChange = await page.evaluate(() => localStorage.getItem('vaultmaster-auth'));
+    assert.equal(JSON.parse(storedAfterChange).state.vaultKeyEnvelope.version, 2);
+    assert.ok(!storedAfterChange.includes(keyBase64));
+    await page.reload();
+    await expect(page.getByRole('heading', { name: 'Kasa Kilitli' })).toBeVisible();
+    await page.getByLabel('Ana Şifre', { exact: true }).fill(password);
+    await page.getByRole('button', { name: 'Ana şifre ile kilidi aç' }).click();
+    await expect(page.getByText('Yanlış ana şifre', { exact: true })).toBeVisible();
+    await page.getByLabel('Ana Şifre', { exact: true }).fill('New-fixture-master-password-2026!');
+    await page.getByRole('button', { name: 'Ana şifre ile kilidi aç' }).click();
+    await expect(page.getByRole('heading', { name: 'Kasa Kilitli' })).toHaveCount(0);
+    await page.getByRole('link', { name: 'Tüm Öğeler' }).click();
+    await expect(page.getByText('Encrypted browser fixture', { exact: true }).first()).toBeVisible();
     assert.deepEqual(pageErrors, []);
   } finally {
     await browser?.close();

@@ -14,6 +14,9 @@ vi.mock("next/navigation", () => ({
 }));
 
 vi.mock("@vaultmaster/crypto", () => ({
+  createVaultKey: vi.fn(async () => "vault-key"),
+  wrapVaultKey: vi.fn(async () => ({ ciphertext: "wrapped-key", iv: "key-iv" })),
+  unwrapVaultKey: vi.fn(async () => "vault-key"),
   calculateStrength: vi.fn(() => 80),
   deriveMasterKey: vi.fn(async () => "master-key"),
   exportMasterKeyBase64: vi.fn(async () => "master-key-base64"),
@@ -114,12 +117,14 @@ describe("login/register flow", () => {
       authHash: "auth-hash",
       kdfSalt: "user@example.com",
       kdfIterations: 600000,
+      vaultKeyEnvelope: { ciphertext: "wrapped-key", iv: "key-iv" },
     }));
     expect(setAuth).toHaveBeenCalledWith(
       { accessToken: "access-token", refreshToken: "refresh-token" },
       "user@example.com",
       "user-1",
-      "device-1"
+      "device-1",
+      null
     );
     expect(setMasterKey).toHaveBeenCalledWith("master-key-base64");
     expect(replace).toHaveBeenCalledWith("/vault");
@@ -144,6 +149,7 @@ describe("login/register flow", () => {
     await waitFor(() => expect(api.auth.login).toHaveBeenLastCalledWith({
       email: "user@example.com",
       authHash: "auth-hash",
+      vaultKeyProtocol: 1,
       code: "123456",
       recoveryCode: undefined,
     }));

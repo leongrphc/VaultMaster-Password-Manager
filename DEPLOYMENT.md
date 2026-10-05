@@ -105,3 +105,46 @@ checks. Integration tests require `VAULTMASTER_TEST_DATABASE_URL` explicitly;
 they never select the deployment connection from `.env`. For local testing, point
 this variable and `DATABASE_URL` / `DATABASE_DIRECT_URL` at a dedicated database,
 apply migrations there, build the API, then run its tests.
+
+## Vault key envelopes and password changes
+
+Apply `20261005000000_vault_key_envelope` before deploying the new API, then
+publish the updated web build. The migration is additive: existing accounts keep
+version 0 and their original password-derived data key. The new web client creates
+random AES-256 data keys for new accounts. On a legacy account's first password
+change it wraps the existing data key, preserving all ciphertext and timestamps.
+Later changes rewrap that same key. AES-GCM authenticates the envelope with a
+purpose-specific AAD string; plaintext keys are never sent to the API or persisted.
+
+The API atomically changes the authentication hash, encrypted key envelope and
+version, and revokes other devices. Compare-and-swap checks the verified hash and
+expected version, so concurrent changes cannot overwrite each other. The old
+item-replacement password-change payload is rejected. Envelope accounts require
+`vaultKeyProtocol: 1` at login so old clients cannot encrypt new data with a
+password key. Login and manual unlock decrypt the envelope; online manual unlock
+refreshes its server version, recovering if a change response was lost. An
+unreachable API allows encrypted offline metadata, while API authentication and
+server errors do not silently allow offline manual unlock.
+
+This is a password change, not rotation of a compromised data key. Someone who
+already copied a data key or an old encrypted offline snapshot can still decrypt
+that copy. Legacy data keys can still be derived from the original password if
+it is known. Fully retiring a compromised DEK needs complete re-encryption of all
+ciphertext and a separate migration. Earlier password changes that already left
+history or files under an unknown old key cannot be repaired by this migration.
+The existing client KDF profile (email salt, 600,000 PBKDF2 rounds) is unchanged;
+configurable KDF profile migration remains on the roadmap.
+
+After any envelope is active, rolling back to an API or client that ignores it
+can cause unreadable writes. Keep the envelope-aware API when reverting unrelated
+changes, or restore the entire database and matching application from a verified
+backup. The current item export is not a complete server-loss backup: it omits
+history, trash, files and the key envelope. Complete backup/restore is the next
+separate data-safety task. Cross-tab coordination and independent extension
+unlock remain separate work.
+
+Envelope regression tests live in the crypto, web and API test suites. API tests
+run only against the explicitly selected disposable database. The real Chromium
+web test covers random-key registration, encrypted storage, password change and
+reload/unlock with the new password.
+Architecture reference: [OWASP Key Management](https://cheatsheetseries.owasp.org/cheatsheets/Key_Management_Cheat_Sheet.html).

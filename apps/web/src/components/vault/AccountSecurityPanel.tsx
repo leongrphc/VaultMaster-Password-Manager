@@ -4,8 +4,6 @@ import { useState } from "react";
 import { AlertTriangle, KeyRound, Loader2, Shield } from "lucide-react";
 import {
   deriveMasterKey,
-  encryptJSON,
-  exportMasterKeyBase64,
   generateAuthHash,
 } from "@vaultmaster/crypto";
 import { useStore } from "@/lib/store";
@@ -15,20 +13,16 @@ import PasswordStrengthMeter from "@/components/ui/PasswordStrengthMeter";
 
 export default function AccountSecurityPanel() {
   const {
-    items,
     userEmail,
     masterKeyBase64,
-    setMasterKey,
-    syncOfflineSnapshot,
+    changeMasterPassword,
     runWithValidAccessToken,
     logout,
   } = useStore(
     useShallow((state) => ({
-      items: state.items,
       userEmail: state.userEmail,
       masterKeyBase64: state.masterKeyBase64,
-      setMasterKey: state.setMasterKey,
-      syncOfflineSnapshot: state.syncOfflineSnapshot,
+      changeMasterPassword: state.changeMasterPassword,
       runWithValidAccessToken: state.runWithValidAccessToken,
       logout: state.logout,
     }))
@@ -70,45 +64,7 @@ export default function AccountSecurityPanel() {
 
     setChangeLoading(true);
     try {
-      const currentMasterKey = await deriveMasterKey(currentPassword, userEmail);
-      const currentMasterKeyBase64 = await exportMasterKeyBase64(currentMasterKey);
-
-      if (currentMasterKeyBase64 !== masterKeyBase64) {
-        setChangeError("Mevcut ana şifre doğrulanamadı");
-        setChangeLoading(false);
-        return;
-      }
-
-      const newMasterKey = await deriveMasterKey(newPassword, userEmail);
-      const newMasterKeyBase64 = await exportMasterKeyBase64(newMasterKey);
-      const currentAuthHash = await generateAuthHash(currentMasterKey, currentPassword);
-      const newAuthHash = await generateAuthHash(newMasterKey, newPassword);
-
-      const reencryptedItems = await Promise.all(
-        items.map(async (item) => {
-          const encrypted = await encryptJSON(item.data, newMasterKey);
-          return {
-            id: item.id,
-            encryptedData: encrypted.ciphertext,
-            iv: encrypted.iv,
-          };
-        })
-      );
-
-      await runWithValidAccessToken((accessToken) =>
-        api.auth.changePassword(
-          {
-            currentAuthHash,
-            newAuthHash,
-            kdfIterations: 600_000,
-            items: reencryptedItems,
-          },
-          accessToken
-        )
-      );
-
-      setMasterKey(newMasterKeyBase64);
-      await syncOfflineSnapshot();
+      await changeMasterPassword(currentPassword, newPassword);
       setCurrentPassword("");
       setNewPassword("");
       setConfirmPassword("");
@@ -172,7 +128,7 @@ export default function AccountSecurityPanel() {
           <div>
             <h3 className="font-semibold">Ana Şifreyi Değiştir</h3>
             <p className="text-sm text-text-secondary">
-              Tüm kasa içeriği yeni anahtar ile yeniden şifrelenir
+              Kasa anahtarı yeni ana şifreyle korunur; geçmiş ve ekler korunur
             </p>
           </div>
         </div>
