@@ -1,3 +1,4 @@
+import { nativeVault } from './vault-session.js';
 const APP_URL = "http://localhost:3000/vault";
 const VAULTMASTER_URLS = ["http://localhost:3000/*", "http://127.0.0.1:3000/*"];
 const RECENT_SELECTIONS_KEY = "vaultmasterRecentSelections";
@@ -5,9 +6,6 @@ const PENDING_AUTOFILL_KEY = "vaultmasterPendingAutofill";
 const PENDING_SAVE_KEY = "vaultmasterPendingSaves";
 const PENDING_SAVE_TTL_MS = 120000;
 let pendingSaveTasks = Promise.resolve();
-
-// Badge güncelleme periyodu (ms)
-const BADGE_UPDATE_INTERVAL = 5000;
 
 function isObject(value) {
 	return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -106,6 +104,14 @@ function rejectInvalidPayload(sendResponse) {
 }
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+	if (message?.type?.startsWith('NATIVE_')) {
+		if (sender.id !== chrome.runtime.id || sender.url !== chrome.runtime.getURL('popup.html')) {
+			rejectInvalidPayload(sendResponse); return true;
+		}
+		void handleNativeSession(message).then(payload => { sendResponse({ ok: true, payload }); void updateBadgeStatus(); })
+			.catch(error => sendResponse({ ok: false, error: error.message || 'İşlem tamamlanamadı.' }));
+		return true;
+	}
 	if (["CAPTURE_LOGIN", "GET_PENDING_LOGIN_SAVE", "CONFIRM_LOGIN_SAVE", "DISMISS_LOGIN_SAVE"].includes(message?.type)) {
 		// Serialize read/modify/write so a navigation cannot race the submit capture.
 		pendingSaveTasks = pendingSaveTasks.then(() => handlePendingSave(message, sender, sendResponse))
@@ -245,13 +251,28 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
 });
 
 // Badge durumunu periyodik güncelle
-let badgeIntervalId = null;
 async function startBadgeUpdater() {
-	if (badgeIntervalId) {
-		return;
-	}
-	badgeIntervalId = setInterval(updateBadgeStatus, BADGE_UPDATE_INTERVAL);
+	await chrome.alarms?.create('vaultmaster-session-check', { periodInMinutes: 1 });
 	void updateBadgeStatus();
+}
+
+chrome.alarms?.onAlarm.addListener(() => { void updateBadgeStatus(); });
+chrome.idle?.onStateChanged.addListener(state => {
+	if (state === 'locked') void nativeVault.ready.then(() => nativeVault.lock()).then(updateBadgeStatus);
+});
+
+async function handleNativeSession(message) {
+	await nativeVault.ready;
+	if (message.type === 'NATIVE_STATUS') return nativeVault.status();
+	if (message.type === 'NATIVE_LOGIN') return nativeVault.login(message);
+	if (message.type === 'NATIVE_UNLOCK') {
+		if (typeof message.password !== 'string' || !message.password || message.password.length > 10000) throw new Error('Ana şifre gerekli.');
+		return nativeVault.unlock(message.password);
+	}
+	if (message.type === 'NATIVE_LOCK') { await nativeVault.lock(); return nativeVault.status(); }
+	if (message.type === 'NATIVE_LOGOUT') { await nativeVault.logout(); return nativeVault.status(); }
+	if (message.type === 'NATIVE_SYNC') return nativeVault.sync();
+	throw new Error('Bilinmeyen oturum işlemi.');
 }
 
 function setupContextMenus() {
@@ -270,21 +291,11 @@ function setupContextMenus() {
 }
 
 async function updateBadgeStatus() {
-	const [vaultTab] = await chrome.tabs.query({ url: VAULTMASTER_URLS });
-
-	if (!vaultTab?.id) {
-		chrome.action.setBadgeText({ text: "!" });
-		chrome.action.setBadgeBackgroundColor({ color: "#6b7280" }); // gri - kapalı
-		return;
-	}
-
 	try {
-		const response = await sendMessageToTab(vaultTab.id, {
-			type: "VM_GET_VAULT_STATUS_REQUEST",
-			requestId: `badge-${Date.now()}`,
-		});
-
-		const isLocked = response?.payload?.isLocked;
+		const { isAuthenticated, isLocked } = await nativeVault.status();
+		if (!isAuthenticated) {
+			chrome.action.setBadgeText({ text: '!' }); chrome.action.setBadgeBackgroundColor({ color: '#6b7280' }); return;
+		}
 
 		if (isLocked) {
 			chrome.action.setBadgeText({ text: "🔒" });
@@ -316,13 +327,9 @@ async function openVaultMaster(sendResponse) {
 }
 
 async function getExtensionStatus(sendResponse) {
-	const [vaultTab] = await chrome.tabs.query({ url: VAULTMASTER_URLS });
-
 	sendResponse({
 		ok: true,
-		payload: {
-			hasVaultTab: Boolean(vaultTab?.id),
-		},
+		payload: { ...await nativeVault.status(), independent: true },
 	});
 }
 
@@ -377,9 +384,11 @@ async function lookupPasswordSuggestion(message, sender, sendResponse) {
 		return;
 	}
 
+	const pageUrl = getContentPageUrl(sender, message.pageUrl);
+	if (!pageUrl) { rejectInvalidPayload(sendResponse); return; }
 	const response = await requestVaultTab("VM_LOOKUP_PASSWORD_REQUEST", {
 		identifier: message.identifier,
-		pageUrl: message.pageUrl,
+		pageUrl,
 		sourceTabId: sender.tab?.id ?? null,
 	});
 
@@ -411,9 +420,12 @@ async function listLoginSuggestions(message, sender, sendResponse) {
 		return;
 	}
 
+	const trustedPopup = sender.id === chrome.runtime.id && sender.url === chrome.runtime.getURL?.('popup.html');
+	const pageUrl = trustedPopup ? message.pageUrl : getContentPageUrl(sender, message.pageUrl);
+	if (!pageUrl) { rejectInvalidPayload(sendResponse); return; }
 	const response = await requestVaultTab("VM_LIST_LOGIN_SUGGESTIONS_REQUEST", {
 		identifier: message.identifier || "",
-		pageUrl: message.pageUrl,
+		pageUrl,
 		sourceTabId: sender.tab?.id ?? null,
 	});
 
@@ -621,6 +633,7 @@ async function getTotpCode(message, sender, sendResponse) {
 
 	const response = await requestVaultTab("VM_GET_TOTP_CODE_REQUEST", {
 		itemId: message.itemId,
+		pageUrl: sender.url,
 		sourceTabId: sender.tab?.id ?? null,
 	});
 
@@ -629,62 +642,12 @@ async function getTotpCode(message, sender, sendResponse) {
 
 // Vault durumu isteme
 async function getVaultStatus(sendResponse) {
-	const [vaultTab] = await chrome.tabs.query({ url: VAULTMASTER_URLS });
-
-	if (!vaultTab?.id) {
-		sendResponse({
-			ok: true,
-			payload: { isLocked: true, isAuthenticated: false },
-		});
-		return;
-	}
-
-	const response = await sendMessageToTab(vaultTab.id, {
-		type: "VM_GET_VAULT_STATUS_REQUEST",
-		requestId: `vault-status-${Date.now()}`,
-	});
-
-	sendResponse(response);
+	sendResponse({ ok: true, payload: await nativeVault.status() });
 }
 
 async function requestVaultTab(type, payload) {
-	const vaultTab = await getVaultTab();
-	if (!vaultTab?.id) {
-		return {
-			ok: false,
-			payload: { status: "vault_unavailable" },
-		};
-	}
-
-	return sendMessageToTab(vaultTab.id, {
-		type,
-		...payload,
-	});
-}
-
-async function getVaultTab() {
-	const [vaultTab] = await chrome.tabs.query({ url: VAULTMASTER_URLS });
-	return vaultTab || null;
-}
-
-function sendMessageToTab(tabId, payload) {
-	return new Promise((resolve) => {
-		chrome.tabs.sendMessage(tabId, payload, (response) => {
-			const runtimeError = chrome.runtime.lastError;
-			if (runtimeError) {
-				resolve({
-					ok: false,
-					payload: {
-						status: "bridge_error",
-						error: runtimeError.message,
-					},
-				});
-				return;
-			}
-
-			resolve(response || { ok: false, payload: { status: "empty_response" } });
-		});
-	});
+	try { return await nativeVault.request(type, payload); }
+	catch (error) { return { ok: false, payload: { status: 'error', error: error.message || 'Kasa okunamadı.' } }; }
 }
 
 async function getRecentSelections() {

@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { Router, type Request, type Response, type NextFunction } from "express";
 import argon2 from "argon2";
+import { z } from "zod";
 import * as OTPAuth from "otpauth";
 import {
   registerSchema,
@@ -36,6 +37,18 @@ import {
 import { isWebClient, setWebSession, clearWebSession, REFRESH_COOKIE } from "../utils/web-session.js";
 
 const router: Router = Router();
+
+// Existing device authentication is required in addition to password proof.
+// This verifies even an empty legacy vault without creating a new device.
+router.post('/unlock', authMiddleware, async (req: Request, res: Response) => {
+  const { authHash } = z.object({ authHash: z.string().min(1).max(1024) }).strict().parse(req.body);
+  const user = await prisma.user.findUnique({ where: { id: req.user!.userId } });
+  if (!user || !await argon2.verify(user.masterPasswordHash, authHash)) {
+    res.status(403).json({ success: false, error: 'Ana şifre doğrulanamadı.' }); return;
+  }
+  res.setHeader('Cache-Control', 'no-store');
+  res.json({ success: true, data: { vaultKeyEnvelope: vaultKeyEnvelope(user) } });
+});
 
 function vaultKeyEnvelope(user: { wrappedVaultKey: string | null; wrappedVaultKeyIv: string | null; vaultKeyVersion: number }) {
   return user.vaultKeyVersion === 0 ? null : {

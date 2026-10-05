@@ -281,3 +281,12 @@ button {
 	font-size: 11px;
 	color: var(--text);
 }
+
+[hidden] { display: none !important; }
+.session-actions { display: flex; justify-content: flex-end; gap: 8px; margin-bottom: 12px; }
+#session-form { display: grid; gap: 12px; }
+#session-form h2 { margin: 0; font-size: 17px; }
+#session-form label { display: grid; gap: 6px; color: var(--muted); }
+#session-form input { width: 100%; padding: 11px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg); color: var(--text); font: inherit; }
+#session-form input:focus { outline: 2px solid var(--accent-dim); outline-offset: 2px; }
+.session-note { margin: 0; color: var(--muted); font-size: 12px; }

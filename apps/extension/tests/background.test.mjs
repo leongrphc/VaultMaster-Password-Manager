@@ -11,6 +11,8 @@ async function loadBackground({ vaultTab = { id: 7, windowId: 1 }, tabResponse =
 
   globalThis.chrome = {
     runtime: {
+      id: 'fixture-extension',
+      getURL: path => `chrome-extension://fixture-extension/${path}`,
       lastError: null,
       onMessage: { addListener: (listener) => listeners.push(listener) },
       onInstalled: { addListener: () => undefined },
@@ -41,7 +43,10 @@ async function loadBackground({ vaultTab = { id: 7, windowId: 1 }, tabResponse =
     },
   };
 
-  const source = await readFile(resolve("src/background.js"), "utf8");
+  globalThis.__vaultFixture = { ready: Promise.resolve(), status: async () => ({ isAuthenticated: true, isLocked: false }),
+    request: async (type, payload) => { tabMessages.push({ type, ...payload }); return tabResponse; } };
+  const source = (await readFile(resolve("src/background.js"), "utf8"))
+    .replace("import { nativeVault } from './vault-session.js';", 'const nativeVault = globalThis.__vaultFixture;');
   await import(`data:text/javascript,${encodeURIComponent(source)}#${Date.now()}-${Math.random()}`);
 
   return {
@@ -58,6 +63,14 @@ async function loadBackground({ vaultTab = { id: 7, windowId: 1 }, tabResponse =
       });
     },
   };
+}
+
+for (const type of ['NATIVE_LOGIN', 'NATIVE_UNLOCK', 'NATIVE_LOCK', 'NATIVE_LOGOUT', 'NATIVE_SYNC', 'NATIVE_STATUS']) {
+  test(`${type} cannot be invoked by a content script or another extension`, async () => {
+    const background = await loadBackground();
+    assert.equal((await background.send({ type, password: 'must-not-be-accepted' })).ok, false);
+    assert.equal((await background.send({ type }, { id: 'other-extension', url: 'chrome-extension://fixture-extension/popup.html' })).ok, false);
+  });
 }
 
 function createStorageArea(storage) {

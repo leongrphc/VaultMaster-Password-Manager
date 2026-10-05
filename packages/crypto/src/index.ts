@@ -1,5 +1,6 @@
 export { deriveMasterKey, exportMasterKey, exportMasterKeyBase64, importMasterKey } from "./key-derivation.js";
 export { generateAuthHash } from "./password-hash.js";
+export { generateTotpCode, normalizeTotpSecret } from './totp.js';
 export { createVaultKey, wrapVaultKey, unwrapVaultKey } from "./vault-key.js";
 export { encryptBackup, decryptBackup, type EncryptedBackup } from "./backup.js";
 export { encrypt, decrypt, encryptBinary, decryptBinary, encryptJSON, decryptJSON, type EncryptedPayload, type EncryptedBinaryPayload } from "./encryption.js";

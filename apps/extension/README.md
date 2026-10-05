@@ -3,7 +3,7 @@
 Build:
 
 ```bash
-pnpm --filter @vaultmaster/extension build
+pnpm --filter @vaultmaster/extension... build
 ```
 
 Load unpacked extension from `apps/extension/dist`.
@@ -17,8 +17,11 @@ Behavior:
 
 Requirements:
 
-- Keep a VaultMaster web tab open at `http://localhost:3000`
-- Keep the vault unlocked while using autofill
+- Sign in from the extension popup using email, master password and any configured second factor.
+- Unlock from the popup; no VaultMaster web tab is needed. Chrome/Edge 122+ only.
+- The API must be reachable for login, unlock and secret fills.
+- The vault locks after five minutes or device lock. Browser restart requires a fresh login.
+- Tokens and the unlocked key live only in trusted Chrome session memory; persistent storage contains ciphertext only.
 
 Regression checks (from the repository root):
 
@@ -29,7 +32,7 @@ pnpm test:extension:browser
 ```
 
 The browser checks load the actual Manifest V3 extension in an isolated Chromium
-profile and use a mocked vault bridge. They need no live database or account.
+profile and use a local mock API with real encryption and popup login. They need no live database or account.
 Autofill retrieves credentials on demand and rechecks the vault lock for each
 fill. Multi-step logins retain only selection metadata for 20 seconds, bound to
 the original tab, frame and exact origin; the password is requested again when
@@ -43,7 +46,7 @@ encryption. The content script receives only a draft ID and display metadata.
 Drafts expire after two minutes and are removed on save, dismissal, expiry checks,
 tab closure or browser exit. Confirmation requires the original tab, frame and
 origin, a real user click, and an unlocked vault. A failed save remains retryable.
-Both web-bridge response naming conventions are supported.
+Lock and logout also clear pending draft/fill state. The new background service uses its independent encrypted vault session.
 
 Secret requests require an active HTTP(S) content-script document and use Chrome's
 `MessageSender.url`, rather than trusting an origin in the request. Inline login,

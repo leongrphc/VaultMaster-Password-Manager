@@ -1010,16 +1010,17 @@ export default function SettingsPage() {
               <div>
                 <h3 className="font-semibold">Tarayıcı Eklentisi</h3>
                 <p className="text-sm text-text-secondary">
-                  Kullanıcı maili girer; eklenti eşleşme bulursa şifreyi doldurmak için onay ister
+                  Web sekmesi açık olmadan kasanızı açın ve eşleşen hesabı onayla doldurun.
                 </p>
               </div>
             </div>
 
             <div className="space-y-2 text-sm text-text-secondary">
-              <p>1. `pnpm --filter @vaultmaster/extension build` ile eklentiyi derleyin.</p>
-              <p>2. Chrome/Firefox içinde `apps/extension/dist` klasörünü yükleyin.</p>
-              <p>3. Autofill için VaultMaster web uygulamasını açık ve kilitsiz tutun.</p>
-              <p>4. Hedef sitede kullanıcı adını veya maili elle girin; onay gelirse şifre otomatik doldurulur.</p>
+              <a href="/downloads/vaultmaster-extension.zip" download className="inline-flex px-4 py-2 rounded-xl bg-accent text-midnight font-semibold">Chrome / Edge Eklentisini İndir</a>
+              <p>1. İndirdiğiniz ZIP dosyasını bir klasöre çıkarın.</p>
+              <p>2. Chrome&apos;da chrome://extensions, Edge&apos;de edge://extensions sayfasında geliştirici modunu açıp “Paketlenmemiş öğe yükle” ile bu klasörü seçin.</p>
+              <p>3. Tarayıcıdaki VaultMaster simgesinden e-posta ve ana şifrenizle giriş yapın.</p>
+              <p>4. Hedef sitede eşleşen hesabı seçerek doldurmayı onaylayın. Kasa 5 dakika sonra ve cihaz kilitlenince kilitlenir.</p>
             </div>
           </div>
         </div>

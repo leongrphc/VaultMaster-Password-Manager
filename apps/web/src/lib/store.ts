@@ -255,6 +255,7 @@ function requireCurrentVaultSession(state: AppStore, epoch: number, key: string 
 }
 
 let refreshInFlight: Promise<AuthTokens | null> | null = null;
+const observedLockSignals = new Set<string>();
 
 function safeFileName(name: string) {
   return name.replace(/[\\/:*?"<>|]/g, "_") || "attachment";
@@ -347,8 +348,9 @@ export const useStore = create<AppStore>()(
         if (!incoming || typeof incoming.isAuthenticated !== "boolean") return;
         const changed = incoming.isAuthenticated !== get().isAuthenticated || incoming.userId !== get().userId ||
           ("currentDeviceId" in incoming && incoming.currentDeviceId !== get().currentDeviceId);
-        const newLock = typeof incoming.lockSignal === "string" && incoming.lockSignal !== get().lockSignal;
+        const newLock = typeof incoming.lockSignal === "string" && !observedLockSignals.has(incoming.lockSignal);
         if (!changed && !newLock) return;
+        if (typeof incoming.lockSignal === "string") observedLockSignals.add(incoming.lockSignal);
         syncingExternalSession = true;
         try {
           if (!incoming.isAuthenticated) get().logout();
@@ -1087,9 +1089,11 @@ export const useStore = create<AppStore>()(
         {
           vaultSecurityEpoch++;
           clearLegacySessionMasterKey();
+          const lockSignal = crypto.randomUUID();
+          observedLockSignals.add(lockSignal);
           return set({
             isLocked: true,
-            lockSignal: crypto.randomUUID(),
+            lockSignal,
             masterKeyBase64: null,
             items: [],
             folders: [],
@@ -1227,6 +1231,7 @@ export const useStore = create<AppStore>()(
         vaultSecurityEpoch++;
         authSessionEpoch++;
         const state = (persistedState ?? {}) as Partial<AppStore>;
+        if (typeof state.lockSignal === "string") observedLockSignals.add(state.lockSignal);
         return {
           ...currentState,
           isAuthenticated: Boolean(state.isAuthenticated),

@@ -240,3 +240,12 @@ test("ordinary updates from a locked tab do not reapply an already-observed lock
   expect(useStore.getState().isLocked).toBe(false);
   expect(useStore.getState().masterKeyBase64).toBe("memory-only-key");
 });
+
+test("a delayed update carrying an earlier observed lock cannot cancel a later unlock", () => {
+  login();
+  useStore.getState().syncExternalSession({ isAuthenticated: true, userId: "user-1", lockSignal: "older-observed-lock" });
+  useStore.getState().syncExternalSession({ isAuthenticated: true, userId: "user-1", lockSignal: "later-observed-lock" });
+  useStore.getState().setMasterKey("memory-only-key");
+  useStore.getState().syncExternalSession({ isAuthenticated: true, userId: "user-1", lockSignal: "older-observed-lock" });
+  expect(useStore.getState().isLocked).toBe(false);
+});

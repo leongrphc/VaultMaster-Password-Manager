@@ -14,3 +14,4 @@ skills/
 out/
 .wrangler/
 apps/extension/*.zip
+.package-build/

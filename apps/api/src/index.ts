@@ -115,6 +115,7 @@ export function createApp(): Express {
   app.use("/api", limiter);
   app.use("/api/auth/login", authLimiter);
   app.use("/api/auth/register", authLimiter);
+  app.use("/api/auth/unlock", accountSensitiveLimiter);
   app.use("/api/auth/2fa/verify", twoFactorSensitiveLimiter);
   app.use("/api/auth/2fa/disable", accountSensitiveLimiter);
   app.use("/api/auth/2fa/recovery-codes/regenerate", accountSensitiveLimiter);

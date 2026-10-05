@@ -46,6 +46,8 @@ const envSchema = z.object({
   API_PORT: z.coerce.number().int().positive().default(4000),
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   CORS_ORIGIN: z.string().min(1).default("http://localhost:3000"),
+  WEBAUTHN_EXTENSION_ORIGINS: z.string().default('').refine(value => value.split(',').map(origin => origin.trim()).filter(Boolean)
+    .every(origin => /^chrome-extension:\/\/[a-p]{32}$/.test(origin)), 'Invalid extension WebAuthn origin'),
   APP_ENCRYPTION_KEY: z.string().min(1, "APP_ENCRYPTION_KEY gerekli"),
   SENTRY_DSN: z.string().min(1).optional(),
 });

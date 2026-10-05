@@ -10,11 +10,27 @@
 	<main class="popup-shell">
 		<header class="hero">
 			<div class="badge">VaultMaster</div>
-			<h1>Smart Autofill</h1>
+			<h1>Güvenli Kasa</h1>
 			<p id="active-domain">Aktif sekme analiz ediliyor...</p>
 		</header>
 
 		<div id="vault-status" class="vault-status unknown">Durum yükleniyor...</div>
+		<section id="session-panel" class="panel" hidden>
+			<form id="session-form">
+				<h2 id="session-title">Eklentiye Giriş Yap</h2>
+				<label id="email-label">E-posta<input id="email" type="email" autocomplete="username" maxlength="320" required /></label>
+				<label>Ana şifre<input id="master-password" type="password" autocomplete="current-password" maxlength="10000" required /></label>
+				<label id="code-label" hidden>2FA kodu<input id="two-factor-code" autocomplete="one-time-code" maxlength="12" /></label>
+				<label id="recovery-label" hidden>Kurtarma kodu<input id="recovery-code" autocomplete="off" maxlength="128" /></label>
+				<button id="session-submit" class="primary" type="submit">Giriş Yap</button>
+				<button id="webauthn-button" class="ghost" type="button" hidden>Güvenlik Anahtarıyla Doğrula</button>
+				<p class="session-note">Ana şifreniz sunucuya gönderilmez. Kasa 5 dakika sonra ve cihaz kilitlenince kilitlenir.</p>
+			</form>
+		</section>
+		<div class="session-actions">
+			<button id="lock-button" class="ghost" hidden>Kilitle</button>
+			<button id="logout-button" class="ghost" hidden>Çıkış Yap</button>
+		</div>
 
 		<section class="panel">
 			<div class="panel-header">
@@ -22,7 +38,7 @@
 				<button id="refresh-button" class="ghost">Yenile</button>
 			</div>
 
-			<div id="status" class="status">VaultMaster sekmesi aranıyor...</div>
+			<div id="status" class="status" role="status">Kasa oturumu kontrol ediliyor...</div>
 			<div id="items" class="items"></div>
 		</section>
 

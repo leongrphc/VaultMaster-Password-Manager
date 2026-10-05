@@ -58,13 +58,38 @@ equivalent same-origin API proxy; do not publish this build there alone.
 
 ```powershell
 $env:VAULTMASTER_APP_URL = 'https://vaultmaster.mozkan.com.tr'
-pnpm --filter @vaultmaster/extension build
+$env:VAULTMASTER_API_URL = 'https://vaultmaster-api.onrender.com/api'
+pnpm --filter @vaultmaster/extension... build
 ```
 
-Load `apps/extension/dist` as an unpacked extension in Chrome/Edge. Keep an unlocked
-web vault tab at that exact origin. The extension does not yet unlock independently.
+Load `apps/extension/dist` as an unpacked extension in Chrome/Edge. The popup signs
+in and unlocks independently of the web app. Static web builds automatically
+package `/downloads/vaultmaster-extension.zip` and link to it from Settings.
+Set both build origins above before publishing the web; the ZIP uses those same
+origins. Extension bearer traffic uses the direct API, not the web cookie proxy.
+Set `WEBAUTHN_EXTENSION_ORIGINS=chrome-extension://cajnckjhhpbgephllmoaceolbifmnkoa`
+on Render before publishing. `manifest.key` is a public identity key that keeps
+the unpacked Chrome ID stable. Only configured IDs may perform WebAuthn login;
+credential registration still uses the website origin. A future store ID must
+be verified and explicitly added, never accepted via an origin wildcard.
 An origin change also requires rebuilding the extension and updating API CORS.
 WebAuthn credentials and browser local unlock are tied to their original origin.
+
+The native device session and DEK are stored only in `chrome.storage.session`
+with `TRUSTED_CONTEXTS` access, which Chrome keeps in memory and clears on browser
+restart, extension reload/update/disable. Persistent extension storage contains
+only encrypted record snapshots, preferences and selection metadata. No password
+is retained after login. The key survives worker restarts only until an absolute
+five-minute deadline; a Chrome alarm, every-request checks and device-lock events
+enforce lock. Lock removes the key, plaintext items and pending draft/fill state.
+Login, unlock and secret fills require a reachable API. Device revocation and
+password changes from the web are checked on the next request. This version does
+not provide offline unlock/fill or Firefox support. WebAuthn is account login;
+stored vault passkeys still do not implement signing on third-party websites.
+
+References: [Chrome session storage](https://developer.chrome.com/docs/extensions/reference/api/storage),
+[alarms](https://developer.chrome.com/docs/extensions/reference/api/alarms), and
+[Chromium WebAuthn extension origins](https://chromium.googlesource.com/chromium/src/+/refs/heads/main/content/browser/webauth/origins.md).
 
 ## Verification
 

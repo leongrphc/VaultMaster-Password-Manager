@@ -22,6 +22,7 @@ import {
 import {
   credentialToResponse,
   getWebAuthnOrigin,
+  getWebAuthnLoginOrigins,
   getWebAuthnRpId,
   parseTransports,
   rpName,
@@ -241,7 +242,7 @@ export async function verifyWebAuthnLogin(
   const verification = await verifyAuthenticationResponse({
     response: response as AuthenticationResponseJSON,
     expectedChallenge,
-    expectedOrigin: getWebAuthnOrigin(),
+    expectedOrigin: getWebAuthnLoginOrigins(),
     expectedRPID: getWebAuthnRpId(),
     credential: {
       id: dbCredential.credentialId,

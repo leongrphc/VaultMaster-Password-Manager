@@ -6,6 +6,12 @@ export function getWebAuthnOrigin() {
   return env.CORS_ORIGIN[0] ?? "http://localhost:3000";
 }
 
+// Only specifically configured extension IDs may authenticate an existing
+// website credential. Registration remains restricted to the website origin.
+export function getWebAuthnLoginOrigins() {
+  return [getWebAuthnOrigin(), ...env.WEBAUTHN_EXTENSION_ORIGINS.split(',').map(value => value.trim()).filter(Boolean)];
+}
+
 export function getWebAuthnRpId() {
   const origin = getWebAuthnOrigin();
   return new URL(origin).hostname;

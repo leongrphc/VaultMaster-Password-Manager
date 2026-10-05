@@ -18,6 +18,7 @@ Bir özelliğin arayüzde bulunması, tüm hata ve güvenlik senaryolarının ta
 
 | Geliştirme | Doğrulama |
 | --- | --- |
+| Web sekmesi olmadan eklentide giriş, TOTP/kurtarma/WebAuthn, kasa kilidi ve şifreli senkronizasyon | Gerçek MV3 popup girişi, worker durdurup yeniden başlatma, yanlış şifre, oturum iptali, senkronizasyon yarışları ve kalıcı depolamada sır bulunmaması |
 | Web için HttpOnly/Secure çerez oturumu, aynı köken API proxy ve hash tabanlı CSP | JWT içermeyen web yanıtları, CSRF kaynak reddi, çerez yenileme/iptal, izinsiz script engeli ve gerçek Chromium akışları |
 | Sekmeler arasında kilit/çıkış/hesap değişimi ve Web Locks ile oturum yenileme eşgüdümü | Çözülmüş verinin temizlenmesi, depolama döngüsünün engellenmesi ve iki sekmeli tarayıcı kilit/çıkış testi |
 | Taşınabilir tam kişisel kasa yedeği; bağımsız yedek şifresi ve atomik eklemeli geri yükleme | Kaynak hesap silindikten sonra yeni anahtarla geçmiş/çöp/ek çözme; tekrar denemede kopya engeli; rollback ve tarayıcı indirme/geri yükleme |
@@ -42,7 +43,7 @@ Değişiklikler geliştirme dalında. Canlı yayına geçiş ve mevcut oturumlar
 | P0 | HttpOnly web oturumu ve CSP geliştirme dalında tamamlandı; canlıya kontrollü geçiş gerekiyor. | API önce, aynı köken Worker proxy ve web sonra; eski web oturumlarında yeniden giriş ve canlı çerez/CSP smoke testi. |
 | P0 | Bağımlılık taramasında hâlâ yüksek/orta/düşük bulgular var. Kritik sayısının sıfır olması tüm bulguların giderildiği anlamına gelmez. | Doğrudan/dolaylı ve üretim/geliştirme bağımlılıklarını ayırıp düzeltme veya somut uygulanabilirlik değerlendirmesi; düzenli güncellemeler. |
 | P0 | Tam kişisel kasa yedeği geliştirme dalında tamamlandı; büyük kasalar ve operasyonel sunucu yedekleri ayrı iş. | 16 MiB üzerindeki kasalar için akış/parça desteği; planlı yedek ve geri dönüş tatbikatı. Hesap güvenliği ve paylaşım ayarları bu kişisel arşive dahil değil. |
-| P1 | Eklenti hâlâ açık ve kilitsiz web sekmesine bağımlı. | Eklenti içinde giriş, yerel kilit açma, şifreli senkronizasyon, otomatik kilit ve yeniden başlayan service worker için güvenli anahtar yaşam döngüsü. |
+| P1 | Bağımsız eklenti çekirdeği tamamlandı; mağaza dağıtımı ve çevrimdışı kullanım sonraki kapsam. | Chrome/Edge ZIP paketi mevcut. Şu an giriş/açma/doldurma için API gerekir; tarayıcı yeniden başlayınca yeni giriş gerekir. Mağaza kimliği ve izin/otomatik güncelleme süreci ayrı doğrulanmalı. |
 | P1 | iframe ve Shadow DOM formları yeterince desteklenmiyor; inline panel hedef sayfanın DOM'unda. | Frame seçimi ve kaynak doğrulaması; başka kökenden frame için açık karar; Shadow DOM testleri ve sayfanın değiştiremeyeceği seçim arayüzü. Sadece `all_frames` eklemek yeterli değil. |
 | P1 | Yeni hesap/şifre değiştirme formlarında birden çok şifre alanı ve SPA geçişleri tam ele alınmıyor. | `current-password` / `new-password` ayrımı, formdan şifre üretme, güvenilir güncelleme teklifi ve farklı form türleri için geniş fixture seti. |
 | P1 | KDF verileri hesapta mevcut, fakat giriş/kilit açma akışı 600.000 tur ve e-posta salt varsayımına bağlı. | Sürümlü KDF metadatası, mevcut hesaplarla uyumlu güvenli parametre geçişi ve cihazlarda süre/bellek ölçümü. Algoritmayı doğrudan değiştirmek mevcut kasaları bozabilir. |

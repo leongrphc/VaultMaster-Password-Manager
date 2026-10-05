@@ -1,56 +1,60 @@
 {
-	"manifest_version": 3,
-	"name": "VaultMaster Autofill",
-	"version": "1.0.2",
-	"description": "Uses an unlocked VaultMaster web tab to suggest and autofill matching credentials.",
-	"permissions": [
-		"tabs",
-		"storage",
-		"activeTab",
-		"contextMenus"
-	],
-	"host_permissions": [
-		"http://localhost:3000/*",
-		"http://127.0.0.1:3000/*",
-		"<all_urls>"
-	],
-	"action": {
-		"default_title": "VaultMaster Autofill",
-		"default_popup": "popup.html"
-	},
-	"background": {
-		"service_worker": "background.js",
-		"type": "module"
-	},
-	"content_scripts": [
-		{
-			"matches": [
-				"<all_urls>"
-			],
-			"js": [
-				"form-detector.js",
-				"content.js"
-			],
-			"run_at": "document_start"
-		}
-	],
-	"web_accessible_resources": [
-		{
-			"resources": [
-				"passkey-injected.js"
-			],
-			"matches": [
-				"<all_urls>"
-			]
-		}
-	],
-	"commands": {
-		"_execute_action": {
-			"suggested_key": {
-				"default": "Ctrl+Shift+V",
-				"mac": "Command+Shift+V"
-			},
-			"description": "VaultMaster Autofill"
-		}
-	}
+  "manifest_version": 3,
+  "name": "VaultMaster Autofill",
+  "version": "1.1.0",
+  "minimum_chrome_version": "122",
+  "description": "Independent encrypted vault session and secure autofill without an open web tab.",
+  "permissions": [
+    "tabs",
+    "storage",
+    "activeTab",
+    "contextMenus",
+    "alarms",
+    "idle"
+  ],
+  "host_permissions": [
+    "http://localhost:3000/*",
+    "http://127.0.0.1:3000/*",
+    "<all_urls>"
+  ],
+  "action": {
+    "default_title": "VaultMaster Autofill",
+    "default_popup": "popup.html"
+  },
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "form-detector.js",
+        "content.js"
+      ],
+      "run_at": "document_start"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "passkey-injected.js"
+      ],
+      "matches": [
+        "<all_urls>"
+      ]
+    }
+  ],
+  "commands": {
+    "_execute_action": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+V",
+        "mac": "Command+Shift+V"
+      },
+      "description": "VaultMaster Autofill"
+    }
+  },
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAoOwycJiigPPP60qMomABjGWtxIYUShQINS9137a0a7SQjxRsR/IFX1dQqSYlFiGjUln/o6jMY91PddiLn1WjK23Bhy6aDgfY83lfWuxXg/3nb3JmQTCBscVUqKbrbw2RTH3wa/XZdL9h8MdnWiofW5oHk8y/7iX5relaGxidbpH7PAYiCT2VWgFjCEsQrao5inEBErTUVl1m7BVjnNykMUHbVtPSaY9cspjUNXzjcBpqvQVF97q5XuiNAufWoL/31xtwI5l9rjVh13kKKzGL/mxb+majlXT950HibGB/oIXjZViyCNu6QOFk9zko5xEiP/Nvqh8AFwKaOYu5xzA4xwIDAQAB"
 }

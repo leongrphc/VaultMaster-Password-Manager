@@ -546,10 +546,15 @@ async function evaluateAutofillOpportunity() {
 }
 
 function showSuggestionPanel({ context, panelKey, typedIdentifier, suggestions, isUsingOfflineData }) {
+	// An earlier asynchronous lookup must not replace an explicit warning or
+	// rebuild an unchanged button while the user is clicking it.
+	if (activePanel?.locked) return;
+	const fingerprint = JSON.stringify({ suggestions, isUsingOfflineData });
 	const shouldReuse =
 		activePanel &&
 		activePanel.panelKey === panelKey &&
 		activePanel.anchorInput === context.anchorInput;
+	if (shouldReuse && activePanel.fingerprint === fingerprint) { updatePanelPosition(); return; }
 
 	if (!shouldReuse) {
 		removePanel();
@@ -640,6 +645,7 @@ function showSuggestionPanel({ context, panelKey, typedIdentifier, suggestions, 
 	}
 
 	activePanel = {
+		fingerprint,
 		element: panel,
 		anchorInput: context.anchorInput,
 		usernameInput: context.usernameInput,
@@ -680,7 +686,7 @@ async function handleCredentialFill(itemId, context, panelKey, options = {}) {
 			showPhishingWarning(itemId, context, panelKey);
 			return;
 		}
-		updatePanelNotice(result.message || "Kayıt alınamadı. VaultMaster sekmesinin açık ve kilitsiz olduğundan emin olun.", true);
+		updatePanelNotice(result.message || "Kayıt alınamadı. Eklentiden kasanın kilidini açıp tekrar deneyin.", true);
 		if (options.fromLauncher) {
 			showLauncherFeedback("Kayit alinamadi");
 		}
@@ -704,7 +710,7 @@ async function fillCredentialIntoContext(itemId, context, options = {}) {
 			status: credentialResult?.status,
 			message: credentialResult?.status === "domain_mismatch"
 				? "Kayıt bu domain için doğrulanamadı."
-				: "Kayıt alınamadı. VaultMaster sekmesinin açık ve kilitsiz olduğundan emin olun.",
+				: "Kayıt alınamadı. Eklentiden kasanın kilidini açıp tekrar deneyin.",
 		};
 	}
 	const latestContext = getPageLoginContext() || context;
@@ -937,7 +943,7 @@ function showSavePrompt(credential) {
 			error.style.cssText = "padding:12px;color:#ff9aac";
 			panel.appendChild(error);
 		}
-		error.textContent = "Kaydetme başarısız. VaultMaster sekmesini açıp kasanın kilidini kaldırın ve tekrar deneyin.";
+		error.textContent = "Kaydetme başarısız. Eklentide kasanın açık olduğunu ve bağlantınızı kontrol edip tekrar deneyin.";
 	});
 
 	document.body.appendChild(panel);
@@ -1443,7 +1449,7 @@ async function fillCreditCard(itemId, context) {
 	const response = await sendRuntimeMessage({ type: "GET_CREDIT_CARD", itemId }).catch(() => null);
 	const card = response?.payload?.card;
 	if (!response?.ok || response.payload?.status !== "ready" || !card) {
-		updatePanelNotice("Kart bilgisi alınamadı. VaultMaster sekmesinin açık ve kilitsiz olduğundan emin olun.", true);
+		updatePanelNotice("Kart bilgisi alınamadı. Eklentiden kasanın kilidini açın.", true);
 		return;
 	}
 
@@ -1460,7 +1466,7 @@ async function fillIdentity(itemId, context) {
 	const response = await sendRuntimeMessage({ type: "GET_IDENTITY", itemId }).catch(() => null);
 	const identity = response?.payload?.identity;
 	if (!response?.ok || response.payload?.status !== "ready" || !identity) {
-		updatePanelNotice("Kimlik bilgisi alınamadı. VaultMaster sekmesinin açık ve kilitsiz olduğundan emin olun.", true);
+		updatePanelNotice("Kimlik bilgisi alınamadı. Eklentiden kasanın kilidini açın.", true);
 		return;
 	}
 
