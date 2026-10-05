@@ -51,7 +51,7 @@ const envSchema = z.object({
 });
 
 export function parseEnv(raw: NodeJS.ProcessEnv) {
-  const parsed = envSchema.parse(raw);
+  const parsed = envSchema.parse({ ...raw, API_PORT: raw.API_PORT || raw.PORT });
   const keyLength = Buffer.from(parsed.APP_ENCRYPTION_KEY, "base64").length;
 
   if (keyLength !== 32) {

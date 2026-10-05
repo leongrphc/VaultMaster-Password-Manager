@@ -11,3 +11,6 @@ test-results/
 .agents/
 .claude/
 skills/
+out/
+.wrangler/
+apps/extension/*.zip

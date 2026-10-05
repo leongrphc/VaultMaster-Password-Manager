@@ -1094,11 +1094,11 @@ export default function SettingsPage() {
               <div className="flex items-start gap-2">
                 <KeyRound className="mt-0.5 h-4 w-4 shrink-0 text-accent" />
                 <p>
-                  Kurulum, master key'i WebAuthn PRF ile üretilen cihaz-yerel bir anahtarla localStorage içinde şifreler. Master şifre, master key ve biyometrik sır sunucuya gönderilmez.
+                  Kurulum, master key&apos;i WebAuthn PRF ile üretilen cihaz-yerel bir anahtarla localStorage içinde şifreler. Master şifre, master key ve biyometrik sır sunucuya gönderilmez.
                 </p>
               </div>
               <p className="text-xs text-text-muted">
-                Ana şifre fallback'i her zaman zorunludur; cihaz veya tarayıcı desteği kaybolursa ana şifre ile açmaya devam edebilirsiniz.
+                Ana şifre fallback&apos;i her zaman zorunludur; cihaz veya tarayıcı desteği kaybolursa ana şifre ile açmaya devam edebilirsiniz.
               </p>
               {localUnlockStatus.createdAt && (
                 <p className="text-xs text-text-muted">

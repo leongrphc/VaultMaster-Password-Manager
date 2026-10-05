@@ -43,6 +43,11 @@ test("parseEnv enables pgbouncer-safe parameters for Supabase pooler URLs", () =
   assert.match(parsed.DATABASE_URL, /sslmode=require/);
 });
 
+test("parseEnv uses the hosting provider PORT when API_PORT is absent", () => {
+  assert.equal(parseEnv({ ...validEnv, API_PORT: undefined, PORT: "10000" }).API_PORT, 10000);
+  assert.equal(parseEnv({ ...validEnv, PORT: "10000" }).API_PORT, 4000);
+});
+
 test("parseEnv rejects invalid encryption keys", () => {
   assert.throws(
     () =>

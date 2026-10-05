@@ -4,6 +4,7 @@ import { useEffect } from "react";
 import { useStore } from "@/lib/store";
 import { useShallow } from "zustand/shallow";
 import { generateTotpCode } from "@/lib/totp";
+import { scoreHostMatch } from "@/lib/host-match";
 
 const LOOKUP_REQUEST = "VM_LOOKUP_PASSWORD_REQUEST";
 const LOOKUP_RESPONSE = "VM_LOOKUP_PASSWORD_REQUEST_RESPONSE";
@@ -31,10 +32,8 @@ const SAVE_LOGIN_REQUEST = "VM_SAVE_LOGIN_REQUEST";
 const SAVE_LOGIN_RESPONSE = "VM_SAVE_LOGIN_RESPONSE";
 const PASSKEY_BRIDGE_REQUEST = "VM_PASSKEY_BRIDGE_REQUEST";
 const PASSKEY_BRIDGE_RESPONSE = "VM_PASSKEY_BRIDGE_REQUEST_RESPONSE";
-const VAULTMASTER_ORIGINS = new Set(["http://localhost:3000", "http://127.0.0.1:3000"]);
-
 function isAllowedExtensionBridgeOrigin(origin: string) {
-	return VAULTMASTER_ORIGINS.has(origin);
+	return origin === window.location.origin;
 }
 
 function normalizeUrl(value?: string) {
@@ -109,27 +108,6 @@ function buildPasskeyCandidates(
 		})
 		.filter((item): item is NonNullable<typeof item> => item !== null)
 		.slice(0, 6);
-}
-
-function scoreHostMatch(activePage: ReturnType<typeof normalizeUrl>, loginUrl: string | undefined) {
-	const targetUrl = normalizeUrl(loginUrl);
-	if (!activePage || !targetUrl) {
-		return 0;
-	}
-
-	if (
-		activePage.hostname === targetUrl.hostname ||
-		activePage.hostname.endsWith(`.${targetUrl.hostname}`) ||
-		targetUrl.hostname.endsWith(`.${activePage.hostname}`)
-	) {
-		return 3;
-	}
-
-	if (activePage.href.includes(targetUrl.hostname)) {
-		return 1;
-	}
-
-	return -5;
 }
 
 function buildLoginSuggestions(
