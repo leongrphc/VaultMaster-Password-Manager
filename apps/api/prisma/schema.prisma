@@ -24,6 +24,7 @@ model User {
   updatedAt          DateTime     @updatedAt
 
   vaultItems               VaultItem[]
+  backupRestores           BackupRestore[]
   folders                  Folder[]
   devices                  Device[]
   auditEvents              AuditEvent[]
@@ -34,6 +35,18 @@ model User {
   emergencyAccessContacts  EmergencyAccessGrant[] @relation("EmergencyAccessContact")
 
   @@map("users")
+}
+
+model BackupRestore {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  backupId  String
+  counts    Json
+  createdAt DateTime @default(now())
+
+  @@unique([userId, backupId])
+  @@map("backup_restores")
 }
 
 model Folder {

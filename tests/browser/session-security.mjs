@@ -33,6 +33,8 @@ test('web preserves its random data key through password change, reload and unlo
     let keyBase64;
     let encrypted;
     let vaultKeyEnvelope;
+    const backupId = crypto.randomUUID();
+    let restoreCalls = 0;
     const timestamp = '2026-10-05T00:00:00.000Z';
     browser = await chromium.launch({ channel: 'chromium', headless: true });
     const page = await browser.newPage();
@@ -47,6 +49,20 @@ test('web preserves its random data key through password change, reload and unlo
         keyBase64 = await exportMasterKeyBase64(key);
         encrypted = await encryptJSON({ type: 'login', title: 'Encrypted browser fixture', username: 'octo', password: 'fixture-secret', url: 'https://example.test' }, key);
         data = { user: { id: 'user-1', email, createdAt: timestamp }, tokens: { accessToken: 'fixture-access', refreshToken: 'fixture-refresh' }, deviceId: 'device-1', kdfSalt: email, kdfIterations: 600000, vaultKeyEnvelope };
+      }
+      else if (pathname.endsWith('/backups/snapshot')) {
+        data = { backupId, exportedAt: timestamp, sourceEmail: email, snapshot: { folders: [], items: [{
+          id: crypto.randomUUID(), folderId: null, favorite: false, deletedAt: null,
+          encryptedData: encrypted.ciphertext, iv: encrypted.iv, createdAt: timestamp, updatedAt: timestamp,
+          versions: [], attachments: [],
+        }] } };
+      }
+      else if (pathname.endsWith('/backups/restore')) {
+        const body = route.request().postDataJSON();
+        assert.equal(body.backupId, backupId);
+        assert.ok(!JSON.stringify(body).includes(keyBase64));
+        assert.ok(!JSON.stringify(body).includes('fixture-secret'));
+        data = { alreadyRestored: restoreCalls++ > 0, counts: { folders: 0, items: 1, trash: 0, versions: 0, attachments: 0 } };
       }
       else if (pathname.endsWith('/auth/change-password')) {
         const body = route.request().postDataJSON();
@@ -111,6 +127,28 @@ test('web preserves its random data key through password change, reload and unlo
     await expect(page.getByRole('heading', { name: 'Kasa Kilitli' })).toHaveCount(0);
     await page.getByRole('link', { name: 'Tüm Öğeler' }).click();
     await expect(page.getByText('Encrypted browser fixture', { exact: true }).first()).toBeVisible();
+    await page.getByRole('link', { name: 'Ayarlar' }).click();
+    await page.getByRole('button', { name: 'Veri Yönetimi', exact: true }).click();
+    await page.getByLabel('Yeni yedek şifresi', { exact: true }).fill('Independent-backup-password-2026!');
+    await page.getByLabel('Yedek şifresi tekrar', { exact: true }).fill('Independent-backup-password-2026!');
+    const downloadReady = page.waitForEvent('download');
+    await page.getByRole('button', { name: 'Tam Yedeği İndir', exact: true }).click();
+    const download = await downloadReady;
+    const backupText = await readFile(await download.path(), 'utf8');
+    assert.ok(!backupText.includes(keyBase64));
+    assert.ok(!backupText.includes('fixture-secret'));
+    await page.getByLabel('Tam yedek dosyası').setInputFiles({ name: 'portable-backup.json', mimeType: 'application/json', buffer: Buffer.from(backupText) });
+    await page.getByLabel('Geri yüklenecek yedeğin şifresi').fill('wrong-password');
+    await page.getByRole('button', { name: 'Yedeği Kontrol Et' }).click();
+    await expect(page.getByRole('alert').filter({ hasText: 'Yedek açılamadı' })).toBeVisible();
+    assert.equal(restoreCalls, 0);
+    await page.getByLabel('Geri yüklenecek yedeğin şifresi').fill('Independent-backup-password-2026!');
+    await page.getByRole('button', { name: 'Yedeği Kontrol Et' }).click();
+    await expect(page.getByRole('button', { name: 'Mevcut Kasaya Ekle' })).toBeVisible();
+    assert.equal(restoreCalls, 0);
+    await page.getByRole('button', { name: 'Mevcut Kasaya Ekle' }).click();
+    await expect(page.getByText('Tam yedek başarıyla geri yüklendi.', { exact: true })).toBeVisible();
+    assert.equal(restoreCalls, 1);
     assert.deepEqual(pageErrors, []);
   } finally {
     await browser?.close();

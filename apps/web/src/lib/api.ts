@@ -1,4 +1,4 @@
-import type { PasswordChangeInput, RegisterInput, VaultKeyEnvelope } from "@vaultmaster/shared";
+import type { PasswordChangeInput, RegisterInput, VaultKeyEnvelope, RestoreBackupInput, PersonalSnapshot, BackupCounts } from "@vaultmaster/shared";
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000/api";
 
 interface ApiErrorOptions {
@@ -91,6 +91,10 @@ async function request<T>(
 }
 
 export const api = {
+  backups: {
+    snapshot: (token: string) => request<{ data: { backupId: string; exportedAt: string; sourceEmail: string; snapshot: PersonalSnapshot } }>("/backups/snapshot", { token }),
+    restore: (body: RestoreBackupInput, token: string) => request<{ data: { alreadyRestored: boolean; counts: BackupCounts } }>("/backups/restore", { method: "POST", body, token }),
+  },
   auth: {
     register: (body: RegisterInput) =>
       request("/auth/register", { method: "POST", body }),

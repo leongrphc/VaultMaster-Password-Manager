@@ -138,9 +138,8 @@ configurable KDF profile migration remains on the roadmap.
 After any envelope is active, rolling back to an API or client that ignores it
 can cause unreadable writes. Keep the envelope-aware API when reverting unrelated
 changes, or restore the entire database and matching application from a verified
-backup. The current item export is not a complete server-loss backup: it omits
-history, trash, files and the key envelope. Complete backup/restore is the next
-separate data-safety task. Cross-tab coordination and independent extension
+backup. The older item export is not a complete server-loss backup. Use the version 3
+full personal backup described below for history, trash, files and key recovery. Cross-tab coordination and independent extension
 unlock remain separate work.
 
 Envelope regression tests live in the crypto, web and API test suites. API tests
@@ -148,3 +147,52 @@ run only against the explicitly selected disposable database. The real Chromium
 web test covers random-key registration, encrypted storage, password change and
 reload/unlock with the new password.
 Architecture reference: [OWASP Key Management](https://cheatsheetseries.owasp.org/cheatsheets/Key_Management_Cheat_Sheet.html).
+
+## Portable full personal backups (version 3)
+
+Apply `20261005010000_backup_restore_receipts` before deploying the backup API.
+Settings → Veri Yönetimi → Tam Şifreli Kasa Yedeği creates a standalone JSON file
+protected with a separate backup password (minimum 12 characters). PBKDF2-SHA256
+uses a fresh 32-byte random salt and 600,000 rounds; AES-256-GCM uses a random
+96-bit IV and authenticates the format/version/KDF header as AAD. Work factors
+and versions are validated before performing expensive derivation.
+
+The encrypted archive contains its backup ID, date, source email, stable data
+key, folders, active/deleted items, every stored item version, and attachment
+metadata/blobs with timestamps. All of this, including the data key, is inside
+the outer encryption. Neither plaintext keys nor passwords are sent to the API.
+The API snapshot uses a repeatable-read transaction and scopes every record to
+the authenticated account. Every ciphertext and attachment size is verified in
+the client before the download; unreadable old history aborts the entire export.
+
+Recovery needs this file and its backup password, plus an unlocked destination
+VaultMaster account. It does not need the old server, source account, original
+email/password combination, or original password wrapper. The client validates
+the file, displays counts and waits for the user's “Mevcut Kasaya Ekle” click.
+Then it decrypts every content type and re-encrypts it for the destination DEK.
+The server generates new IDs, maps folder/item references, preserves timestamps,
+history and deletion state, and commits everything plus a restore receipt in one
+transaction. Existing destination records are never overwritten or deleted.
+Retries with the same backup ID return the existing receipt without inserting
+copies. A history reference to an already-deleted folder becomes null; that
+folder's name was already absent from the source database.
+
+This is a complete *personal vault* data backup, not an account/server image.
+Sessions, login 2FA secrets/recovery codes, WebAuthn credentials, sharing and
+emergency access relationships are excluded. They must be configured again on
+the destination. The existing partial JSON/CSV imports remain available and are
+separate from full backup recovery.
+
+This first format supports at most 16 MiB of serialized encrypted snapshot data,
+10,000 folders/items, 10,000 versions and 1,000 files per item, and a 24 MiB file.
+Over-limit accounts fail explicitly; no content is dropped. Larger vaults need
+streaming/chunked backups in a later format. A copied backup remains decryptable
+with its backup password after account/password changes; store it accordingly.
+The backup password cannot be reset by the service.
+
+CI recovery drills delete the source test account, decrypt its saved archive,
+restore to another account, verify ciphertext with the destination key, preserve
+existing records, retry concurrently, and inject a transaction failure to prove
+rollback. Chromium tests exercise download, wrong-password rejection, preview
+and explicit restore. Production data is not used.
+Reference: [OWASP Key Management](https://cheatsheetseries.owasp.org/cheatsheets/Key_Management_Cheat_Sheet.html).

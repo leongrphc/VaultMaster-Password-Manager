@@ -10,6 +10,10 @@ export function errorHandler(
   res: Response,
   _next: NextFunction
 ): void {
+  if ((err as Error & { type?: string }).type === "entity.too.large") {
+    res.status(413).json({ success: false, error: "Dosya veya istek boyut sınırını aşıyor.", requestId: getRequestId(req) });
+    return;
+  }
   if (err instanceof ZodError) {
     const messages = err.errors.map((e) => `${e.path.join(".")}: ${e.message}`);
     logWarn("validation_error", {

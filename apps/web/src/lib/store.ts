@@ -4,6 +4,7 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type {
   VaultKeyEnvelope,
+  BackupCounts,
   VaultItemResponse,
   FolderResponse,
   VaultItemData,
@@ -28,6 +29,7 @@ import {
 } from "@vaultmaster/crypto";
 import { api, ApiError, getErrorMessage, isUnauthorizedError } from "./api";
 import { notify } from "./notify";
+import { createFullBackup, prepareBackupRestore, type BackupArchive } from "./full-backup";
 import {
   clearLockVerifier,
   clearOfflineVaultSnapshot,
@@ -119,6 +121,9 @@ interface AppStore extends AuthState, VaultState {
     envelope?: VaultKeyEnvelope | null
   ) => void;
   changeMasterPassword: (currentPassword: string, newPassword: string) => Promise<void>;
+  exportFullBackup: (password: string) => Promise<void>;
+  getVaultOperationGuard: () => () => void;
+  restoreFullBackup: (archive: BackupArchive) => Promise<{ alreadyRestored: boolean; counts: BackupCounts }>;
   setTokens: (tokens: AuthTokens) => void;
   setMasterKey: (keyBase64: string) => void;
   bootstrapSessionSecurity: () => Promise<void>;
@@ -326,6 +331,42 @@ export const useStore = create<AppStore>()(
           vaultKeyEnvelope: envelope, currentDeviceId: deviceId, isLocked: true, masterKeyBase64: null,
           items: [], folders: [], isLoading: false,
         });
+      },
+
+      getVaultOperationGuard: () => {
+        const epoch = vaultSecurityEpoch;
+        const key = get().masterKeyBase64;
+        return () => requireCurrentVaultSession(get(), epoch, key);
+      },
+
+      exportFullBackup: async (password) => {
+        const epoch = vaultSecurityEpoch;
+        const key = get().masterKeyBase64;
+        const assertCurrent = () => requireCurrentVaultSession(get(), epoch, key);
+        requireCurrentVaultSession(get(), epoch, key);
+        const response = await get().runWithValidAccessToken(token => { assertCurrent(); return api.backups.snapshot(token); });
+        assertCurrent();
+        const file = await createFullBackup({ ...response.data, scope: "personal-vault", vaultKeyBase64: key }, password, assertCurrent);
+        assertCurrent();
+        const url = URL.createObjectURL(new Blob([file], { type: "application/json" }));
+        try {
+          const link = document.createElement("a");
+          link.href = url; link.download = `vaultmaster-full-backup-${new Date().toISOString().slice(0, 10)}.json`; link.click();
+        } finally { URL.revokeObjectURL(url); }
+      },
+
+      restoreFullBackup: async (archive) => {
+        const epoch = vaultSecurityEpoch;
+        const key = get().masterKeyBase64;
+        const assertCurrent = () => requireCurrentVaultSession(get(), epoch, key);
+        requireCurrentVaultSession(get(), epoch, key);
+        const body = await prepareBackupRestore(archive, key, assertCurrent);
+        assertCurrent();
+        const response = await get().runWithValidAccessToken(token => { assertCurrent(); return api.backups.restore(body, token); });
+        assertCurrent();
+        await get().loadVault();
+        assertCurrent();
+        return response.data;
       },
 
       changeMasterPassword: async (currentPassword, newPassword) => {

@@ -35,6 +35,7 @@ import type { AuditEventResponse, DeviceResponse, EmergencyAccessGrantResponse, 
 import TwoFactorSettings from "@/components/vault/TwoFactorSettings";
 import WebAuthnSettings from "@/components/vault/WebAuthnSettings";
 import AccountSecurityPanel from "@/components/vault/AccountSecurityPanel";
+import FullBackupPanel from "@/components/vault/FullBackupPanel";
 import PlaintextExportConfirmModal from "@/components/vault/PlaintextExportConfirmModal";
 import { useShallow } from "zustand/shallow";
 
@@ -1432,6 +1433,7 @@ export default function SettingsPage() {
       {/* Data Tab */}
       {activeTab === "data" && (
         <div className="space-y-4 animate-fade-in">
+          <FullBackupPanel />
           {/* Export */}
           <div className="glass rounded-2xl p-6">
             <div className="flex items-center gap-3 mb-6">
@@ -1459,7 +1461,7 @@ export default function SettingsPage() {
                     Şifreli JSON
                   </p>
                   <p className="text-xs text-text-muted">
-                    AES-256 ile şifrelenmiş yedek
+                    Yalnızca aktif kayıtlar; mevcut kasaya bağımlı
                   </p>
                 </div>
                 <ChevronRight className="w-4 h-4 text-text-muted group-hover:text-accent transition-colors" />

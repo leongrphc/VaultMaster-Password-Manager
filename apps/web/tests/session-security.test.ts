@@ -3,9 +3,16 @@ import { useStore } from "../src/lib/store";
 import { api } from "../src/lib/api";
 import { persistOfflineVaultSnapshot, readOfflineVaultSnapshot, verifyLockVerifier } from "../src/lib/offline-cache";
 import { unlockWithLocalAuthenticator } from "../src/lib/local-unlock";
+import { prepareBackupRestore } from "../src/lib/full-backup";
+
+vi.mock("../src/lib/full-backup", () => ({
+  createFullBackup: vi.fn(async () => "encrypted-file"),
+  prepareBackupRestore: vi.fn(async () => ({ backupId: "backup-1", snapshot: { folders: [], items: [] } })),
+}));
 
 vi.mock("../src/lib/api", () => ({
   api: {
+    backups: { snapshot: vi.fn(), restore: vi.fn() },
     auth: { refresh: vi.fn(), getVaultKey: vi.fn(async () => ({ data: { vaultKeyEnvelope: null } })) },
     vault: { getAll: vi.fn(), create: vi.fn(), update: vi.fn(), getAttachments: vi.fn(), getAttachment: vi.fn() },
     folders: { getAll: vi.fn() },
@@ -54,6 +61,46 @@ beforeEach(() => {
   vi.mocked(api.folders.getAll).mockResolvedValue({ data: [] });
   vi.mocked(verifyLockVerifier).mockResolvedValue(true);
   vi.mocked(readOfflineVaultSnapshot).mockResolvedValue(null);
+});
+
+test("locking during backup snapshot retrieval prevents a download", async () => {
+  login();
+  const response = deferred<unknown>();
+  vi.mocked(api.backups.snapshot).mockReturnValue(response.promise as never);
+  const pending = useStore.getState().exportFullBackup("backup-password");
+  const assertion = expect(pending).rejects.toThrow();
+  await vi.waitFor(() => expect(api.backups.snapshot).toHaveBeenCalled());
+  useStore.getState().lockVault();
+  response.resolve({ data: {} });
+  await assertion;
+  expect(useStore.getState().masterKeyBase64).toBeNull();
+});
+
+test("locking during backup re-encryption prevents the restore request", async () => {
+  login();
+  const preparation = deferred<unknown>();
+  vi.mocked(prepareBackupRestore).mockReturnValueOnce(preparation.promise as never);
+  const pending = useStore.getState().restoreFullBackup({} as never);
+  const assertion = expect(pending).rejects.toThrow();
+  await vi.waitFor(() => expect(prepareBackupRestore).toHaveBeenCalled());
+  useStore.getState().lockVault();
+  preparation.resolve({ backupId: "backup-1", snapshot: { items: [], folders: [] } });
+  await assertion;
+  expect(api.backups.restore).not.toHaveBeenCalled();
+});
+
+test("a committed restore response arriving after lock cannot reload plaintext", async () => {
+  login();
+  const response = deferred<unknown>();
+  vi.mocked(api.backups.restore).mockReturnValue(response.promise as never);
+  const pending = useStore.getState().restoreFullBackup({} as never);
+  const assertion = expect(pending).rejects.toThrow();
+  await vi.waitFor(() => expect(api.backups.restore).toHaveBeenCalled());
+  useStore.getState().lockVault();
+  response.resolve({ data: { alreadyRestored: false, counts: {} } });
+  await assertion;
+  expect(api.vault.getAll).not.toHaveBeenCalled();
+  expect(useStore.getState().items).toEqual([]);
 });
 
 test("keeps the vault key in memory, removes legacy storage and preserves it on client navigation", async () => {

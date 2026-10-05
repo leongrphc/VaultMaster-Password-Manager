@@ -18,6 +18,7 @@ Bir özelliğin arayüzde bulunması, tüm hata ve güvenlik senaryolarının ta
 
 | Geliştirme | Doğrulama |
 | --- | --- |
+| Taşınabilir tam kişisel kasa yedeği; bağımsız yedek şifresi ve atomik eklemeli geri yükleme | Kaynak hesap silindikten sonra yeni anahtarla geçmiş/çöp/ek çözme; tekrar denemede kopya engeli; rollback ve tarayıcı indirme/geri yükleme |
 | Sabit kasa anahtarı ve sürümlü ana şifre zarfı; eski hesapların veri yazmadan geçişi | Geçmiş/çöp/ek ciphertext koruması, gerçek şifre çözme, eşzamanlı değişim, çevrimdışı kilit açma ve kayıp HTTP yanıtı testleri |
 | Anahtarın yalnızca bellekte tutulması; eski düz metin `sessionStorage` anahtarının kaldırılması | Girişten kasaya istemci geçişi, tam yenilemeden sonra kilit, yanlış/doğru şifre ve eski depolama sürümleri |
 | Kilit/çıkış/hesap değişiminden sonra eski işlemlerin çözülmüş veriyi geri getirmesinin engellenmesi | Gecikmiş API yüklemesi, çevrimdışı yükleme, kayıt oluşturma, kilit açma ve token yenileme yarışları |
@@ -38,7 +39,7 @@ Değişiklikler geliştirme dalında. Canlı yayına geçiş ve mevcut oturumlar
 | P0 | Güvenli ana şifre değişimi geliştirme dalında tamamlandı; canlıya kontrollü geçiş gerekiyor. | Yeni migration ve API önce; web sonra. Mevcut eski oturumların yeniden girişi, şifre değişimi ve geçmiş/ek smoke testi. Eski istemciye doğrudan geri alma güvenli değil. |
 | P0 | Erişim ve yenileme token'ları web `localStorage` içinde tutuluyor. Anahtarı belleğe taşımak tek başına XSS koruması sağlamaz. | Web için HttpOnly/Secure oturum tasarımı ve uygun aynı köken API erişimi; CSRF/CORS testleri; üretimde güçlü CSP ve veri sızıntısı testleri. |
 | P0 | Bağımlılık taramasında hâlâ yüksek/orta/düşük bulgular var. Kritik sayısının sıfır olması tüm bulguların giderildiği anlamına gelmez. | Doğrudan/dolaylı ve üretim/geliştirme bağımlılıklarını ayırıp düzeltme veya somut uygulanabilirlik değerlendirmesi; düzenli güncellemeler. |
-| P0 | Yedekleme ve kurtarma arayüzü var; tüm veri türlerinin, anahtar sürümlerinin ve sunucu kaybının geri dönüşü birlikte kanıtlanmış değil. | Sürümlü şifreli yedek biçimi; geçmiş/ekler/çöp kutusu dahil geri yükleme tatbikatı ve gerçek verilerden bağımsız testler. Kurtarma anahtarı tasarımı ana şifreyi sunucuya vermemeli. |
+| P0 | Tam kişisel kasa yedeği geliştirme dalında tamamlandı; büyük kasalar ve operasyonel sunucu yedekleri ayrı iş. | 16 MiB üzerindeki kasalar için akış/parça desteği; planlı yedek ve geri dönüş tatbikatı. Hesap güvenliği ve paylaşım ayarları bu kişisel arşive dahil değil. |
 | P1 | Eklenti hâlâ açık ve kilitsiz web sekmesine bağımlı. | Eklenti içinde giriş, yerel kilit açma, şifreli senkronizasyon, otomatik kilit ve yeniden başlayan service worker için güvenli anahtar yaşam döngüsü. |
 | P1 | iframe ve Shadow DOM formları yeterince desteklenmiyor; inline panel hedef sayfanın DOM'unda. | Frame seçimi ve kaynak doğrulaması; başka kökenden frame için açık karar; Shadow DOM testleri ve sayfanın değiştiremeyeceği seçim arayüzü. Sadece `all_frames` eklemek yeterli değil. |
 | P1 | Yeni hesap/şifre değiştirme formlarında birden çok şifre alanı ve SPA geçişleri tam ele alınmıyor. | `current-password` / `new-password` ayrımı, formdan şifre üretme, güvenilir güncelleme teklifi ve farklı form türleri için geniş fixture seti. |

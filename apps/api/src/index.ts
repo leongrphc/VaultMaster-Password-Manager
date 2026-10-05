@@ -19,6 +19,7 @@ import devicesRoutes from "./routes/devices.routes.js";
 import auditRoutes from "./routes/audit.routes.js";
 import sharedVaultRoutes from "./routes/shared-vault.routes.js";
 import emergencyAccessRoutes from "./routes/emergency-access.routes.js";
+import backupsRoutes from "./routes/backups.routes.js";
 import { logInfo } from "./utils/logger.js";
 import { initSentry } from "./utils/sentry.js";
 
@@ -51,6 +52,7 @@ export function createApp(): Express {
   app.use(requestLoggingMiddleware);
   app.use(helmet());
   app.use(cors({ origin: env.CORS_ORIGIN, credentials: true }));
+  app.use("/api/backups/restore", express.json({ limit: "16mb" }));
   app.use(express.json({ limit: "10mb" }));
   app.use(cookieParser());
 
@@ -127,6 +129,7 @@ export function createApp(): Express {
   app.use("/api/shared-vaults", sharedVaultRoutes);
   app.use("/api/emergency-access", emergencyAccessRoutes);
   app.use("/api/vault", vaultRoutes);
+  app.use("/api/backups", backupsRoutes);
   app.use("/api/folders", foldersRoutes);
 
   app.use(errorHandler);
