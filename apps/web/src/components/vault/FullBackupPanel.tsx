@@ -33,7 +33,7 @@ export default function FullBackupPanel() {
   const counts = preview ? countBackup(preview.snapshot) : null;
   return <section className="glass rounded-2xl p-6 space-y-5">
     <div><h3 className="font-semibold">Tam Şifreli Kasa Yedeği</h3>
-      <p className="mt-1 text-sm text-text-secondary">Klasörler, aktif kayıtlar, çöp kutusu, tüm kayıt geçmişi ve ekler birlikte saklanır. Yeni bir hesaba da geri yüklenebilir.</p>
+      <p className="mt-1 text-sm text-text-secondary">Klasörler, aktif öğeler, çöp kutusu, tüm öğe geçmişi ve ekler birlikte saklanır. Yeni bir hesaba da geri yüklenebilir.</p>
       <p className="mt-2 text-xs text-text-muted">Yedek şifresini güvenle saklayın; unutulursa dosya açılamaz. Kişisel kasa içindir; hesap oturumları, 2FA ayarları ve paylaşılan kasalar dahil değildir. Kasa içeriği sınırı 64 MiB; eski yedek dosyaları da açılabilir.</p>
     </div>
     <form className="space-y-3" onSubmit={event => {
@@ -52,7 +52,7 @@ export default function FullBackupPanel() {
     </form>
     <div className="border-t border-border pt-5 space-y-3">
       <h4 className="text-sm font-semibold">Tam Yedeği Geri Yükle</h4>
-      <p className="text-sm text-text-secondary">Kopyalar ve çakışmalar onaydan önce incelenir. Geçmiş/ek içeren kayıtlar yalnızca atlanabilir veya ayrı kopya olarak eklenebilir.</p>
+      <p className="text-sm text-text-secondary">Kopyalar ve çakışmalar onaydan önce incelenir. Geçmiş/ek içeren öğeler yalnızca atlanabilir veya ayrı kopya olarak eklenebilir.</p>
       <input ref={fileInput} aria-label="Tam yedek dosyası" type="file" accept=".json" disabled={busy} onChange={event => {
         setPreview(null); setReview(null); previewGuard.current = null; setMessage(""); setError("");
         const selected = event.target.files?.[0] ?? null;
@@ -71,7 +71,7 @@ export default function FullBackupPanel() {
       })}>Yedeği Kontrol Et</button>
       {preview && counts && <div className="rounded-xl border border-accent/20 p-4 space-y-3">
         <p className="text-sm">{preview.sourceEmail} · {new Date(preview.exportedAt).toLocaleString("tr-TR")}</p>
-        <p className="text-sm text-text-secondary">{counts.folders} klasör · {counts.items - counts.trash} aktif kayıt · {counts.trash} çöp kaydı · {counts.versions} geçmiş sürümü · {counts.attachments} ek</p>
+        <p className="text-sm text-text-secondary">{counts.folders} klasör · {counts.items - counts.trash} aktif öğe · {counts.trash} çöp öğesi · {counts.versions} geçmiş sürümü · {counts.attachments} ek</p>
         {review && <ImportReviewPanel key={review.body.backupId} review={review} busy={busy} cancel={() => { setPreview(null); setReview(null); previewGuard.current = null; }} commit={async body => {
           if (!previewGuard.current) throw new Error("Import cancelled");
           previewGuard.current(); setBusy(true); setError("");

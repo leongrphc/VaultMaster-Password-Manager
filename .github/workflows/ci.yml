@@ -87,6 +87,8 @@ jobs:
         run: pnpm install --frozen-lockfile
       - name: Verify recovery drill isolation guards
         run: pnpm test:backup-drill-safety
+      - name: Check extension documentation, links and terminology
+        run: pnpm test:docs
       - name: Generate Prisma client
         run: pnpm --filter @vaultmaster/api db:generate
       - name: Apply migrations to the test database

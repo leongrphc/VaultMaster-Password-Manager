@@ -19,7 +19,7 @@ test("exports and imports an encrypted JSON backup", async ({ page }, testInfo) 
   await download.saveAs(backupPath);
 
   await page.locator('input[type="file"]').last().setInputFiles(backupPath);
-  await expect(page.getByText('Kayıt 1: Aynı kayıt — atlanacak')).toBeVisible();
+  await expect(page.getByText('Öğe 1: Aynı öğe — atlanacak')).toBeVisible();
   await page.getByRole('button', { name: 'İncelemeyi Onayla ve İçe Aktar' }).click();
   await expect(page.getByText('0 öğe başarıyla içe aktarıldı')).toBeVisible();
 

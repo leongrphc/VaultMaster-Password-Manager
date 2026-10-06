@@ -314,7 +314,7 @@ test('web preserves its random data key through password change, reload and unlo
     assert.equal(restoreCalls, 1);
     await fileInput.setInputFiles({ name: 'synthetic.csv', mimeType: 'text/csv', buffer: Buffer.from(csv) });
     await expect(review).toBeVisible();
-    await review.getByLabel('Kayıt 1 kararı').selectOption('replace');
+    await review.getByLabel('Öğe 1 kararı').selectOption('replace');
     await expect(review.getByRole('button', { name: 'İncelemeyi Onayla ve İçe Aktar' })).toBeDisabled();
     await review.getByRole('checkbox').check();
     await review.getByRole('button', { name: 'İncelemeyi Onayla ve İçe Aktar' }).click();
@@ -322,7 +322,7 @@ test('web preserves its random data key through password change, reload and unlo
     assert.equal(restoreCalls, 2);
     const legacy = await encryptJSON({ version: '2.0', exportDate: timestamp, itemCount: 1, folderCount: 0, folders: [], items: [{ data: { type: 'login', title: 'Encrypted browser fixture', username: 'octo', password: 'fixture-secret', url: 'https://example.test' }, folderId: null, favorite: false }] }, await importMasterKey(keyBase64));
     await fileInput.setInputFiles({ name: 'legacy.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify({ encrypted: true, ...legacy })) });
-    await expect(review.getByText('Kayıt 1: Aynı kayıt — atlanacak')).toBeVisible();
+    await expect(review.getByText('Öğe 1: Aynı öğe — atlanacak')).toBeVisible();
     assert.equal(restoreCalls, 2);
     await review.getByRole('button', { name: 'İncelemeyi Onayla ve İçe Aktar' }).click();
     await expect(page.getByText('0 öğe başarıyla içe aktarıldı', { exact: true })).toBeVisible();

@@ -24,7 +24,8 @@
     "audit:dependencies": "node scripts/dependency-audit.mjs",
     "test:dependency-audit": "node --test scripts/tests/dependency-audit.test.mjs",
     "package:extension": "node scripts/package-extension.mjs",
-    "verify:extension": "node scripts/verify-extension.mjs"
+    "verify:extension": "node scripts/verify-extension.mjs",
+    "test:docs": "node --test scripts/tests/extension-docs.test.mjs"
   },
   "devDependencies": {
     "@playwright/test": "^1.60.0",

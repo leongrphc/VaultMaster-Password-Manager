@@ -353,7 +353,7 @@ export default function BrowserExtensionBridge() {
 
 				await createVaultItem({
 					type: "login",
-					title: credential.title || activePage?.hostname || "Yeni Login",
+					title: credential.title || activePage?.hostname || "Yeni Giriş Bilgisi",
 					url: credential.url,
 					username: credential.username,
 					password: credential.password,

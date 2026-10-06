@@ -1,5 +1,9 @@
 # Health report progress, cancellation and privacy (P1-4)
 
+Terminology: [shared glossary](TERMINOLOGY.md). User steps and current combined
+limitations: [extension guide](../apps/extension/README.md). Historical verification
+sections below describe their original feature scope.
+
 The health report operates in the unlocked web browser. It uses the existing
 vault operation guard and invalidates work on lock, logout, key/account change,
 vault item replacement and navigation/unmount. No API job, queue, report receipt,

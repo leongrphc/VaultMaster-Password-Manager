@@ -140,7 +140,7 @@ describe("login/register flow", () => {
 
     await user.type(screen.getByLabelText("E-posta"), "user@example.com");
     await user.type(screen.getByLabelText("Ana Şifre"), "strong-password");
-    await user.click(screen.getByRole("button", { name: /^Kasayı Aç/i }));
+    await user.click(screen.getByRole("button", { name: /^Giriş Yap/i }));
 
     expect(await screen.findByLabelText("Doğrulama Kodu (2FA)")).toBeInTheDocument();
     await user.type(screen.getByLabelText("Doğrulama Kodu (2FA)"), "123456");

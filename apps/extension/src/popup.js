@@ -99,13 +99,13 @@ async function loadState() {
 	}
 
 	if (!response.payload?.isAuthenticated || response.payload.isLocked) {
-		setStatus(response.payload?.isAuthenticated ? 'Kasayı açmak için ana şifrenizi girin.' : 'Eklentiye giriş yapın. Web sekmesi açmanız gerekmez.');
-		renderEmptyState('Kayıtlarınız kasa açılınca görünür.');
+		setStatus(response.payload?.isAuthenticated ? 'Kasanın kilidini açmak için ana şifrenizi girin.' : 'Eklentiye giriş yapın. Web sekmesi açmanız gerekmez.');
+		renderEmptyState('Öğeleriniz kasanın kilidi açılınca görünür.');
 		return;
 	}
 
 	if (!/^https?:/i.test(activeUrl)) {
-		setStatus("Bu sekme için autofill önerisi desteklenmiyor.");
+		setStatus("Bu sekme için otomatik doldurma önerisi desteklenmiyor.");
 		renderEmptyState("HTTP/HTTPS bir sayfaya geçin.");
 		return;
 	}
@@ -141,7 +141,7 @@ async function loadState() {
 		}
 		if (target.passwordMode !== 'ambiguous') renderSuggestions(target.suggestions, { ...target, tabId: activeTab.id });
 	}
-	setStatus('Hedef adresi kontrol edin, sonra bir hesap seçin. Kapalı Shadow DOM desteklenmez.');
+	setStatus('Hedef adresi kontrol edin, sonra bir giriş bilgisi seçin. Kapalı Shadow DOM desteklenmez.');
 	if (!targets.length) renderEmptyState('Desteklenen giriş formu bulunamadı.');
 	updateVaultStatusBadge(true);
 }
@@ -158,7 +158,7 @@ async function loadVaultStatus() {
 		emailNode.required = !isAuthenticated;
 		if (isAuthenticated) emailNode.value = sessionStatus.email;
 		document.getElementById('session-title').textContent = isAuthenticated ? 'Kasanın Kilidini Aç' : 'Eklentiye Giriş Yap';
-		document.getElementById('session-submit').textContent = isAuthenticated ? 'Kilidi Aç' : 'Giriş Yap';
+		document.getElementById('session-submit').textContent = isAuthenticated ? 'Kasanın Kilidini Aç' : 'Giriş Yap';
 		document.getElementById('code-label').hidden = !needs2FA || isAuthenticated;
 		document.getElementById('recovery-label').hidden = !needs2FA || isAuthenticated;
 		document.getElementById('webauthn-button').hidden = !webAuthnOptions || isAuthenticated;
@@ -172,11 +172,11 @@ async function loadVaultStatus() {
 			vaultStatusNode.className = "vault-status disconnected";
 		} else if (isLocked) {
 			updateVaultStatusBadge(true);
-			vaultStatusNode.textContent = "Vault kilitli 🔒";
+			vaultStatusNode.textContent = "Kasa Kilitli 🔒";
 			vaultStatusNode.className = "vault-status locked";
 		} else {
 			updateVaultStatusBadge(true);
-			vaultStatusNode.textContent = "Vault açık ✓";
+			vaultStatusNode.textContent = "Kasa Kilidi Açık ✓";
 			vaultStatusNode.className = "vault-status unlocked";
 		}
 	} catch {
@@ -208,7 +208,7 @@ function renderSuggestions(suggestions, target) {
 					${suggestion.isExactIdentifierMatch ? '<span class="tag">Tam eşleşme</span>' : ""}
 					${suggestion.isPreferred ? '<span class="tag">Son kullanılan</span>' : ""}
 				</div>
-				<p class="item-footnote">Tıkla: aktif sayfadaki boş kullanıcı adı/şifre alanlarını doldur.</p>
+				<p class="item-footnote">Doldur: seçilen formun uygun alanlarını doldur; formu göndermez veya öğeyi kaydetmez.</p>
 			</button>
 		`
 		)
@@ -231,14 +231,14 @@ function renderEmptyState(message) {
 		<article class="item">
 			<div class="item-main">
 				<div>
-					<p class="item-title">Akıllı Autofill</p>
+					<p class="item-title">Otomatik Doldurma</p>
 					<p class="item-meta">${escapeHtml(message)}</p>
 				</div>
 				<span class="score">Beklemede</span>
 			</div>
 			<div class="tags">
-				<span class="tag">Domain eşleşmesi</span>
-				<span class="tag">Mail önerisi</span>
+				<span class="tag">Alan adı eşleşmesi</span>
+				<span class="tag">Giriş bilgisi önerisi</span>
 				<span class="tag">Onaylı doldurma</span>
 			</div>
 		</article>
@@ -250,7 +250,7 @@ async function fillActiveTab(itemId, target, forceFill = false) {
 	const response = await sendRuntimeMessage({ type: 'FILL_AUTOFILL_TARGET', tabId: target.tabId,
 		documentId: target.documentId, formToken: target.formToken, itemId, forceFill }).catch(() => null);
 	if (response?.status === 'domain_mismatch' && !forceFill) {
-		setStatus(`Kayıt ${target.url} için doğrulanamadı. HTTPS kayıtları HTTP üzerinde doldurulmaz.`);
+		setStatus(`Öğe ${target.url} için doğrulanamadı. HTTPS giriş bilgileri HTTP üzerinde doldurulmaz.`);
 		const confirm = document.createElement('button');
 		confirm.dataset.action = 'force-fill';
 		confirm.textContent = 'Adresi kontrol ettim: yine de doldur';
@@ -292,7 +292,7 @@ function formatHostname(value) {
 		const url = new URL(value);
 		return url.hostname.replace(/^www\./, "");
 	} catch {
-		return value || "Domain yok";
+		return value || "Alan adı yok";
 	}
 }
 

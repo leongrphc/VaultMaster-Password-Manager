@@ -12,6 +12,9 @@ function fixture(): ImportReview {
 test("overwrite requires a separate checkbox; changing the decision revokes approval", async () => {
   const commit = vi.fn(async (body: RestoreBackupInput) => { void body; }), cancel = vi.fn();
   render(<ImportReviewPanel review={fixture()} busy={false} commit={commit} cancel={cancel} />);
+  expect(screen.getByText("Öğe 1: Aynı giriş bilgisi — değişiklik")).toBeVisible();
+  expect(screen.getByRole("combobox", { name: "Öğe 1 kararı" })).toBeVisible();
+  expect(screen.getByRole("option", { name: "Mevcut öğeyi güncelle" })).toBeInTheDocument();
   const button = screen.getByRole("button", { name: "İncelemeyi Onayla ve İçe Aktar" });
   expect(commit).not.toHaveBeenCalled();
   fireEvent.change(screen.getByRole("combobox"), { target: { value: "replace" } });

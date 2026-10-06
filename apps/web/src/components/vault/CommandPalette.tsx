@@ -54,7 +54,7 @@ export default function CommandPalette({ isOpen, onClose, onNewItem, onOpenItem 
         id: "new-item",
         type: "action",
         label: "Yeni öğe oluştur",
-        detail: "Login, kart, not veya kimlik ekle",
+        detail: "Giriş bilgisi, kart, not veya kimlik ekle",
         icon: <Plus className="w-4 h-4" />,
         run: () => onNewItem?.(),
       },
@@ -62,7 +62,7 @@ export default function CommandPalette({ isOpen, onClose, onNewItem, onOpenItem 
         id: "generator",
         type: "action",
         label: "Şifre üretici",
-        detail: "Güçlü parola oluştur",
+        detail: "Güçlü şifre oluştur",
         icon: <KeyRound className="w-4 h-4" />,
         run: () => router.push("/vault/generator"),
       },
@@ -70,7 +70,7 @@ export default function CommandPalette({ isOpen, onClose, onNewItem, onOpenItem 
         id: "health",
         type: "action",
         label: "Şifre sağlığı",
-        detail: "Zayıf ve sızmış parolaları kontrol et",
+        detail: "Zayıf ve sızmış şifreleri kontrol et",
         icon: <Gauge className="w-4 h-4" />,
         run: () => router.push("/vault/health"),
       },
@@ -78,7 +78,7 @@ export default function CommandPalette({ isOpen, onClose, onNewItem, onOpenItem 
         id: "favorites",
         type: "action",
         label: "Favorileri göster",
-        detail: "Yıldızlı kayıtları filtrele",
+        detail: "Favori öğeleri filtrele",
         icon: <Heart className="w-4 h-4" />,
         run: () => {
           router.push("/vault");
@@ -254,7 +254,7 @@ function runCommand(
 
 function getItemDetail(item: DecryptedVaultItem) {
   const data = item.data;
-  if (data.type === "login") return data.username || data.url || "Login";
+  if (data.type === "login") return data.username || data.url || "Giriş Bilgisi";
   if (data.type === "credit_card") return `Kart •••• ${data.cardNumber.slice(-4)}`;
   if (data.type === "identity") return data.email || data.fullName;
   if (data.type === "passkey") return data.username || data.rpId;

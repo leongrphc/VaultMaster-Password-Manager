@@ -59,7 +59,7 @@ export class VaultSession {
   }
   guard(epoch, key = this.key) {
     if (this.key && this.deadline <= this.now()) void this.lock().catch(() => undefined);
-    if (epoch !== this.epoch || !key || this.key !== key || this.deadline <= this.now()) throw new Error('Kasa kilitlendi. Tekrar açın.');
+    if (epoch !== this.epoch || !key || this.key !== key || this.deadline <= this.now()) throw new Error('Kasa kilitlendi. Kasanın kilidini tekrar açın.');
   }
   async lock() {
     ++this.epoch; this.key = null; this.keyBase64 = null; this.items = []; this.deadline = 0;

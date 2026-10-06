@@ -432,3 +432,11 @@ Candidate 1.3.0 is prepared locally, not deployed or store-published. Follow the
 before distributing a new build. Existing deployed release evidence above remains
 historical. Store-assigned IDs require exact allowlist verification; the current
 public key guarantees the unpacked identity only.
+
+
+## Extension documentation and terminology (P1-6)
+
+Use the [extension guide](apps/extension/README.md), [shared glossary](docs/TERMINOLOGY.md)
+and [installation/update checklist](docs/EXTENSION_STORE_PREPARATION.md) for current
+candidate behavior. The earlier deployed-version record is historical evidence,
+not a claim that the current candidate has been deployed or published.

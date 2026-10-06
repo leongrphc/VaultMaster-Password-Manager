@@ -117,7 +117,7 @@ export default function LockScreen() {
                 ) : (
                   <>
                     <Fingerprint className="w-4 h-4" />
-                    Platform doğrulayıcı ile aç
+                    Platform doğrulayıcı ile kilidi aç
                   </>
                 )}
               </button>

@@ -354,12 +354,12 @@ function setupContextMenus() {
 	chrome.contextMenus.removeAll(() => {
 		chrome.contextMenus.create({
 			id: "vaultmaster-fill",
-			title: "Fill with VaultMaster",
+			title: "VaultMaster ile Doldur",
 			contexts: ["editable"],
 		});
 		chrome.contextMenus.create({
 			id: "vaultmaster-open",
-			title: "Open VaultMaster",
+			title: "VaultMaster'ı Aç",
 			contexts: ["page", "editable"],
 		});
 	});

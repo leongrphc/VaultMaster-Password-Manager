@@ -944,17 +944,23 @@ export default function SettingsPage() {
               <div>
                 <h3 className="font-semibold">Tarayıcı Eklentisi</h3>
                 <p className="text-sm text-text-secondary">
-                  Web sekmesi açık olmadan kasanızı açın ve eşleşen hesabı onayla doldurun.
+                  Web sekmesi açık olmadan kasanın kilidini açın ve eşleşen giriş bilgisini onayla doldurun.
                 </p>
               </div>
             </div>
 
             <div className="space-y-2 text-sm text-text-secondary">
               <a href="/downloads/vaultmaster-extension.zip" download className="inline-flex px-4 py-2 rounded-xl bg-accent text-midnight font-semibold">Chrome / Edge Eklentisini İndir</a>
-              <p>1. İndirdiğiniz ZIP dosyasını bir klasöre çıkarın.</p>
+              <p>Manuel kurulum adayı; mağaza yayını veya otomatik güncelleme doğrulanmış değildir. Chrome 127+ gerekir; Edge sürümü ayrıca elle doğrulanmalıdır.</p>
+              <a href="/downloads/vaultmaster-extension.zip.sha256" download className="underline">ZIP SHA-256 Sağlamasını İndir</a>
+              <p>1. ZIP sağlamasını doğrulayın ve dosyayı güncellemelerde de kullanacağınız sabit bir klasöre çıkarın.</p>
               <p>2. Chrome&apos;da chrome://extensions, Edge&apos;de edge://extensions sayfasında geliştirici modunu açıp “Paketlenmemiş öğe yükle” ile bu klasörü seçin.</p>
-              <p>3. Tarayıcıdaki VaultMaster simgesinden e-posta ve ana şifrenizle giriş yapın.</p>
-              <p>4. Hedef sitede eşleşen hesabı seçerek doldurmayı onaylayın. Kasa 5 dakika sonra ve cihaz kilitlenince kilitlenir.</p>
+              <p>3. Tarayıcıdaki VaultMaster simgesinden e-posta, ana şifre ve yapılandırılmış ikinci faktörle giriş yapın.</p>
+              <p>4. Hedef kökeni kontrol edip eşleşen giriş bilgisini seçerek doldurmayı onaylayın. Kasa, giriş/kilit açmadan 5 dakika sonra ve cihaz kilitlenince kilitlenir.</p>
+              <p>5. Güncellemede aynı klasördeki dosyaları değiştirip eklentiyi yeniden yükleyin; kimliği/sürümü kontrol edip tekrar giriş yapın. Eklentiyi kaldırmak yerel tercihleri silebilir.</p>
+              <p>API bağlantısı gerekir. Farklı kökenli iframe ve kapalı Shadow DOM desteklenmez; HTTPS giriş bilgileri HTTP sayfaya doldurulmaz.</p>
+              <a href="https://github.com/leongrphc/VaultMaster-Password-Manager/blob/feature/p1-6-extension-docs-terminology/apps/extension/README.md" target="_blank" rel="noopener noreferrer" className="underline">Eklenti Kurulum ve Kullanım Rehberi</a>
+              <a href="https://github.com/leongrphc/VaultMaster-Password-Manager/blob/feature/p1-6-extension-docs-terminology/docs/TERMINOLOGY.md" target="_blank" rel="noopener noreferrer" className="ml-3 underline">Terimler Sözlüğü</a>
             </div>
           </div>
         </div>
@@ -1397,7 +1403,7 @@ export default function SettingsPage() {
                     Şifreli JSON
                   </p>
                   <p className="text-xs text-text-muted">
-                    Yalnızca aktif kayıtlar; mevcut kasaya bağımlı
+                    Yalnızca aktif öğeler; mevcut kasaya bağımlı
                   </p>
                 </div>
                 <ChevronRight className="w-4 h-4 text-text-muted group-hover:text-accent transition-colors" />
@@ -1415,7 +1421,7 @@ export default function SettingsPage() {
                     CSV (Düz Metin)
                   </p>
                   <p className="text-xs text-text-muted">
-                    Parolaları şifrelenmeden indirir
+                    Şifreleri şifrelenmeden indirir
                   </p>
                 </div>
                 <ChevronRight className="w-4 h-4 text-text-muted group-hover:text-accent transition-colors" />
@@ -1834,7 +1840,7 @@ export default function SettingsPage() {
         <PlaintextExportConfirmModal
           format="CSV"
           itemCount={loginItems.length}
-          description="Login kayıtlarının başlık, URL, kullanıcı adı, parola ve not alanları düz metin olarak dışa aktarılacak."
+          description="Giriş bilgilerinin başlık, URL, kullanıcı adı, şifre ve not alanları düz metin olarak dışa aktarılacak."
           onConfirm={performExportCSV}
           onClose={() => setShowPlaintextCsvConfirm(false)}
         />

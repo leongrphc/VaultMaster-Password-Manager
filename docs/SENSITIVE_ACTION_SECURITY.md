@@ -1,5 +1,9 @@
 # Sensitive-action security (P0-4)
 
+Terminology: [shared glossary](TERMINOLOGY.md). User steps and current combined
+limitations: [extension guide](../apps/extension/README.md). Historical verification
+sections below describe their original feature scope.
+
 Implemented on `feature/p0-4-sensitive-action-security`, 6 October 2026.
 This is an implementation and regression-test record, not an independent audit.
 

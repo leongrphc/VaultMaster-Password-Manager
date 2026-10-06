@@ -474,7 +474,7 @@ export default function LoginPage() {
                   <div className="w-5 h-5 border-2 border-midnight/30 border-t-midnight rounded-full animate-spin" />
                 ) : (
                   <>
-                    {isRegister ? "Hesap Oluştur" : requires2FA ? "Doğrula" : "Kasayı Aç"}
+                    {isRegister ? "Hesap Oluştur" : requires2FA ? "Doğrula" : "Giriş Yap"}
                     <ArrowRight className="w-4 h-4" />
                   </>
                 )}

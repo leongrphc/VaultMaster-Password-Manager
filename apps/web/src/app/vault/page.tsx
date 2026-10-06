@@ -418,7 +418,7 @@ export default function VaultPage() {
         <PlaintextExportConfirmModal
           format="JSON"
           itemCount={selectedItems.length}
-          description="Seçili öğelerin tüm kasa verileri şifrelenmeden JSON dosyasına yazılacak. Parolalar, güvenli notlar, kart bilgileri ve özel alanlar okunabilir kalabilir."
+          description="Seçili öğelerin tüm kasa verileri şifrelenmeden JSON dosyasına yazılacak. Şifreler, güvenli notlar, kart bilgileri ve özel alanlar okunabilir kalabilir."
           onConfirm={performBulkExport}
           onClose={() => setShowPlaintextBulkExportConfirm(false)}
         />

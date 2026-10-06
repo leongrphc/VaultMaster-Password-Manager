@@ -103,7 +103,7 @@ test('real independent extension logs in, fills, locks, restarts and saves witho
     await expect(popup.getByRole('button', { name: 'Güvenlik Anahtarıyla Doğrula' })).toBeVisible();
     await popup.getByLabel('Ana şifre', { exact: true }).fill(password);
     await popup.getByRole('button', { name: 'Güvenlik Anahtarıyla Doğrula' }).click();
-    try { await expect(popup.locator('#vault-status')).toHaveText('Vault açık ✓'); }
+    try { await expect(popup.locator('#vault-status')).toHaveText('Kasa Kilidi Açık ✓'); }
     catch (error) {
       const probe = await worker.evaluate(async origin => { try { const response = await fetch(origin + '/api/auth/me'); return response.status; } catch (failure) { return failure.message; } }, apiOrigin);
       throw new Error(`${await popup.locator('#status').innerText()} | ${JSON.stringify(pageErrors)} | ${probe}`, { cause: error });
@@ -141,8 +141,8 @@ test('real independent extension logs in, fills, locks, restarts and saves witho
     async function unlock() {
       await popup.bringToFront(); await target.bringToFront(); await popup.reload();
       await popup.getByLabel('Ana şifre', { exact: true }).fill(password);
-      await popup.getByRole('button', { name: 'Kilidi Aç', exact: true }).click();
-      await expect(popup.locator('#vault-status')).toHaveText('Vault açık ✓');
+      await popup.getByRole('button', { name: 'Kasanın Kilidini Aç', exact: true }).click();
+      await expect(popup.locator('#vault-status')).toHaveText('Kasa Kilidi Açık ✓');
     }
     await target.goto('https://example.test/login'); await target.locator('#email').focus(); await target.bringToFront(); await popup.reload();
     await expect(popup.locator('[data-item-id="fixture-login"]')).toBeVisible();
@@ -411,13 +411,13 @@ test('real independent extension logs in, fills, locks, restarts and saves witho
       }
       await target.goto('https://example.test/login'); await target.bringToFront(); await popup.reload();
     });
-    await popup.getByRole('button', { name: 'Kilitle', exact: true }).click();
-    await expect(popup.locator('#vault-status')).toHaveText('Vault kilitli 🔒');
+    await popup.getByRole('button', { name: 'Kasayı Kilitle', exact: true }).click();
+    await expect(popup.locator('#vault-status')).toHaveText('Kasa Kilitli 🔒');
     assert.equal((await fill()).ok, false); await expect(target.locator('#password')).toHaveValue('');
     await popup.getByLabel('Ana şifre', { exact: true }).fill('wrong-password');
-    await popup.getByRole('button', { name: 'Kilidi Aç', exact: true }).click();
+    await popup.getByRole('button', { name: 'Kasanın Kilidini Aç', exact: true }).click();
     await expect(popup.locator('#status')).toContainText('Fixture request rejected');
-    await expect(popup.locator('#vault-status')).toHaveText('Vault kilitli 🔒'); await unlock();
+    await expect(popup.locator('#vault-status')).toHaveText('Kasa Kilitli 🔒'); await unlock();
     await target.goto('https://example.test/login'); await target.locator('#email').focus(); await target.bringToFront(); await popup.reload();
     await expect(popup.locator('[data-item-id="fixture-login"]')).toBeVisible();
     // Exercise the warning UI with a deterministic domain-rejection fixture.
@@ -444,7 +444,7 @@ test('real independent extension logs in, fills, locks, restarts and saves witho
     const { targetInfos } = await cdp.send('Target.getTargets');
     const workerTarget = targetInfos.find(info => info.type === 'service_worker' && info.url.includes(extensionId));
     assert.ok(workerTarget); await cdp.send('Target.closeTarget', { targetId: workerTarget.targetId });
-    await target.bringToFront(); await popup.reload(); await expect(popup.locator('#vault-status')).toHaveText('Vault açık ✓');
+    await target.bringToFront(); await popup.reload(); await expect(popup.locator('#vault-status')).toHaveText('Kasa Kilidi Açık ✓');
     worker = context.serviceWorkers().find(candidate => candidate.url().includes(extensionId)) || await context.waitForEvent('serviceworker');
     await target.goto('https://example.test/login'); assert.equal((await fill()).ok, true);
     await expect(target.locator('#password')).toHaveValue(credential.password);
@@ -486,7 +486,7 @@ test('real independent extension logs in, fills, locks, restarts and saves witho
     await updatedPopup.getByLabel('E-posta').fill(email);
     await updatedPopup.getByLabel('Ana şifre', { exact: true }).fill(password);
     await updatedPopup.getByRole('button', { name: 'Giriş Yap', exact: true }).click();
-    await expect(updatedPopup.locator('#vault-status')).toHaveText('Vault açık ✓');
+    await expect(updatedPopup.locator('#vault-status')).toHaveText('Kasa Kilidi Açık ✓');
     await updatedPopup.getByRole('button', { name: 'Çıkış Yap', exact: true }).click();
     await expect(updatedPopup.locator('#vault-status')).toHaveText('Giriş yapılmadı');
     assert.equal(await worker.evaluate(async () => (await chrome.storage.session.get('vaultmasterNativeSession')).vaultmasterNativeSession), undefined);

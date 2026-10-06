@@ -1,5 +1,9 @@
 # P1-2: password-change autofill
 
+Terminology: [shared glossary](TERMINOLOGY.md). User steps and current combined
+limitations: [extension guide](../apps/extension/README.md). Historical verification
+sections below describe their original feature scope.
+
 Implemented on `feature/p1-2-password-change-autofill`, 6 October 2026.
 Synthetic local verification only; no production deployment or independent audit.
 P1-3 is outside this change.

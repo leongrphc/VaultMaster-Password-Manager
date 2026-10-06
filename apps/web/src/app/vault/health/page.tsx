@@ -253,10 +253,10 @@ export default function HealthReportPage() {
               <p className="text-sm text-text-secondary">
                 Zayıflık ve tekrar analizi cihazınızda yapılır. Sızıntı kontrolü yalnızca Kontrol Et ile başlar.
                 Şifreler tarayıcınızda SHA-1 ile özetlenir; HIBP&apos;ye yalnızca ilk 5 hash karakteri gönderilir.
-                Tam hash, düz metin şifre, kayıt adı, kullanıcı adı ve URL gönderilmez; eşleşme yerel olarak yapılır.
+                Tam hash, düz metin şifre, öğe adı, kullanıcı adı ve URL gönderilmez; eşleşme yerel olarak yapılır.
                 HIBP IP adresinizi, istek zamanını ve hash önekini görebilir; ağ sağlayıcıları bağlantı bilgilerini görebilir. Bu tam anonimlik sağlamaz.
                 Çerez ve yönlendiren adres gönderilmez; yanıt dolgusu istenir. Sonuçlar kaydedilmez ve sayfadan ayrılınca silinir.
-                İptal yeni istekleri durdurur ve kısmi sonuçları siler; gönderilmiş bir isteği geri alamaz. Kasanız değiştirilmez. Rapor satırları yalnızca kayıt numarası gösterir.
+                İptal yeni istekleri durdurur ve kısmi sonuçları siler; gönderilmiş bir isteği geri alamaz. Kasanız değiştirilmez. Rapor satırları yalnızca öğe numarası gösterir.
               </p>
             </div>
           </div>
@@ -315,7 +315,7 @@ export default function HealthReportPage() {
                 <div key={itemId} className="flex items-center gap-3 bg-danger/5 border border-danger/20 rounded-xl p-3">
                   <AlertTriangle className="w-4 h-4 text-danger shrink-0" />
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium truncate">Kayıt {loginItems.findIndex(entry => entry.id === item.id) + 1}</p>
+                    <p className="text-sm font-medium truncate">Öğe {loginItems.findIndex(entry => entry.id === item.id) + 1}</p>
                   </div>
                   <span className="text-xs text-danger font-mono shrink-0">
                     {(count as number).toLocaleString()} kez sızdırılmış
@@ -347,7 +347,7 @@ export default function HealthReportPage() {
                   <Globe className="w-4 h-4 text-accent" />
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium truncate">Kayıt {loginItems.findIndex(entry => entry.id === item.itemId) + 1}</p>
+                  <p className="text-sm font-medium truncate">Öğe {loginItems.findIndex(entry => entry.id === item.itemId) + 1}</p>
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
                   <div className="w-16 h-1.5 bg-abyss rounded-full overflow-hidden">
@@ -394,7 +394,7 @@ export default function HealthReportPage() {
                   {group.items.map((item) => (
                     <div key={item.id} className="flex items-center gap-2 text-sm">
                       <ChevronRight className="w-3 h-3 text-warning shrink-0" />
-                      <span className="text-text-primary">Kayıt {loginItems.findIndex(entry => entry.id === item.id) + 1}</span>
+                      <span className="text-text-primary">Öğe {loginItems.findIndex(entry => entry.id === item.id) + 1}</span>
                     </div>
                   ))}
                 </div>

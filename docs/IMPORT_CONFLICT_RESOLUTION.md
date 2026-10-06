@@ -1,5 +1,9 @@
 # Import conflict resolution (P1-3)
 
+Terminology: [shared glossary](TERMINOLOGY.md). User steps and current combined
+limitations: [extension guide](../apps/extension/README.md). Historical verification
+sections below describe their original feature scope.
+
 CSV, account-key-encrypted legacy JSON and portable v3/v4 full backups now use an
 unlocked-client review followed by the existing staged, transactional restore
 transport. No encryption format, KDF, key-envelope or database migration changes.

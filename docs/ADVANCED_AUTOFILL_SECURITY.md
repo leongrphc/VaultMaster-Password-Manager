@@ -1,5 +1,9 @@
 # P1-1: iframe and Shadow DOM autofill
 
+Terminology: [shared glossary](TERMINOLOGY.md). User steps and current combined
+limitations: [extension guide](../apps/extension/README.md). Historical verification
+sections below describe their original feature scope.
+
 Implemented on `feature/p1-1-advanced-autofill`, 6 October 2026. This is a
 local implementation and regression record, not a deployment or independent
 security audit. P1-2 password-change detection is outside this change.

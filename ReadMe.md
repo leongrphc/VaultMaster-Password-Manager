@@ -77,7 +77,7 @@ pnpm build
 ### Tarayıcı Eklentisi
 
 ```bash
-pnpm --filter @vaultmaster/extension build
+pnpm --filter @vaultmaster/extension... build
 ```
 
 `apps/extension/dist` klasörünü **Load unpacked** ile yükleyin.
@@ -155,7 +155,12 @@ pnpm build
 ### Browser Extension
 
 ```bash
-pnpm --filter @vaultmaster/extension build
+pnpm --filter @vaultmaster/extension... build
 ```
 
 Load `apps/extension/dist` using **Load unpacked**.
+
+
+Extension setup, permissions, trust limitations, save/update, troubleshooting and
+manual updates: [extension guide](apps/extension/README.md). Shared English/Turkish
+UI vocabulary: [glossary](docs/TERMINOLOGY.md).

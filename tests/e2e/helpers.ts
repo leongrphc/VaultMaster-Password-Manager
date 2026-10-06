@@ -49,7 +49,7 @@ export async function loginAccount(page: Page, account: TestAccount) {
   await page.goto("/");
   await page.getByLabel("E-posta").fill(account.email);
   await page.getByLabel("Ana Şifre", { exact: true }).fill(account.masterPassword);
-  await page.getByRole("button", { name: /^Kasayı Aç/ }).click();
+  await page.getByRole("button", { name: /^Giriş Yap/ }).click();
   await expect(page).toHaveURL(/\/vault/);
   await expect(page.getByRole("button", { name: "Yeni Öğe" })).toBeVisible();
 }
@@ -57,7 +57,7 @@ export async function loginAccount(page: Page, account: TestAccount) {
 export async function logout(page: Page) {
   await page.getByRole("button", { name: /Çıkış Yap/ }).click();
   await expect(page).toHaveURL(/\/$/);
-  await expect(page.getByRole("button", { name: /^Kasayı Aç/ })).toBeVisible();
+  await expect(page.getByRole("button", { name: /^Giriş Yap/ })).toBeVisible();
 }
 
 export async function addLoginItem(page: Page, item: TestLoginItem) {

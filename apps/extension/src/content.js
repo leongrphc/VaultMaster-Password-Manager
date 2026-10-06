@@ -635,7 +635,7 @@ async function fillCredentialFromMessage(message, sendResponse) {
 
 	const itemId = message.itemId;
 	if (!itemId) {
-		sendResponse({ ok: false, message: "Kayıt seçilmedi." });
+		sendResponse({ ok: false, message: "Öğe seçilmedi." });
 		return;
 	}
 
@@ -681,8 +681,8 @@ async function fillCredentialIntoContext(itemId, context, options = {}) {
 			ok: false,
 			status: credentialResult?.status,
 			message: credentialResult?.status === "domain_mismatch"
-				? "Kayıt bu domain için doğrulanamadı."
-				: "Kayıt alınamadı. Eklentiden kasanın kilidini açıp tekrar deneyin.",
+				? "Öğe bu alan adı için doğrulanamadı."
+				: "Öğe alınamadı. Eklentiden kasanın kilidini açıp tekrar deneyin.",
 		};
 	}
 	// Do not retarget a credential after asynchronous vault work or page events.
@@ -798,7 +798,7 @@ function showSavePrompt(credential) {
 
 	panel.innerHTML = `
 		<div style="padding:14px;border-bottom:1px solid rgba(144,160,195,0.12);">
-			<div style="font-weight:700;margin-bottom:4px;">${credential.operation === 'update' ? 'Mevcut kaydın şifresini güncelle?' : 'Yeni giriş kaydı oluştur?'}</div>
+			<div style="font-weight:700;margin-bottom:4px;">${credential.operation === 'update' ? 'Mevcut giriş bilgisinin şifresini güncelle?' : 'Yeni giriş bilgisi kaydet?'}</div>
 			<div style="color:#90a0c3;font-size:12px;">${escapeHtml(credential.url)} • ${escapeHtml(maskIdentifier(credential.username))}</div>
 		</div>
 		<div style="padding:12px;display:grid;gap:8px;">
@@ -830,7 +830,7 @@ function showSavePrompt(credential) {
 		const response = await sendRuntimeMessage({ type: "CONFIRM_LOGIN_SAVE", draftId: credential.id }).catch(() => null);
 		const status = response?.payload?.status;
 		if (response?.ok && (status === "created" || status === "updated")) {
-			updatePanelNotice(status === "updated" ? "Kayıt güncellendi." : "Kayıt kasaya eklendi.", false);
+			updatePanelNotice(status === "updated" ? "Öğe güncellendi." : "Öğe kasaya kaydedildi.", false);
 			window.setTimeout(removePanel, 1200);
 			return;
 		}
@@ -842,7 +842,7 @@ function showSavePrompt(credential) {
 			error.style.cssText = "padding:12px;color:#ff9aac";
 			panel.appendChild(error);
 		}
-		error.textContent = status === "save_conflict" ? "Kayıt değişti; üzerine yazılmadı. Formu tekrar gönderip yeni onay alın." : "Kaydetme başarısız. Eklentide kasanın açık olduğunu ve bağlantınızı kontrol edip tekrar deneyin.";
+		error.textContent = status === "save_conflict" ? "Öğe değişti; üzerine yazılmadı. Formu tekrar gönderip yeni onay alın." : "Kaydetme başarısız. Eklentide kasanın kilidinin açık olduğunu ve bağlantınızı kontrol edip tekrar deneyin.";
 	});
 
 	document.body.appendChild(panel);

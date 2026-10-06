@@ -1,9 +1,13 @@
 # P1-5 extension release preparation
 
+Terminology: [shared glossary](TERMINOLOGY.md). User steps and current combined
+limitations: [extension guide](../apps/extension/README.md). Historical verification
+sections below describe their original feature scope.
+
 Prepared on `feature/p1-5-extension-store-prep`, 6 October 2026. Version 1.3.0
 is a local release candidate. No store upload, publication, production deployment,
 store approval, automatic update delivery or independent audit is claimed.
-P1-6 terminology/documentation expansion is outside this change.
+The P1-6 [documentation record](EXTENSION_DOCUMENTATION.md) covers current user guidance.
 
 ## Permission review
 
@@ -114,8 +118,8 @@ both ZIP and checksum; its contents still depend on the configured build origins
    verify Edge 127+ manually before an Edge release. Extract the verified ZIP to a
    stable directory; Load unpacked at `chrome://extensions` or `edge://extensions`.
    Verify ID/version, permission warnings and absence of manifest/worker errors.
-3. Pin/open popup; login with configured MFA, lock/unlock, fill a controlled HTTPS
-   login and HTTP fixture, test new-password generation and explicit update save.
+3. Pin/open popup; sign in with configured MFA, lock/unlock, fill a controlled HTTPS
+   login and HTTP fixture, test new-password generation and explicit password update.
    Verify foreign/opaque frame rejection, HTTPS downgrade denial and API failure
    denial. Browser-restricted pages and file URLs are unsupported.
 4. Test site access withheld/re-enabled in browser controls; reloading the target
