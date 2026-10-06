@@ -3,7 +3,7 @@ import { readdir, readFile, writeFile, mkdir, rm } from 'node:fs/promises';
 import { resolve, join, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { deflateRawSync } from 'node:zlib';
-import { releaseFiles, sha256, extensionId, validateFiles } from './extension-release-policy.mjs';
+import { releaseFiles, sha256, manifestIdentity, validateFiles } from './extension-release-policy.mjs';
 
 // ZIP uses raw DEFLATE and CRC32 (integrity, not encryption). No secrets are
 // present in the bundle; its identity key in manifest.json is a public key.
@@ -15,16 +15,17 @@ function crc32(bytes) {
   }
   return (crc ^ 0xffffffff) >>> 0;
 }
-export async function packageExtension(output) {
+export async function packageExtension(output, target = 'chromium') {
   const root = resolve(fileURLToPath(new URL('..', import.meta.url)));
-  const stage = join(root, 'apps/extension/.package-build');
+  if (!['chromium', 'firefox'].includes(target)) throw new Error('Invalid extension browser');
+  const stage = join(root, target === 'firefox' ? 'apps/extension/.package-build-firefox' : 'apps/extension/.package-build');
   try {
-    execFileSync(process.execPath, [join(root, 'apps/extension/scripts/build.mjs'), stage], { cwd: root, stdio: 'inherit' });
+    execFileSync(process.execPath, [join(root, 'apps/extension/scripts/build.mjs'), stage, target], { cwd: root, stdio: 'inherit' });
     const files = new Map();
     for (const name of releaseFiles) files.set(name, await readFile(join(stage, name)));
     validateFiles(files);
     const manifest = JSON.parse(files.get('manifest.json'));
-    const inventory = { format: 1, version: manifest.version, extensionId: extensionId(manifest.key),
+    const inventory = { format: 1, version: manifest.version, extensionId: manifestIdentity(manifest),
       files: Object.fromEntries([...files].map(([name, bytes]) => [name, { size: bytes.length, sha256: sha256(bytes) }])) };
     await writeFile(join(stage, 'verification.json'), JSON.stringify(inventory, null, 2) + '\n');
     const locals = [], central = [];
@@ -61,6 +62,6 @@ export async function packageExtension(output) {
   } finally { await rm(stage, { recursive: true, force: true }); }
 }
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  if (process.argv[2]) await packageExtension(resolve(process.argv[2]));
+  if (process.argv[2]) await packageExtension(resolve(process.argv[2]), process.argv[3] || 'chromium');
   else if (process.env.VAULTMASTER_STATIC_EXPORT === '1') await packageExtension(resolve('out/downloads/vaultmaster-extension.zip'));
 }

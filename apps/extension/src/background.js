@@ -1,4 +1,10 @@
 import { nativeVault } from './vault-session.js';
+// Firefox exposes promise APIs through browser; Chromium uses chrome.
+const chrome = globalThis.browser || globalThis.chrome;
+function activeDocument(frame) {
+	return frame.documentLifecycle === 'active' ||
+		(frame.documentLifecycle === undefined && typeof chrome.runtime.getDocumentId === 'function');
+}
 const APP_URL = "http://localhost:3000/vault";
 const VAULTMASTER_URLS = ["http://localhost:3000/*", "http://127.0.0.1:3000/*"];
 const RECENT_SELECTIONS_KEY = "vaultmasterRecentSelections";
@@ -38,13 +44,13 @@ function isTrustedPopup(sender) {
 }
 
 function supportedFrame(frame, frames) {
-	if (!frame || frame.errorOccurred || frame.documentLifecycle !== 'active' ||
+	if (!frame || frame.errorOccurred || !activeDocument(frame) ||
 		!isHttpUrlString(frame.url) || !isString(frame.documentId)) return false;
 	const origin = new URL(frame.url).origin;
 	const seen = new Set();
 	let current = frame;
 	while (current) {
-		if (seen.has(current.frameId) || current.errorOccurred || current.documentLifecycle !== 'active' ||
+		if (seen.has(current.frameId) || current.errorOccurred || !activeDocument(current) ||
 			!isHttpUrlString(current.url) || new URL(current.url).origin !== origin) return false;
 		seen.add(current.frameId);
 		if (current.frameId === 0) return true;
@@ -364,7 +370,7 @@ async function handleNativeSession(message) {
 }
 
 function setupContextMenus() {
-	chrome.contextMenus.removeAll(() => {
+	const create = () => {
 		chrome.contextMenus.create({
 			id: "vaultmaster-fill",
 			title: "VaultMaster ile Doldur",
@@ -375,7 +381,9 @@ function setupContextMenus() {
 			title: "VaultMaster'ı Aç",
 			contexts: ["page", "editable"],
 		});
-	});
+	};
+	if (globalThis.browser) void chrome.contextMenus.removeAll().then(create);
+	else chrome.contextMenus.removeAll(create);
 }
 
 async function updateBadgeStatus() {

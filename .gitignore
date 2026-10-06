@@ -15,3 +15,6 @@ out/
 .wrangler/
 apps/extension/*.zip
 .package-build/
+
+dist-firefox/
+.package-build-firefox/

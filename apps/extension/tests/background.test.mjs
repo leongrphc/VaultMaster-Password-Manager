@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import test from "node:test";
 
-async function loadBackground({ frames: fixtureFrames, onVaultRequest, vaultTab = { id: 7, windowId: 1 }, tabResponse = { ok: true, payload: { valid: true } } } = {}) {
+async function loadBackground({ firefox = false, frames: fixtureFrames, onVaultRequest, vaultTab = { id: 7, windowId: 1 }, tabResponse = { ok: true, payload: { valid: true } } } = {}) {
   const listeners = [];
   const localStorage = new Map();
   const sessionStorage = new Map();
@@ -54,6 +54,8 @@ async function loadBackground({ frames: fixtureFrames, onVaultRequest, vaultTab 
     },
   };
 
+  globalThis.browser = firefox ? globalThis.chrome : undefined;
+  if (firefox) globalThis.browser.runtime.getDocumentId = () => 'browser-document';
   globalThis.__vaultFixture = { guard: () => {}, key: {}, session: { id: 'session-fixture' }, epoch: 0,
     passkeyCandidates: async () => [{ itemId: 'stored', title: 'Synthetic', username: 'user' }],
     performPasskey: async (_operation, _request, _item, guard) => { guard(); return { id: 'public-response' }; }, ready: Promise.resolve(), status: async () => ({ isAuthenticated: true, isLocked: false }),
@@ -446,4 +448,21 @@ test('sharing management opens only from protected popup; pages cannot create or
   assert.deepEqual(created, [{ url: 'http://localhost:3000/vault/settings/?tab=sharing' }]);
   const denied = await fixture.send({ type: 'OPEN_SHARING_SETTINGS' }, { id: chrome.runtime.id, url: chrome.runtime.getURL('content.js') });
   assert.equal(denied.ok, false); assert.equal(created.length, 1);
+});
+
+
+test('Firefox native document IDs retain same-origin ancestry and stale-document denial without lifecycle fields', async () => {
+  const frames = [{ frameId: 0, parentFrameId: -1, documentId: 'main', url: 'https://example.com/login' },
+    { frameId: 1, parentFrameId: 0, parentDocumentId: 'main', documentId: 'child', url: 'https://example.com/frame' }];
+  const background = await loadBackground({ firefox: true, frames });
+  assert.equal((await background.send({ type: 'GET_LOGIN_CREDENTIAL', itemId: 'item', pageUrl: frames[1].url },
+    { id: 'fixture-extension', tab: { id: 42 }, frameId: 1, documentId: 'child', url: frames[1].url })).ok, true);
+  for (const patch of [{ documentId: 'old' }, { origin: 'https://evil.test' }, { documentLifecycle: 'cached' }]) {
+    assert.equal((await background.send({ type: 'GET_LOGIN_CREDENTIAL', itemId: 'item', pageUrl: frames[1].url },
+      { id: 'fixture-extension', tab: { id: 42 }, frameId: 1, documentId: 'child', url: frames[1].url, ...patch })).ok, false);
+  }
+  frames[0].url = 'https://evil.test';
+  assert.equal((await background.send({ type: 'GET_LOGIN_CREDENTIAL', itemId: 'item', pageUrl: frames[1].url },
+    { id: 'fixture-extension', tab: { id: 42 }, frameId: 1, documentId: 'child', url: frames[1].url })).ok, false);
+  globalThis.browser = undefined;
 });

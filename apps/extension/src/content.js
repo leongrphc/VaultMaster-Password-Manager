@@ -1423,6 +1423,7 @@ function requestVaultBridge(type, payload, existingRequestId) {
 }
 
 function sendRuntimeMessage(payload) {
+	if (globalThis.browser?.runtime) return globalThis.browser.runtime.sendMessage(payload);
 	return new Promise((resolve, reject) => {
 		chrome.runtime.sendMessage(payload, (response) => {
 			const runtimeError = chrome.runtime.lastError;
@@ -1461,7 +1462,7 @@ function normalizeHostname(value) {
 }
 
 async function getNeverSaveHosts() {
-	const stored = await chrome.storage.local.get(NEVER_SAVE_HOSTS_KEY);
+	const stored = await (globalThis.browser || chrome).storage.local.get(NEVER_SAVE_HOSTS_KEY);
 	return stored[NEVER_SAVE_HOSTS_KEY] || [];
 }
 
@@ -1472,7 +1473,7 @@ async function isNeverSaveHost(hostname) {
 
 async function addNeverSaveHost(hostname) {
 	const hosts = await getNeverSaveHosts();
-	await chrome.storage.local.set({
+	await (globalThis.browser || chrome).storage.local.set({
 		[NEVER_SAVE_HOSTS_KEY]: Array.from(new Set([...hosts, hostname])),
 	});
 }

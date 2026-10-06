@@ -6,7 +6,7 @@ import { resolve, dirname, relative } from 'node:path';
 const root = resolve(import.meta.dirname, '../..');
 const read = path => readFile(resolve(root, path), 'utf8');
 const documents = ['apps/extension/README.md', 'docs/TERMINOLOGY.md',
-  'docs/EXTENSION_DOCUMENTATION.md', 'docs/EXTENSION_STORE_PREPARATION.md',
+  'docs/EXTENSION_DOCUMENTATION.md', 'docs/EXTENSION_STORE_PREPARATION.md', 'docs/FIREFOX_SUPPORT.md',
   'docs/ADVANCED_AUTOFILL_SECURITY.md', 'docs/PASSWORD_CHANGE_AUTOFILL.md',
   'docs/IMPORT_CONFLICT_RESOLUTION.md', 'docs/HEALTH_REPORT_PRIVACY.md',
   'docs/SENSITIVE_ACTION_SECURITY.md', 'ReadMe.md', 'DEPLOYMENT.md'];

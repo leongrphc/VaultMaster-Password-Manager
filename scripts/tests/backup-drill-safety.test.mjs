@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 
-for (const harness of ['backup-restore-drill.sh', 'key-exchange-checks.sh']) {
+for (const harness of ['backup-restore-drill.sh', 'key-exchange-checks.sh', 'firefox-checks.sh']) {
 const script = new URL('../' + harness, import.meta.url).pathname;
 
 test(harness + ' rejects supplied database arguments before provisioning', () => {

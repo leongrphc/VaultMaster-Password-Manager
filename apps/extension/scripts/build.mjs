@@ -4,8 +4,10 @@ import { resolve } from "node:path";
 
 const root = resolve(import.meta.dirname, "..");
 const srcDir = resolve(root, "src");
+const target = process.argv[3] || 'chromium';
+if (!['chromium', 'firefox'].includes(target)) throw new Error('Invalid extension browser');
 const distDir = resolve(process.argv[2] || resolve(root, 'dist'));
-if (![resolve(root, 'dist'), resolve(root, '.package-build')].includes(distDir)) throw new Error('Invalid extension output directory');
+if (![resolve(root, 'dist'), resolve(root, 'dist-firefox'), resolve(root, '.package-build'), resolve(root, '.package-build-firefox')].includes(distDir)) throw new Error('Invalid extension output directory');
 
 if (!existsSync(srcDir)) {
   throw new Error("Source directory not found.");
@@ -41,6 +43,13 @@ if ((apiUrl.protocol !== 'https:' && !(apiUrl.protocol === 'http:' && ['localhos
   apiUrl.username || apiUrl.password || apiUrl.pathname !== '/api' || apiUrl.search || apiUrl.hash) throw new Error('VAULTMASTER_API_URL must be HTTPS /api (or local HTTP).');
 writeFileSync(resolve(distDir, 'config.js'), `export const API_URL = ${JSON.stringify(apiUrl.href)};\n`);
 const builtManifest = JSON.parse(readFileSync(resolve(distDir, 'manifest.json'), 'utf8'));
+if (target === 'firefox') {
+  delete builtManifest.key;
+  delete builtManifest.minimum_chrome_version;
+  builtManifest.background = { scripts: ['background.js'], type: 'module' };
+  builtManifest.browser_specific_settings = { gecko: { id: 'vaultmaster@mozkan.com.tr', strict_min_version: '153.0',
+    data_collection_permissions: { required: ['personallyIdentifyingInfo', 'authenticationInfo', 'browsingActivity', 'websiteContent'] } } };
+}
 builtManifest.content_security_policy = { extension_pages: `script-src 'self'; object-src 'none'; connect-src ${apiUrl.origin}; base-uri 'none'; frame-src 'none'` };
 writeFileSync(resolve(distDir, 'manifest.json'), JSON.stringify(builtManifest, null, 2));
 
@@ -64,4 +73,4 @@ if (process.env.VAULTMASTER_APP_URL) {
 
 console.log("Extension build complete:", distDir, "App origin:", appUrl.origin);
 
-writeFileSync(resolve(distDir, "observability.js"), transformSync(readFileSync(resolve(root, "../../packages/shared/src/observability.ts"), "utf8"), { loader: "ts", format: "esm", target: "chrome127" }).code);
+writeFileSync(resolve(distDir, "observability.js"), transformSync(readFileSync(resolve(root, "../../packages/shared/src/observability.ts"), "utf8"), { loader: "ts", format: "esm", target: target === "firefox" ? "firefox153" : "chrome127" }).code);

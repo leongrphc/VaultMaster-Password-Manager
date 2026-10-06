@@ -2,7 +2,7 @@ import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { inflateRawSync } from 'node:zlib';
-import { sha256, validateFiles, extensionId } from './extension-release-policy.mjs';
+import { sha256, validateFiles, manifestIdentity } from './extension-release-policy.mjs';
 export function verifyExtension(zip) {
   const files = new Map();
   let offset = 0;
@@ -34,7 +34,7 @@ export function verifyExtension(zip) {
   files.delete('verification.json');
   validateFiles(files);
   const manifest = JSON.parse(files.get('manifest.json'));
-  const expected = { format: 1, version: manifest.version, extensionId: extensionId(manifest.key),
+  const expected = { format: 1, version: manifest.version, extensionId: manifestIdentity(manifest),
     files: Object.fromEntries([...files].sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0)
       .map(([name, bytes]) => [name, { size: bytes.length, sha256: sha256(bytes) }])) };
   if (JSON.stringify(inventory) !== JSON.stringify(expected)) throw new Error('Verification inventory mismatch');

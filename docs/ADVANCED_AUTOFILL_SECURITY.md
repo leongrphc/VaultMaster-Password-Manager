@@ -83,7 +83,9 @@ remain covered. New unrelated fill decisions always need protected selection.
   `all_frames` injects per-document content scripts; origin fallback flags remain
   disabled. Chrome 127+ is required for ordinary `action.openPopup` support.
   The public extension identity key is unchanged. Store preparation remains P1-5.
-- No production deployment or Firefox support is claimed.
+- No production deployment is claimed. These historical P1-1 checks did not
+  cover Firefox; current support and verification are documented in
+  [Firefox support](FIREFOX_SUPPORT.md).
 
 API references: [Chrome webNavigation](https://developer.chrome.com/docs/extensions/reference/api/webNavigation),
 [MessageSender](https://developer.chrome.com/docs/extensions/reference/api/runtime#type-MessageSender),

@@ -27,7 +27,11 @@
     "verify:extension": "node scripts/verify-extension.mjs",
     "test:docs": "node --test scripts/tests/extension-docs.test.mjs",
     "drill:observability-rollback": "bash scripts/observability-rollback-drill.sh",
-    "test:observability": "node --test scripts/tests/observability.test.mjs"
+    "test:observability": "node --test scripts/tests/observability.test.mjs",
+    "build:extension:firefox": "node apps/extension/scripts/build.mjs apps/extension/dist-firefox firefox",
+    "package:extension:firefox": "node scripts/package-extension.mjs test-results/vaultmaster-firefox.zip firefox",
+    "test:extension:firefox": "node --test apps/extension/tests/firefox/*.test.mjs",
+    "test:firefox:recovery": "bash scripts/firefox-checks.sh"
   },
   "devDependencies": {
     "@playwright/test": "^1.60.0",

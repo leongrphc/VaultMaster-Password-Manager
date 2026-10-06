@@ -27,8 +27,8 @@ authenticator attachment, other algorithms/attestation and other extensions (inc
 PRF) use the original native browser path; vault keys cannot satisfy those
 requests. A native browser may therefore still show its authenticator dialog.
 Unknown native options and native authenticator capabilities are not advertised
-as vault capabilities. Support has been checked in Chromium, not manually in
-Edge or Firefox. Sites using saved native methods, WebIDL brand checks or their
+as vault capabilities. Support has been checked in Chromium and Firefox desktop 157.0.1 through
+[the Firefox scenario](FIREFOX_SUPPORT.md); manual Edge validation remains outstanding. Sites using saved native methods, WebIDL brand checks or their
 own credential wrappers may bypass/reject the compatibility wrapper. This is
 not a claim of full WebAuthn client conformance or universal site compatibility.
 
@@ -80,7 +80,7 @@ not evidence of clone detection. No hardware attachment or transport is asserted
 The MAIN-world document-start wrapper uses normal `navigator.credentials`
 creation/assertion calls and returns compatible response objects with byte
 buffers, public SPKI/accessor methods and JSON serialization. Isolated content
-scripts only relay public ceremony inputs/results. Chrome supplies tab,
+scripts only relay public ceremony inputs/results. The browser supplies tab,
 document, frame and origin identity; page-supplied origins must match it exactly.
 The protected popup alone obtains a random approval capability. Approval is
 consumed before key operations and binds the live vault session/epoch, document,

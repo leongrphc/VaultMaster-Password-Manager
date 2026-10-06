@@ -269,12 +269,14 @@ function setStatus(text) {
 }
 
 function queryTabs(query) {
+	if (globalThis.browser?.tabs) return globalThis.browser.tabs.query(query);
 	return new Promise((resolve) => {
 		chrome.tabs.query(query, (tabs) => resolve(tabs));
 	});
 }
 
 function sendRuntimeMessage(payload) {
+	if (globalThis.browser?.runtime) return globalThis.browser.runtime.sendMessage(payload);
 	return new Promise((resolve, reject) => {
 		chrome.runtime.sendMessage(payload, (response) => {
 			const runtimeError = chrome.runtime.lastError;

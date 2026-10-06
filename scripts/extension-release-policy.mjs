@@ -7,15 +7,26 @@ export function extensionId(key) {
   createPublicKey({ key: Buffer.from(key, 'base64'), format: 'der', type: 'spki' });
   return sha256(Buffer.from(key, 'base64')).slice(0, 32).replace(/[0-9a-f]/g, c => String.fromCharCode(97 + parseInt(c, 16)));
 }
+export function manifestIdentity(manifest) {
+  return manifest.browser_specific_settings?.gecko?.id || extensionId(manifest.key);
+}
 export function validateManifest(manifest) {
-  if (manifest.manifest_version !== 3 || manifest.minimum_chrome_version !== '127' ||
-      extensionId(manifest.key) !== 'cajnckjhhpbgephllmoaceolbifmnkoa' ||
+  const firefox = manifest.browser_specific_settings !== undefined;
+  if (firefox) {
+    if (manifest.key !== undefined || manifest.minimum_chrome_version !== undefined ||
+        JSON.stringify(manifest.background) !== JSON.stringify({ scripts: ['background.js'], type: 'module' }) ||
+        JSON.stringify(manifest.browser_specific_settings) !== JSON.stringify({ gecko: { id: 'vaultmaster@mozkan.com.tr', strict_min_version: '153.0', data_collection_permissions: { required: ['personallyIdentifyingInfo', 'authenticationInfo', 'browsingActivity', 'websiteContent'] } } })) {
+      throw new Error('Firefox identity/background/data policy mismatch');
+    }
+  }
+  if (manifest.manifest_version !== 3 || (!firefox && (manifest.minimum_chrome_version !== '127' ||
+      extensionId(manifest.key) !== 'cajnckjhhpbgephllmoaceolbifmnkoa')) ||
       !/^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)$/.test(manifest.version) || manifest.version.split('.').some(n => Number(n) > 65535) || manifest.update_url ||
       JSON.stringify(manifest.permissions) !== JSON.stringify(['storage', 'contextMenus', 'alarms', 'idle', 'webNavigation']) ||
       JSON.stringify(manifest.host_permissions) !== JSON.stringify(['http://*/*', 'https://*/*']) ||
       JSON.stringify(manifest.content_scripts) !== JSON.stringify([{ matches: ['http://*/*', 'https://*/*'], js: ['form-detector.js', 'content.js'], run_at: 'document_start', all_frames: true }, { matches: ['http://*/*', 'https://*/*'], js: ['passkey-injected.js'], run_at: 'document_start', all_frames: false, world: 'MAIN' }]) ||
       manifest.web_accessible_resources !== undefined ||
-      manifest.background?.service_worker !== 'background.js' || manifest.background?.type !== 'module' ||
+      (!firefox && manifest.background?.service_worker !== 'background.js') || manifest.background?.type !== 'module' ||
       manifest.action?.default_popup !== 'popup.html' ||
       manifest.externally_connectable || manifest.optional_permissions || manifest.optional_host_permissions) {
     throw new Error('Extension identity/permission/manifest policy mismatch');

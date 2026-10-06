@@ -1,0 +1,313 @@
+{
+  "formatVersion": 1,
+  "timestamp": "2026-10-06T15:58:17.107Z",
+  "revision": "fae57ab73705b5600a3547b65aa5736b5ff8de60",
+  "implementationSha256": {
+    "harness": "06bb0c3cf6728a509ba6026069fee6da86fe407a24ffb8395212cc11f4f3ef3d",
+    "scenario": "24e138550064af0b24d986ca0b5160c2eadb0f88196625a47d8ec2b52f140488",
+    "scripts/firefox-checks.sh": "8bd750ea81c940d8687470a056cb14eb0a24ce5500a4f91f1210ffd53aff2785",
+    "tests/recovery/firefox.mjs": "4d1faec707ad7de8cf6a31301c2e2bc7396018e2e9423b250806ce02589fdc56",
+    "apps/extension/tests/firefox/driver.mjs": "879f1e1d06f8b120ed7ef66ba436979411f7ad09f9ed74324a194c7bde0703e3"
+  },
+  "nodeVersion": "v26.10.0",
+  "postgresqlVersion": "pg_dump (PostgreSQL) 18.6 (Ubuntu 18.6-0ubuntu0.26.04.1)",
+  "scope": "synthetic-only; local Unix socket; TCP disabled",
+  "status": "passed",
+  "checks": {
+    "personalBackup": {
+      "version": 4,
+      "exportChunks": 5,
+      "fileChunks": 5,
+      "sourceDeletedBeforeRecovery": true
+    },
+    "rollback": {
+      "injectedAt": "receipt creation after all inserts",
+      "httpStatus": 500,
+      "before": {
+        "folders": 0,
+        "items": 1,
+        "versions": 0,
+        "attachments": 0,
+        "receipts": 0
+      },
+      "insideTransaction": {
+        "folders": 1,
+        "items": 3,
+        "versions": 1,
+        "attachments": 1
+      },
+      "after": {
+        "folders": 0,
+        "items": 1,
+        "versions": 0,
+        "attachments": 0,
+        "receipts": 0
+      },
+      "stagedChunksRetained": true,
+      "existingItemUnchanged": true
+    },
+    "restore": {
+      "counts": {
+        "folders": 1,
+        "items": 2,
+        "trash": 1,
+        "versions": 1,
+        "attachments": 1
+      },
+      "uploadChunks": 5,
+      "duplicateUploads": "accepted",
+      "concurrentAndSequentialRetries": "one receipt; no duplicates",
+      "destinationDecryption": "all content types passed",
+      "existingItemUnchanged": true
+    },
+    "clientKeyExchangeRecovery": {
+      "wrappedDeviceKey": "verified after database restore",
+      "authenticatedEmergencyEnvelope": "decrypted and passkey signature verified",
+      "personalBackupRelationships": "excluded; re-enrollment required",
+      "sourceVaultKeyShared": false
+    },
+    "vaultPasskeyRecovery": {
+      "personalFile": true,
+      "databaseDump": true,
+      "verifiedAssertions": 2
+    },
+    "postgresqlRecovery": {
+      "format": "pg_dump custom / pg_restore --exit-on-error",
+      "tablesCompared": 21,
+      "everyRowEqual": true,
+      "destinationDecryption": "passed",
+      "dumpSha256": "da4002cc6decd9b3f2112eb4c0131f03071b25444b71258f12d0d4ca57b8d414"
+    }
+  },
+  "firefox": {
+    "version": "157.0.1",
+    "driver": "stock Firefox / geckodriver / Marionette",
+    "scenario": "sharing, emergency approvals, receipt-bound import conflicts, revocation, expiry and lock/unlock",
+    "status": "passed"
+  },
+  "cleanup": {
+    "accountsAndTransfers": "verified-empty",
+    "cluster": "stopped",
+    "temporaryFiles": "removed"
+  },
+  "testedWorkingTreeSha256": {
+    "apps/extension/scripts/build.mjs": "b678d87b1ea741c01a072039eaea733710b909c9092c12d85e9dbd5b5b24a58a",
+    "apps/extension/src/background.js": "4e493d16049111ae9bdaca4a62d6f3498511c58f25ac51ee64d33dbbcfe5c536",
+    "apps/extension/src/content.js": "50b6ad88395e36e81950d2d03bb36da2f5b8507f16e206f3221c715f75b54288",
+    "apps/extension/src/popup.js": "69c188f8d56be2e3e65e49a86c5510efe31c8e368f1702e8860de4f039670680",
+    "apps/extension/src/vault-session.js": "fdf53226510b0e0f02b5b528f4f554268625826d047a88632ac60bf3a5a6f26c",
+    "apps/extension/tests/background.test.mjs": "b838ca6845ef3946d2d07ce95d3134a47a825e455e23a9d87beecb38ea34979c",
+    "apps/extension/tests/firefox/browser.test.mjs": "564ab0a7b268745f16eec2cced9f16b2d8c6c4577261c0411fd377c19930dce0",
+    "apps/extension/tests/firefox/support.test.mjs": "3be1fdb52d6aecd1bb4011ed4d660d408904bfc5903dc3632df2135201f3e86c",
+    "scripts/extension-release-policy.mjs": "3cba8de16353b43036b535a7688af1452a107372838afe4baba15a0cc70636f6",
+    "scripts/package-extension.mjs": "7f51c462630517160aede7e1a24b5bc0914bce759f2a72ebf2a5b66424b899b9",
+    "scripts/verify-extension.mjs": "b01cb7e9d2ddeea3ba35343f8994ce15187096d657fdc4fa16dadab68e3eac93",
+    "scripts/tests/backup-drill-safety.test.mjs": "0ab186da5e96609979d9f00b30f78cd7ded87c4e0c349b036671bea86cdf7d16",
+    "scripts/tests/extension-docs.test.mjs": "7a53177d9237503b953c7630c2135c60806352863af07ef512a7cefbba3a7593",
+    "package.json": "c7c3f50a30926969fce880c4aaefb804f50fd02ebd0369005128cdc0a43b892d"
+  },
+  "verification": {
+    "frozenInstall": "passed",
+    "typecheck": "passed",
+    "lint": "passed; two existing navigation warnings",
+    "build": "passed; static web/API/shared/crypto/Chromium and Firefox extension",
+    "tests": {
+      "api": 71,
+      "web": 119,
+      "crypto": 24,
+      "extension": 83,
+      "firefoxExtensionAndPackage": 2,
+      "firefoxWebWithApiPostgresql": 1,
+      "chromiumExtension": 24,
+      "chromiumWebProxy": 3,
+      "chromiumSharingEmergencyWithApiPostgresql": 1,
+      "documentation": 4,
+      "dependencyPolicy": 3,
+      "isolationGuards": 6
+    },
+    "dependencyReview": "all/prod/dev passed; zero unreviewed; two reviewed high constraints",
+    "criticalAdvisoryGate": "passed; no critical findings",
+    "securityPrivacyObservabilityRollbackDenial": "passed",
+    "zipReproducibility": "two fresh byte-identical verified archives per browser; separate HTTPS-origin Firefox pair"
+  },
+  "standaloneRecovery": {
+    "timestamp": "2026-10-06T15:59:07.443Z",
+    "status": "passed",
+    "checks": {
+      "personalBackup": {
+        "version": 4,
+        "exportChunks": 5,
+        "fileChunks": 5,
+        "sourceDeletedBeforeRecovery": true
+      },
+      "rollback": {
+        "injectedAt": "receipt creation after all inserts",
+        "httpStatus": 500,
+        "before": {
+          "folders": 0,
+          "items": 1,
+          "versions": 0,
+          "attachments": 0,
+          "receipts": 0
+        },
+        "insideTransaction": {
+          "folders": 1,
+          "items": 3,
+          "versions": 1,
+          "attachments": 1
+        },
+        "after": {
+          "folders": 0,
+          "items": 1,
+          "versions": 0,
+          "attachments": 0,
+          "receipts": 0
+        },
+        "stagedChunksRetained": true,
+        "existingItemUnchanged": true
+      },
+      "restore": {
+        "counts": {
+          "folders": 1,
+          "items": 2,
+          "trash": 1,
+          "versions": 1,
+          "attachments": 1
+        },
+        "uploadChunks": 5,
+        "duplicateUploads": "accepted",
+        "concurrentAndSequentialRetries": "one receipt; no duplicates",
+        "destinationDecryption": "all content types passed",
+        "existingItemUnchanged": true
+      },
+      "clientKeyExchangeRecovery": {
+        "wrappedDeviceKey": "verified after database restore",
+        "authenticatedEmergencyEnvelope": "decrypted and passkey signature verified",
+        "personalBackupRelationships": "excluded; re-enrollment required",
+        "sourceVaultKeyShared": false
+      },
+      "vaultPasskeyRecovery": {
+        "personalFile": true,
+        "databaseDump": true,
+        "verifiedAssertions": 2
+      },
+      "postgresqlRecovery": {
+        "format": "pg_dump custom / pg_restore --exit-on-error",
+        "tablesCompared": 21,
+        "everyRowEqual": true,
+        "destinationDecryption": "passed",
+        "dumpSha256": "f6e329be192ddad22f638aa1f5f9e2d50076c1532f6e4f913ba39e7ad0312fc0"
+      }
+    },
+    "cleanup": {
+      "accountsAndTransfers": "verified-empty",
+      "cluster": "stopped",
+      "temporaryFiles": "removed"
+    }
+  },
+  "chromiumRecovery": {
+    "timestamp": "2026-10-06T16:00:13.649Z",
+    "status": "passed",
+    "checks": {
+      "personalBackup": {
+        "version": 4,
+        "exportChunks": 5,
+        "fileChunks": 5,
+        "sourceDeletedBeforeRecovery": true
+      },
+      "rollback": {
+        "injectedAt": "receipt creation after all inserts",
+        "httpStatus": 500,
+        "before": {
+          "folders": 0,
+          "items": 1,
+          "versions": 0,
+          "attachments": 0,
+          "receipts": 0
+        },
+        "insideTransaction": {
+          "folders": 1,
+          "items": 3,
+          "versions": 1,
+          "attachments": 1
+        },
+        "after": {
+          "folders": 0,
+          "items": 1,
+          "versions": 0,
+          "attachments": 0,
+          "receipts": 0
+        },
+        "stagedChunksRetained": true,
+        "existingItemUnchanged": true
+      },
+      "restore": {
+        "counts": {
+          "folders": 1,
+          "items": 2,
+          "trash": 1,
+          "versions": 1,
+          "attachments": 1
+        },
+        "uploadChunks": 5,
+        "duplicateUploads": "accepted",
+        "concurrentAndSequentialRetries": "one receipt; no duplicates",
+        "destinationDecryption": "all content types passed",
+        "existingItemUnchanged": true
+      },
+      "clientKeyExchangeRecovery": {
+        "wrappedDeviceKey": "verified after database restore",
+        "authenticatedEmergencyEnvelope": "decrypted and passkey signature verified",
+        "personalBackupRelationships": "excluded; re-enrollment required",
+        "sourceVaultKeyShared": false
+      },
+      "vaultPasskeyRecovery": {
+        "personalFile": true,
+        "databaseDump": true,
+        "verifiedAssertions": 2
+      },
+      "postgresqlRecovery": {
+        "format": "pg_dump custom / pg_restore --exit-on-error",
+        "tablesCompared": 21,
+        "everyRowEqual": true,
+        "destinationDecryption": "passed",
+        "dumpSha256": "c3f0036f41e5249dd9e5325b7066bd4a0b66f2df5396c36e9a029c391ea80eaf"
+      }
+    },
+    "cleanup": {
+      "accountsAndTransfers": "verified-empty",
+      "cluster": "stopped",
+      "temporaryFiles": "removed"
+    }
+  },
+  "limitations": [
+    "No signed Firefox XPI or AMO signing credentials: persistent signed install/update and real install consent dialogs unverified.",
+    "No physical WebAuthn authenticator: native hardware MFA and PRF local unlock unverified.",
+    "Tested Linux Firefox 157.0.1 only; minimum 153, other OS, ESR, Android, toolbar layout and automatic event-page suspension not exercised.",
+    "Playwright Firefox 150.0.2 lacks required native document IDs; stock Firefox/Marionette used.",
+    "Temporary add-on replacement/reinstallation does not prove signed delivery; no deployment, publication, hosted CI or independent audit."
+  ],
+  "archives": {
+    "chromium": {
+      "sha256": "4770b9a13c5df440af3999659c6f1e323f2b88e43e904af799ffee4f242ee1bd",
+      "appOrigin": "http://localhost:3000",
+      "apiUrl": "http://localhost:4000/api",
+      "reproducible": true,
+      "inventoryAndChecksumVerified": true
+    },
+    "firefox": {
+      "sha256": "7e9b9611b7ec4e11d05770779a86ac5183164e0bd0cf98e4e893c740b33710bd",
+      "appOrigin": "http://localhost:3000",
+      "apiUrl": "http://localhost:4000/api",
+      "reproducible": true,
+      "inventoryAndChecksumVerified": true
+    },
+    "firefoxHttps": {
+      "sha256": "83c9aa72e3b2274d0d0a34361c9d0cd6e133bbab3d78b5e123195ef736114c77",
+      "appOrigin": "https://vaultmaster.mozkan.com.tr",
+      "apiUrl": "https://vaultmaster-api.onrender.com/api",
+      "reproducible": true,
+      "inventoryAndChecksumVerified": true
+    }
+  }
+}

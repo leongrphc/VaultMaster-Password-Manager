@@ -11,8 +11,10 @@ doldurma**, **Doldur**, **Kaydet**, **Şifreyi Güncelle**, **Kasayı Kilitle** 
 ## Setup and installation
 
 Chrome 127+ is required. Edge 127+ uses the unpacked Chromium installation path,
-but manual Edge release validation remains outstanding. Firefox, file URLs,
-browser-internal/restricted pages and extension offline unlock/fill are unsupported.
+but manual Edge release validation remains outstanding. Firefox desktop 153+ uses
+the separate Firefox build and temporary installation described in the
+[Firefox guide](../../docs/FIREFOX_SUPPORT.md). File URLs, browser-internal/restricted
+pages and extension offline unlock/fill are unsupported.
 Use a synthetic account and disposable profile for development/release checks.
 
 From the repository root, with the committed lockfile, Node 22 and pnpm 9.15.0:
@@ -197,7 +199,7 @@ or unreviewed network/storage logs. This guide adds no diagnostic upload feature
 
 Version 1.3.0 is a local candidate. No store upload, publication, approval,
 automatic store update, production deployment or independent audit is claimed.
-The ZIP is a manual unpacked channel; a checksum detects changes, not publisher
+The Chromium ZIP is a manual unpacked channel; a checksum detects changes, not publisher
 authenticity. For packaging, checksum/inventory verification, exact store-ID review,
 manual Edge prerequisites and submission materials, follow the
 [installation/update checklist](../../docs/EXTENSION_STORE_PREPARATION.md).
@@ -226,6 +228,9 @@ pnpm exec playwright install chromium
 pnpm test:extension:browser
 pnpm test:web:browser
 ```
+
+Firefox build, temporary installation, permissions, checks and signed distribution
+limits are documented in the [Firefox guide](../../docs/FIREFOX_SUPPORT.md).
 
 Browser tests use the real MV3 extension in isolated Chromium and synthetic local
 API/form fixtures with real encryption; they require no live account/database.

@@ -206,3 +206,12 @@ The Playwright platform override selects installed Chromium on this Ubuntu 26.04
 host. Run packaging/tests serially; they share the staging directory. CI now
 compares two ZIP builds and verifies their inventory/checksum before tests. CI
 execution and any future publication must be verified separately.
+
+## Firefox candidate (P2-3)
+
+Firefox desktop uses a separate MV3 archive, Gecko ID and module event background
+page. Chromium identity/packaging remains unchanged. The
+[Firefox guide](FIREFOX_SUPPORT.md) covers the minimum version, deterministic
+archive commands, host/data permissions, temporary installation, update/restart
+evidence and signed AMO release prerequisites. This historical P1-5 evidence does
+not certify Firefox store acceptance or signed update delivery.

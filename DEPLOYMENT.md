@@ -114,7 +114,8 @@ five-minute deadline; a Chrome alarm, every-request checks and device-lock event
 enforce lock. Lock removes the key, plaintext items and pending draft/fill state.
 Login, unlock and secret fills require a reachable API. Device revocation and
 password changes from the web are checked on the next request. This version does
-not provide offline unlock/fill or Firefox support. Native WebAuthn remains account login/local unlock. Vault-stored ES256 passkeys
+not provide offline unlock/fill. Firefox desktop 153+ uses the separate build
+and installation path in [Firefox support](docs/FIREFOX_SUPPORT.md). Native WebAuthn remains account login/local unlock. Vault-stored ES256 passkeys
 now support explicit extension-popup registration/signing for the subset in
 [the passkey policy](docs/VAULT_PASSKEYS.md); required UV and unsupported requests
 retain the native browser path. Deploy the challenge-binding API hardening first,
@@ -467,3 +468,15 @@ Personal backups exclude contact keys/relationships; server dumps include encryp
 device wrappers/grants. Do not roll back to the legacy API authorization behavior.
 Run `bash scripts/key-exchange-checks.sh` after a static build for isolated real
 API/Chromium/recovery verification; no deployment connection URL is accepted.
+
+### Firefox candidate (P2-3)
+
+Build Firefox separately with `pnpm build:extension:firefox`; package with
+`pnpm package:extension:firefox` and verify with
+`pnpm verify:extension test-results/vaultmaster-firefox.zip`. Set the same public
+app/API build origins as Chromium. This does not deploy a Firefox download to the
+web app: the existing web download remains Chromium. See
+[Firefox support](docs/FIREFOX_SUPPORT.md) for temporary installation, host/data
+consent, stable Gecko ID, Firefox origin limitations and exact local evidence.
+Signed AMO installation/update and native hardware MFA require separate release
+validation; no Firefox publication or production deployment is claimed.

@@ -7,6 +7,7 @@ import { encryptJSON, decryptJSON } from './crypto/encryption.js';
 import { createStoredPasskey, signStoredPasskey, isStoredPasskey, validatePasskeyRequest } from './crypto/passkey.js';
 import { generateTotpCode } from './crypto/totp.js';
 
+const chrome = globalThis.browser || globalThis.chrome;
 const SESSION = 'vaultmasterNativeSession';
 const CACHE = 'vaultmasterEncryptedCache';
 const LOCK_MS = 5 * 60 * 1000;
@@ -39,7 +40,11 @@ export class VaultSession {
     this.ready = this.initialize();
   }
   async initialize() {
-    await this.storage.session.setAccessLevel({ accessLevel: 'TRUSTED_CONTEXTS' });
+    if (this.storage.session.setAccessLevel) {
+      await this.storage.session.setAccessLevel({ accessLevel: 'TRUSTED_CONTEXTS' });
+    } else if (!globalThis.browser?.runtime?.getDocumentId) {
+      throw new Error('Trusted session storage unavailable');
+    } // Firefox session storage is always inaccessible to content scripts.
     await this.storage.session.remove('vaultmasterPendingPasskeys');
     const stored = (await this.storage.session.get(SESSION))[SESSION];
     if (stored?.apiUrl === this.apiUrl && stored.user?.id && stored.tokens?.refreshToken) {
@@ -55,8 +60,8 @@ export class VaultSession {
     const value = this.session ? { ...this.session, apiUrl: this.apiUrl, keyBase64: this.keyBase64, deadline: this.deadline } : null;
     this.writes = this.writes.catch(() => undefined).then(async () => {
       if (value) await this.storage.session.set({ [SESSION]: value }); else await this.storage.session.remove(SESSION);
-      if (value?.keyBase64 && value.deadline > this.now()) await globalThis.chrome?.alarms?.create('vaultmaster-lock', { when: value.deadline });
-      else await globalThis.chrome?.alarms?.clear('vaultmaster-lock');
+      if (value?.keyBase64 && value.deadline > this.now()) await chrome?.alarms?.create('vaultmaster-lock', { when: value.deadline });
+      else await chrome?.alarms?.clear('vaultmaster-lock');
     });
     return this.writes;
   }
