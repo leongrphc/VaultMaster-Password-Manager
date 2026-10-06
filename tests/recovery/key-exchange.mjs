@@ -69,8 +69,16 @@ test('Chromium sharing and emergency recovery use real WebCrypto/API/PostgreSQL 
       await prisma.abuseBucket.deleteMany(); await button.click();
       for (let i = 0; i < count; i++) {
         const dialog = page.getByRole('dialog', { name: 'Güvenlik doğrulaması' });
-        await expect(dialog).toBeVisible(); await dialog.getByLabel('Ana şifre', { exact: true }).fill(password); await dialog.getByRole('button', { name: 'Doğrula ve devam et' }).click();
-        await expect(dialog).toBeHidden();
+        await expect(dialog).toBeVisible(); await dialog.getByLabel('Ana şifre', { exact: true }).fill(password);
+        const verified = page.waitForResponse(response => response.url().endsWith('/api/auth/reauthenticate') && response.request().method() === 'POST');
+        await dialog.getByRole('button', { name: 'Doğrula ve devam et' }).click();
+        assert.equal((await verified).status(), 200);
+        if (i + 1 < count) {
+          // Consecutive approvals may replace the same modal before a hidden
+          // state is rendered. Wait for the next empty, ready password prompt.
+          await expect(dialog.getByLabel('Ana şifre', { exact: true })).toHaveValue('');
+          await expect(dialog.getByRole('button', { name: 'Doğrula ve devam et' })).toBeEnabled();
+        } else await expect(dialog).toBeHidden();
       }
       await expect(page.getByRole('status').filter({ hasText: 'İşlem tamamlandı.' })).toBeVisible();
     }
