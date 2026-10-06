@@ -12,7 +12,7 @@ The active branch already includes client-side AES-256-GCM vault encryption, PBK
 ## P0 — reliability and production safety
 
 - [x] P0-1: Extend encrypted personal backups beyond the current 16 MiB snapshot / 24 MiB file limit with a versioned chunked or streaming format.
-- [ ] P0-2: Add a repeatable production backup and restore drill with documented rollback evidence, without using real user data.
+- [x] P0-2: Add a repeatable production backup and restore drill with documented rollback evidence, without using real user data.
 - [ ] P0-3: Complete dependency vulnerability review; separate actionable production/runtime findings from development-only findings and document decisions.
 - [ ] P0-4: Finish sensitive-action reauthentication, durable abuse/rate limiting, and clear security-change notifications.
 - [ ] P0-5: Add production health alerts, sync-failure observability, secret-free structured logs, and a tested deployment rollback runbook.
@@ -46,6 +46,14 @@ The active branch already includes client-side AES-256-GCM vault encryption, PBK
 7. Never use production user data for tests; use disposable or isolated databases.
 8. Preserve existing encryption formats and migration compatibility unless the feature explicitly includes a versioned migration.
 
-## First next task
+## Latest completed feature
 
-Start with **P0-1: versioned chunked/streaming encrypted personal backups**, after checking the existing backup format, API limits, client restore flow, tests, and deployment constraints.
+**P0-2: repeatable isolated backup and restore drill** is complete on
+`feature/p0-2-backup-restore-drill`. [Runbook](docs/BACKUP_RESTORE_DRILL.md) and
+[secret-free evidence](docs/evidence/p0-2-backup-restore-drill.json) cover synthetic
+v4 backup creation and chunk transfer, second-account recovery, duplicate retries,
+injected transaction failure with unchanged before/after state, PostgreSQL dump
+recovery into a second database, and cleanup. Repeated local drills, 5 backup API
+regressions, 2 isolation guard tests, 14 crypto tests and 74 web tests passed;
+frozen-lockfile install, typecheck, lint and static build passed (3 existing lint
+warnings). No production data or credentials were used. P0-3 was not started.

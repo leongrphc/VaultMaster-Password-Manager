@@ -18,10 +18,13 @@
     "db:migrate": "turbo db:migrate --filter=@vaultmaster/api",
     "db:seed": "turbo db:seed --filter=@vaultmaster/api",
     "test:extension:browser": "node --test apps/extension/tests/browser/*.mjs",
-    "test:web:browser": "node --test tests/browser/*.mjs"
+    "test:web:browser": "node --test tests/browser/*.mjs",
+    "drill:backup-restore": "bash scripts/backup-restore-drill.sh",
+    "test:backup-drill-safety": "node --test scripts/tests/backup-drill-safety.test.mjs"
   },
   "devDependencies": {
     "@playwright/test": "^1.60.0",
+    "esbuild": "0.27.7",
     "turbo": "^2.4.0",
     "typescript": "^5.7.0"
   },

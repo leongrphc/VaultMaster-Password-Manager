@@ -1,0 +1,73 @@
+{
+  "formatVersion": 1,
+  "timestamp": "2026-10-06T07:29:21.591Z",
+  "revision": "2f66cf0fc15d687eb19d3f196c17690e62ff6201",
+  "implementationSha256": {
+    "harness": "06bb0c3cf6728a509ba6026069fee6da86fe407a24ffb8395212cc11f4f3ef3d",
+    "scenario": "f2d86119199a41f98fb7f65e3216710dca2d77c070bf81c44bbb59a1417e46b8"
+  },
+  "nodeVersion": "v26.10.0",
+  "postgresqlVersion": "pg_dump (PostgreSQL) 18.6 (Ubuntu 18.6-0ubuntu0.26.04.1)",
+  "scope": "synthetic-only; local Unix socket; TCP disabled",
+  "status": "passed",
+  "checks": {
+    "personalBackup": {
+      "version": 4,
+      "exportChunks": 5,
+      "fileChunks": 5,
+      "sourceDeletedBeforeRecovery": true
+    },
+    "rollback": {
+      "injectedAt": "receipt creation after all inserts",
+      "httpStatus": 500,
+      "before": {
+        "folders": 0,
+        "items": 1,
+        "versions": 0,
+        "attachments": 0,
+        "receipts": 0
+      },
+      "insideTransaction": {
+        "folders": 1,
+        "items": 3,
+        "versions": 1,
+        "attachments": 1
+      },
+      "after": {
+        "folders": 0,
+        "items": 1,
+        "versions": 0,
+        "attachments": 0,
+        "receipts": 0
+      },
+      "stagedChunksRetained": true,
+      "existingItemUnchanged": true
+    },
+    "restore": {
+      "counts": {
+        "folders": 1,
+        "items": 2,
+        "trash": 1,
+        "versions": 1,
+        "attachments": 1
+      },
+      "uploadChunks": 5,
+      "duplicateUploads": "accepted",
+      "concurrentAndSequentialRetries": "one receipt; no duplicates",
+      "destinationDecryption": "all content types passed",
+      "existingItemUnchanged": true
+    },
+    "postgresqlRecovery": {
+      "format": "pg_dump custom / pg_restore --exit-on-error",
+      "tablesCompared": 16,
+      "everyRowEqual": true,
+      "destinationDecryption": "passed",
+      "dumpSha256": "b9c94b90bb52cc6ea2efc7a5d81acdddad48d7497b6f107d7119680a953f65d7"
+    }
+  },
+  "cleanup": {
+    "accountsAndTransfers": "verified-empty",
+    "cluster": "stopped",
+    "temporaryFiles": "removed"
+  }
+}

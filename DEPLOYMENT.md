@@ -370,3 +370,28 @@ the full Vitest suite; Playwright on Ubuntu 26.04 required
 `PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=ubuntu24.04-x64` and a locally downloaded
 Chromium (`PLAYWRIGHT_BROWSERS_PATH` under ignored `node_modules`). No production
 services were deployed or queried for verification.
+
+## Repeatable isolated recovery drill (P0-2)
+
+Run `pnpm drill:backup-restore` using the
+[backup/restore runbook](docs/BACKUP_RESTORE_DRILL.md). The harness provisions its
+own local PostgreSQL cluster with TCP disabled, applies the real migrations and
+uses synthetic accounts only. It accepts no database URL and discards inherited
+production credentials and telemetry settings. API test servers bind to loopback.
+
+The drill covers v4 creation/chunk transfer, source-account deletion, recovery
+into a second account with a new key, duplicate upload/commit retries, a failure
+injected after all data inserts, and verified transaction rollback. It also
+creates a custom PostgreSQL dump, restores it to a second empty database, compares
+every public table, verifies decryption, and removes both accounts and the cluster.
+No production services are contacted and no production backup is claimed.
+
+Verification on 2026-10-06: repeated successful isolated PostgreSQL 18.6 drills;
+5 existing backup integration tests, 2 isolation guard tests, 14 crypto tests and
+74 web tests passed. Frozen-lockfile install, typecheck, lint and static production
+build passed. Lint retains the 3 existing navigation warnings. The web suite used
+`NODE_OPTIONS=--no-experimental-webstorage` on Node 26.10.0. Secret-free
+[rollback and recovery evidence](docs/evidence/p0-2-backup-restore-drill.json)
+records before/inside/after counts, one receipt after retries, all 16 public tables
+matching after server recovery, and cleanup. Provider PITR, live recovery timing,
+production-scale performance and deployment rollback are not exercised here.
