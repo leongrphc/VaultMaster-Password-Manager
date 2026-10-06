@@ -26,8 +26,8 @@ export async function buildWebSecurity(root) {
     connect.push(sentry.origin);
   }
   const policy = ["default-src 'self'", `script-src 'self' ${[...hashes].sort().join(' ')}`,
-    "script-src-attr 'none'", "style-src 'self' 'unsafe-inline' https://api.fontshare.com", "img-src 'self' data: blob: https://www.google.com",
-    "font-src 'self' https://api.fontshare.com https://cdn.fontshare.com", `connect-src ${connect.join(' ')}`, "worker-src 'self'",
+    "script-src-attr 'none'", "style-src 'self' 'unsafe-inline'", "img-src 'self' data: blob: https://www.google.com",
+    "font-src 'self'", `connect-src ${connect.join(' ')}`, "worker-src 'self'",
     "object-src 'none'", "base-uri 'none'", "form-action 'self'", "frame-ancestors 'none'", "frame-src 'none'"].join('; ');
   const path = join(root, '_headers');
   if (`  Content-Security-Policy: ${policy}`.length > 2000) throw new Error('CSP exceeds Cloudflare static header line limit');

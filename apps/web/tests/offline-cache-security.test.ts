@@ -1,7 +1,7 @@
 import { webcrypto } from "node:crypto";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { deriveMasterKey, exportMasterKeyBase64 } from "@vaultmaster/crypto";
-import { persistLockVerifier, persistOfflineVaultSnapshot, readOfflineVaultSnapshot, verifyLockVerifier } from "../src/lib/offline-cache";
+import { persistLockVerifier, persistOfflineVaultSnapshot, readOfflineVaultSnapshot, verifyLockVerifier, removeOfflineSnapshotForCleanup } from "../src/lib/offline-cache";
 
 beforeEach(() => { localStorage.clear(); vi.stubGlobal("crypto", webcrypto); });
 afterEach(() => vi.unstubAllGlobals());
@@ -26,4 +26,21 @@ test("discards encrypted results from a session invalidated during encryption", 
   expect(await persistLockVerifier(masterKeyBase64, () => false)).toBe(false);
   expect(await persistOfflineVaultSnapshot({ items: [], folders: [], masterKeyBase64, isCurrent: () => false })).toBeNull();
   expect(localStorage.length).toBe(0);
+});
+
+
+test("cleanup invalidates a pending encryption, but later sync may create a fresh snapshot", async () => {
+  const masterKeyBase64 = await key();
+  const pending = persistOfflineVaultSnapshot({ items: [], folders: [], masterKeyBase64 });
+  removeOfflineSnapshotForCleanup();
+  expect(await pending).toBeNull();
+  expect(await readOfflineVaultSnapshot(masterKeyBase64)).toBeNull();
+  expect(await persistOfflineVaultSnapshot({ items: [], folders: [], masterKeyBase64 })).not.toBeNull();
+});
+
+test("another tab's cleanup generation invalidates encryption already in progress", async () => {
+  const masterKeyBase64 = await key();
+  const pending = persistOfflineVaultSnapshot({ items: [], folders: [], masterKeyBase64 });
+  localStorage.setItem("vaultmaster-offline-snapshot-generation", "synthetic-other-tab-generation");
+  expect(await pending).toBeNull();
 });

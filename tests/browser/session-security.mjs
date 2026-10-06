@@ -52,6 +52,10 @@ test('web preserves its random data key through password change, reload and unlo
     browser = await chromium.launch({ channel: 'chromium', headless: true });
     const context = await browser.newContext();
     const page = await context.newPage();
+    const consoleMessages = [];
+    page.on('console', message => consoleMessages.push(message.text()));
+    const fontRequests = [];
+    page.on('request', request => { if (request.resourceType() === 'font' || request.url().includes('fontshare.com')) fontRequests.push(request.url()); });
     const pageErrors = [];
     page.on('pageerror', error => pageErrors.push(error.message));
     await page.context().route('**/api/**', async route => {
@@ -159,6 +163,73 @@ test('web preserves its random data key through password change, reload and unlo
     await page.getByLabel('Ana Şifre (Tekrar)').fill(password);
     await page.getByLabel(/Ana şifremi unutursam/).check();
     await page.getByRole('button', { name: /^Hesap Oluştur/ }).click();
+    await expect(page.getByText('Encrypted browser fixture', { exact: true }).first()).toBeVisible();
+    // P1-7: system font loading, offline rendering and enforced font CSP.
+    assert.match(csp, /(?:^|; )font-src 'self'(?:;|$)/);
+    assert.ok(!csp.includes('fontshare.com'));
+    await page.evaluate(() => document.fonts.ready);
+    assert.equal(await page.evaluate(() => getComputedStyle(document.body).fontFamily), 'system-ui, sans-serif');
+    await context.setOffline(true);
+    assert.equal(await page.evaluate(() => document.fonts.status), 'loaded');
+    assert.ok(await page.getByText('Encrypted browser fixture', { exact: true }).first().isVisible());
+    await context.setOffline(false);
+    const fontCspBlocked = await page.evaluate(async () => {
+      const violations = [];
+      const listener = event => violations.push(event.effectiveDirective);
+      document.addEventListener('securitypolicyviolation', listener);
+      try { await new FontFace('BlockedFixture', 'url(https://font.invalid/fixture.woff2)').load(); } catch {}
+      await new Promise(done => setTimeout(done, 30));
+      document.removeEventListener('securitypolicyviolation', listener);
+      return violations.includes('font-src');
+    });
+    assert.equal(fontCspBlocked, true);
+    assert.ok(!fontRequests.some(url => url.includes('fontshare.com')));
+    await page.getByRole('link', { name: 'Ayarlar' }).click();
+    const cleanup = page.getByRole('region', { name: 'Çevrimdışı kopya temizliği' });
+    await expect(cleanup).toBeVisible();
+    await page.evaluate(async () => {
+      const cache = await caches.open('vaultmaster-static-v3');
+      await cache.put('/fixture-cleanup-retained', new Response('synthetic-app-asset'));
+    });
+    const retainedStorage = await page.evaluate(() => Object.fromEntries(['vaultmaster-auth', 'vaultmaster-lock-verifier', 'vaultmaster-local-unlock'].map(key => [key, localStorage.getItem(key)])));
+    assert.ok(await page.evaluate(() => localStorage.getItem('vaultmaster-offline-snapshot')));
+    const openCleanup = () => cleanup.getByRole('button', { name: 'Çevrimdışı Kopyayı Kaldır', exact: true }).click();
+    const approveCleanup = () => page.getByRole('button', { name: 'Yalnızca Çevrimdışı Kopyayı Kaldır', exact: true }).click();
+    await openCleanup();
+    assert.ok(!(await page.getByRole('dialog').innerText()).includes('fixture-secret'));
+    await page.getByRole('button', { name: 'Vazgeç', exact: true }).click();
+    assert.ok(await page.evaluate(() => localStorage.getItem('vaultmaster-offline-snapshot')));
+    await openCleanup();
+    await page.keyboard.press('Escape');
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    // A forced navigation while confirmation is open abandons its approval.
+    await openCleanup();
+    await page.getByRole('link', { name: 'Tüm Öğeler' }).evaluate(link => link.click());
+    await expect(page).toHaveURL(/\/vault\/?$/);
+    await page.getByRole('link', { name: 'Ayarlar' }).click();
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    assert.ok(await page.evaluate(() => localStorage.getItem('vaultmaster-offline-snapshot')));
+    await page.evaluate(() => {
+      window.fixtureRemoveItem = Storage.prototype.removeItem;
+      Storage.prototype.removeItem = function(key) {
+        if (key === 'vaultmaster-offline-snapshot') throw new Error('fixture-secret-do-not-leak');
+        return window.fixtureRemoveItem.call(this, key);
+      };
+    });
+    await openCleanup(); await approveCleanup();
+    await expect(cleanup.getByRole('alert')).toBeVisible();
+    assert.ok(!(await cleanup.innerText()).includes('fixture-secret'));
+    assert.ok(await page.evaluate(() => localStorage.getItem('vaultmaster-offline-snapshot')));
+    await page.evaluate(() => { Storage.prototype.removeItem = window.fixtureRemoveItem; delete window.fixtureRemoveItem; });
+    await openCleanup(); await approveCleanup();
+    await expect(cleanup.getByRole('status')).toBeVisible();
+    assert.equal(await page.evaluate(() => localStorage.getItem('vaultmaster-offline-snapshot')), null);
+    await openCleanup(); await approveCleanup();
+    assert.equal(await page.evaluate(() => localStorage.getItem('vaultmaster-offline-snapshot')), null);
+    assert.deepEqual(await page.evaluate(() => Object.fromEntries(['vaultmaster-auth', 'vaultmaster-lock-verifier', 'vaultmaster-local-unlock'].map(key => [key, localStorage.getItem(key)]))), retainedStorage);
+    assert.equal(await page.evaluate(async () => (await (await caches.open('vaultmaster-static-v3')).match('/fixture-cleanup-retained'))?.text()), 'synthetic-app-asset');
+    assert.ok(!consoleMessages.some(message => message.includes('fixture-secret-do-not-leak')));
+    await page.getByRole('link', { name: 'Tüm Öğeler' }).click();
     await expect(page.getByText('Encrypted browser fixture', { exact: true }).first()).toBeVisible();
     // P1-4: real Chromium, real WebCrypto and built CSP; provider responses are synthetic.
     let breachMode = 'wait';

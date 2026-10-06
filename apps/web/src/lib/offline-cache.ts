@@ -19,6 +19,8 @@ export interface OfflineVaultSnapshot {
 }
 
 const OFFLINE_SNAPSHOT_KEY = "vaultmaster-offline-snapshot";
+// Opaque, non-secret generation invalidates encryption started before cleanup.
+const SNAPSHOT_GENERATION_KEY = "vaultmaster-offline-snapshot-generation";
 const LOCK_VERIFIER_KEY = "vaultmaster-lock-verifier";
 const LOCK_VERIFIER_MARKER = "vaultmaster-lock-verifier";
 
@@ -33,6 +35,7 @@ export async function persistOfflineVaultSnapshot(params: {
     return null;
   }
 
+  const generation = localStorage.getItem(SNAPSHOT_GENERATION_KEY);
   const savedAt = new Date().toISOString();
   const masterKey = await importMasterKey(masterKeyBase64);
   const encrypted = await encryptJSON(
@@ -45,6 +48,7 @@ export async function persistOfflineVaultSnapshot(params: {
   );
 
   if (params.isCurrent && !params.isCurrent()) return null;
+  if (localStorage.getItem(SNAPSHOT_GENERATION_KEY) !== generation) return null;
   localStorage.setItem(
     OFFLINE_SNAPSHOT_KEY,
     JSON.stringify({
@@ -165,4 +169,17 @@ export function clearLockVerifier() {
   }
 
   localStorage.removeItem(LOCK_VERIFIER_KEY);
+}
+
+/** Presence only: never decrypt or expose snapshot content in cleanup UI. */
+export function hasOfflineVaultSnapshot(): boolean {
+  return typeof window !== "undefined" && localStorage.getItem(OFFLINE_SNAPSHOT_KEY) !== null;
+}
+
+/** Only the encrypted local snapshot is removable here; no bulk storage deletion. */
+export function removeOfflineSnapshotForCleanup(): void {
+  if (typeof window === "undefined") return;
+  // Write first: if storage is unavailable, fail without reporting success.
+  localStorage.setItem(SNAPSHOT_GENERATION_KEY, crypto.randomUUID());
+  clearOfflineVaultSnapshot();
 }

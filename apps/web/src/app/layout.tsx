@@ -20,10 +20,6 @@ export default function RootLayout({
   return (
     <html lang="tr" data-scroll-behavior="smooth">
       <head>
-        <link
-          href="https://api.fontshare.com/v2/css?f[]=cabinet-grotesk@400;500;700;800&f[]=satoshi@400;500;700&display=swap"
-          rel="stylesheet"
-        />
         <link rel="manifest" href="/manifest.webmanifest" />
         <meta name="theme-color" content="#0a0e1a" />
       </head>
