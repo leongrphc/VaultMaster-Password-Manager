@@ -1,5 +1,10 @@
 # VaultMaster — bireysel kullanım için geliştirme yol haritası
 
+Bu belge 5 Ekim incelemesinin tarihsel kaydıdır. 6 Ekim geliştirmelerinin güncel
+durumu [CURRENT_DEVELOPMENT_ROADMAP.md](CURRENT_DEVELOPMENT_ROADMAP.md), canlı yayın
+ve doğrulama kaydı [DEPLOYMENT.md](DEPLOYMENT.md#verified-release--2026-10-06)
+içindedir; aşağıdaki eksik listesi güncel durum olarak kullanılmamalıdır.
+
 İnceleme tarihi: 5 Ekim 2026. İlk hedef: güvenli kişisel kasa ve güvenilir otomatik doldurma.
 Bu belge kod incelemesinin ve otomatik testlerin sonucudur; bağımsız güvenlik denetimi veya ürün sertifikası değildir.
 

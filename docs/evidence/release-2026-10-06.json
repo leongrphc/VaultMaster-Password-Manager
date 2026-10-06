@@ -1,0 +1,37 @@
+{
+  "releaseDate": "2026-10-06",
+  "applicationCommit": "aa582f4af519269d3cb0a5d060c2313b6574bb35",
+  "mainCiRun": 37496925283,
+  "mainCiConclusion": "success",
+  "renderDeployId": "dep-db2jjiqj9qps73eid13g",
+  "renderDeployStatus": "live",
+  "cloudflareVersion": "17ae6594-b51b-4edc-8689-7fd9fc4a8a31",
+  "preMigrationSnapshot": "snap-rapid-king-b2t6zqwz",
+  "appliedMigrationCount": 7,
+  "extensionVersion": "1.3.0",
+  "chromiumZipSha256": "57073fe39b05417fb590b03873477c1c82ee663ca83119b29a8be94ed0f1e2b9",
+  "firefoxZipSha256": "83c9aa72e3b2274d0d0a34361c9d0cd6e133bbab3d78b5e123195ef736114c77",
+  "liveChecks": [
+    "API, database and same-origin proxy readiness",
+    "Random-key registration and encrypted item creation",
+    "HttpOnly cookies, web login, reload lock/unlock and new settings",
+    "Real production-configured MV3 extension login and protected HTTPS fixture fill",
+    "Reauthenticated password change preserving encrypted item decryption",
+    "v4 backup approval and wrong-password rejection",
+    "Source-account deletion followed by independent destination-key restore",
+    "Idempotent restore commit without duplicate items",
+    "Live Chromium and Firefox download hashes matching local verified archives"
+  ],
+  "liveCheckConclusion": "passed",
+  "syntheticAccountCleanup": "verified-zero-remaining-release-accounts",
+  "recentApplicationErrorLogCount": 0,
+  "limitations": [
+    "Provider snapshot restore was not exercised; isolated PostgreSQL recovery passed in CI",
+    "One initial post-cutover browser login click timed out; its synthetic account was removed and the full fresh live check passed",
+    "Unpacked Chromium extensions require manual replacement/reload",
+    "Firefox archive is unsigned and supports temporary installation only",
+    "Offline extension unlock/fill remains disabled",
+    "Production paging awaits verified backup heartbeat and recipient/log routing",
+    "Independent security review and store publication are not claimed"
+  ]
+}

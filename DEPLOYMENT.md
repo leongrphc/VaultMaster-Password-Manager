@@ -11,7 +11,50 @@ Current deployment:
 - Render service: `srv-db1touh42hec73e7qkg0`, Frankfurt, Free.
 - Neon project: `young-shape-45320139`, AWS Frankfurt, organization Free.
 - Cloudflare Worker: `vaultmaster-web`, configured in `wrangler.web.jsonc`.
-- Deployment branch: `deploy/free-hosting` (Render auto-deploys this branch).
+- Deployment branch: `deploy/free-hosting`. Render reports auto-deploy enabled,
+  but the 6 October push produced no deployment event; this release required a
+  manual deploy. Always confirm a deploy for the intended commit after a push.
+
+### Verified release — 2026-10-06
+
+- Consolidated application code: `aa582f4af519269d3cb0a5d060c2313b6574bb35`,
+  merged into `main` and promoted to `deploy/free-hosting`.
+- Render deploy: `dep-db2jjiqj9qps73eid13g`, live. The chunked-backup,
+  sensitive-action-security and client-key-exchange migrations applied before
+  the web cutover; all seven migrations are applied.
+- Cloudflare version: `17ae6594-b51b-4edc-8689-7fd9fc4a8a31`.
+- Chrome/Edge extension 1.3.0: [verified download](https://vaultmaster.mozkan.com.tr/downloads/vaultmaster-extension.zip).
+  Existing unpacked installations need manual replacement/reload; no store
+  publication or automatic extension update is claimed.
+- Firefox 1.3.0: [unsigned temporary-installation package](https://vaultmaster.mozkan.com.tr/downloads/vaultmaster-firefox.zip).
+  This is not a signed XPI or permanent AMO installation; follow
+  [Firefox installation instructions](docs/FIREFOX_SUPPORT.md).
+- Pre-migration Neon snapshot: `snap-rapid-king-b2t6zqwz`. It was retained;
+  provider snapshot recovery was not exercised. Synthetic PostgreSQL recovery
+  is verified separately by the isolated CI drill.
+- Main CI [37496925283](https://github.com/leongrphc/VaultMaster-Password-Manager/actions/runs/37496925283)
+  passed, including audit, offline-disabled enforcement, lint/typecheck,
+  builds, database/unit tests, real Chromium web/MV3 tests and isolated
+  sharing/emergency/backup recovery. CI checkout now includes the pinned
+  rollback history; LF checkout preserves reviewed-source fingerprints.
+- Live verification passed with disposable accounts: readiness, random-key
+  registration, encrypted item creation, HttpOnly cookies, web login and
+  reload lock/unlock, updated settings, independent real-extension login and
+  HTTPS fixture fill, reauthenticated password change preserving ciphertext,
+  v4 backup approval and wrong-password rejection, source-account deletion,
+  new-key restore, idempotent commit, and both download hashes. Test accounts
+  were deleted and recent application error logs were empty. One initial
+  post-cutover login click timed out; its account was also removed, and the
+  complete fresh run passed. [Secret-free release evidence](docs/evidence/release-2026-10-06.json).
+- Offline extension unlock/fill remains blocked by the reviewed P2-4 gate.
+  Production paging remains opt-in pending a verified backup heartbeat and
+  operator recipient/log routing. Store signing/publication and independent
+  security review remain separate work.
+
+Earlier feature sections below describe implementation-time evidence and limits;
+their "not deployed" statements are historical. This release record identifies
+the deployed scope. Existing backup size limits and unsupported browser/form
+boundaries still apply.
 
 ### Verified release — 2026-10-05
 

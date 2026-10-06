@@ -1,7 +1,14 @@
 # VaultMaster — Current Development Roadmap
 
 Updated: 6 October 2026
-Base branch: `fix/extension-navigation`
+Integration branch: `main`; production API branch: `deploy/free-hosting`.
+
+The completed feature chain was consolidated and deployed on 6 October 2026.
+See [the current verified release](DEPLOYMENT.md#verified-release--2026-10-06)
+for deployment IDs, CI and live verification. Feature notes below record their
+original implementation-time checks, including historical "not deployed" and
+"next feature untouched" statements. P2-4 remains blocked; monitoring delivery,
+store signing/publication and P2-5 are not completed by this deployment.
 
 This roadmap replaces the older `DEVELOPMENT_ROADMAP.md` as the working priority list. Each completed feature must be independently tested, committed, pushed, and verified on GitHub before the next feature begins.
 
@@ -37,7 +44,7 @@ The active branch already includes client-side AES-256-GCM vault encryption, PBK
 
 ## Working rules
 
-1. Work from `fix/extension-navigation` unless a feature branch is explicitly required.
+1. Branch new development from the consolidated `main`; promote tested releases to `deploy/free-hosting` for the API and publish the matching web assets.
 2. Do not use the obsolete roadmap as the priority source.
 3. Before changing code, inspect the active branch and run the smallest relevant baseline tests.
 4. One feature at a time. Do not mix unrelated fixes.
