@@ -85,6 +85,8 @@ jobs:
           cache: pnpm
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+      - name: Enforce blocked offline approval and test fail-closed gate
+        run: pnpm check:offline-disabled && pnpm test:offline-gate
       - name: Verify recovery drill isolation guards
         run: pnpm test:backup-drill-safety
       - name: Test health alert thresholds, rollback abort policy and privacy boundaries

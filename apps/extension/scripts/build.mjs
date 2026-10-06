@@ -1,6 +1,9 @@
+import { checkOfflineDisabled } from '../../../scripts/offline-approval-gate.mjs';
 import { transformSync } from "esbuild";
 import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
+
+checkOfflineDisabled();
 
 const root = resolve(import.meta.dirname, "..");
 const srcDir = resolve(root, "src");

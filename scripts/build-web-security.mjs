@@ -1,9 +1,11 @@
+import { checkOfflineDisabled } from './offline-approval-gate.mjs';
 import { readFile, writeFile, readdir } from 'node:fs/promises';
 import { resolve, join } from 'node:path';
 import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 
 export async function buildWebSecurity(root) {
+  checkOfflineDisabled();
   const hashes = new Set();
   async function scan(directory) {
     for (const entry of await readdir(directory, { withFileTypes: true })) {

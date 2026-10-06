@@ -19,11 +19,14 @@ test('release manifest pins identity, version, minimal permissions and HTTP(S) p
     assert.throws(() => validateManifest({ ...source, ...patch }));
   }
 });
-test('clean rebuilds are reproducible, inventoried and exclude local artifacts', async () => {
+test('unreviewed source blocks packaging; clean rebuilds are reproducible, inventoried and exclude local artifacts', async () => {
   const temp = await mkdtemp(join(tmpdir(), 'vaultmaster-release-'));
   const artifact = join(root, 'src/p1-5-local-fixture.map');
   try {
     await writeFile(artifact, 'test local artifact, must never ship');
+    // P2-4 requires a new review even for added source files. No automatic pin refresh.
+    await assert.rejects(packageExtension(join(temp, 'blocked.zip')));
+    await rm(artifact);
     const first = join(temp, 'first.zip'), second = join(temp, 'second.zip');
     assert.equal(await packageExtension(first), await packageExtension(second));
     const zip = await readFile(first);

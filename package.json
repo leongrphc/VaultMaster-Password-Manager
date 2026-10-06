@@ -3,7 +3,7 @@
   "private": true,
   "scripts": {
     "dev": "turbo dev",
-    "build": "turbo build",
+    "build": "pnpm check:offline-disabled && turbo build",
     "lint": "turbo lint",
     "typecheck": "turbo typecheck",
     "test": "turbo test",
@@ -31,7 +31,10 @@
     "build:extension:firefox": "node apps/extension/scripts/build.mjs apps/extension/dist-firefox firefox",
     "package:extension:firefox": "node scripts/package-extension.mjs test-results/vaultmaster-firefox.zip firefox",
     "test:extension:firefox": "node --test apps/extension/tests/firefox/*.test.mjs",
-    "test:firefox:recovery": "bash scripts/firefox-checks.sh"
+    "test:firefox:recovery": "bash scripts/firefox-checks.sh",
+    "gate:offline": "node scripts/offline-approval-gate.mjs",
+    "check:offline-disabled": "node scripts/offline-approval-gate.mjs --check-disabled",
+    "test:offline-gate": "node --test scripts/tests/offline-approval-gate.test.mjs"
   },
   "devDependencies": {
     "@playwright/test": "^1.60.0",

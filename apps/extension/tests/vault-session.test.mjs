@@ -228,3 +228,56 @@ test('lock while passkey post-sign session check is pending suppresses assertion
   await new Promise(resolve => setTimeout(resolve, 30)); await session.lock(); release();
   await assert.rejects(operation);
 });
+
+// P2-4 is blocked: authentic cached ciphertext must never become authority.
+test('network loss denies unlock even with a populated authentic encrypted cache', async () => {
+  const { session, storage } = await fixture(); await login(session); await session.lock();
+  const cached = structuredClone(storage.local.values.get('vaultmasterEncryptedCache'));
+  session.fetcher = async () => { throw new Error('synthetic offline'); };
+  await assert.rejects(session.unlock(password), error => error.status === 0);
+  assert.equal(session.key, null); assert.deepEqual(session.items, []);
+  assert.equal((await session.status()).isUsingOfflineData, false);
+  assert.deepEqual(storage.local.values.get('vaultmasterEncryptedCache'), cached);
+});
+
+test('already unlocked network loss denies credential, suggestion, TOTP and passkey delivery from memory/cache', async () => {
+  const { session } = await fixture(); await login(session);
+  assert.ok(session.key); assert.ok(session.items.length);
+  session.fetcher = async () => { throw new Error('synthetic offline'); };
+  for (const type of ['VM_GET_LOGIN_CREDENTIAL_REQUEST', 'VM_GET_PASSWORD_REQUEST',
+    'VM_LIST_LOGIN_SUGGESTIONS_REQUEST', 'VM_GET_TOTP_CODE_REQUEST', 'VM_GET_CREDIT_CARD_REQUEST', 'VM_GET_IDENTITY_REQUEST']) {
+    await assert.rejects(session.request(type, { itemId: 'item-1', pageUrl: record.url, identifier: record.username }), error => error.status === 0);
+  }
+  const request = { origin: record.url, rpId: 'example.test', challenge: Buffer.alloc(32, 8).toString('base64url') };
+  await assert.rejects(session.passkeyCandidates(request), error => error.status === 0);
+  await assert.rejects(session.performPasskey('get', request, 'item-1', () => {}), error => error.status === 0);
+  await session.lock(); assert.equal(session.key, null);
+});
+
+test('copied/replayed persistent profile cannot restore authority after logout or browser restart', async () => {
+  const { session, storage } = await fixture(); await login(session);
+  const cache = structuredClone(storage.local.values.get('vaultmasterEncryptedCache'));
+  await session.logout();
+  for (const savedAt of [cache.savedAt, '2099-01-01T00:00:00.000Z', '2000-01-01T00:00:00.000Z']) {
+    await storage.local.set({ vaultmasterEncryptedCache: { ...cache, savedAt }, offlineEnabled: true, offlineApproved: true });
+    const restored = new VaultSession({ storage, apiUrl: session.apiUrl,
+      fetcher: async () => { throw new Error('synthetic offline'); }, now: () => 1 });
+    await restored.ready;
+    await assert.rejects(restored.unlock(password), /Önce giriş/);
+    assert.equal((await credential(restored)).payload.status, 'logged_out');
+    assert.equal(restored.key, null); assert.deepEqual(restored.items, []);
+  }
+});
+
+test('replayed cache and trusted-memory worker restart cannot bypass live revocation', async () => {
+  const { session, storage, fetcher, state } = await fixture(); await login(session);
+  const cache = structuredClone(storage.local.values.get('vaultmasterEncryptedCache'));
+  state.revoked = true;
+  const restored = new VaultSession({ storage, fetcher, apiUrl: session.apiUrl, now: () => 1 });
+  await restored.ready;
+  await storage.local.set({ vaultmasterEncryptedCache: cache });
+  await assert.rejects(credential(restored));
+  assert.equal(restored.session, null); assert.equal(restored.key, null);
+  assert.deepEqual(restored.items, []);
+  assert.equal(storage.local.values.has('vaultmasterEncryptedCache'), false);
+});
