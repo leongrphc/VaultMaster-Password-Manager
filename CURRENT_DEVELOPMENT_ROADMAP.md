@@ -13,7 +13,7 @@ The active branch already includes client-side AES-256-GCM vault encryption, PBK
 
 - [x] P0-1: Extend encrypted personal backups beyond the current 16 MiB snapshot / 24 MiB file limit with a versioned chunked or streaming format.
 - [x] P0-2: Add a repeatable production backup and restore drill with documented rollback evidence, without using real user data.
-- [ ] P0-3: Complete dependency vulnerability review; separate actionable production/runtime findings from development-only findings and document decisions.
+- [x] P0-3: Complete dependency vulnerability review; separate actionable production/runtime findings from development-only findings and document decisions. [Review and follow-ups](docs/DEPENDENCY_VULNERABILITY_REVIEW.md), [secret-free evidence](docs/evidence/p0-3-dependency-audit.json): 82 baseline advisory records reduced to 2 upstream CLI/lint constraints, with weekly review and exceptions expiring 5 November 2026. Repeatable all/prod/dev CI gates added; 185 unit/integration tests, 3 audit-policy tests, typecheck/lint/static build and Chromium web/extension checks passed. P0-4 remains untouched.
 - [ ] P0-4: Finish sensitive-action reauthentication, durable abuse/rate limiting, and clear security-change notifications.
 - [ ] P0-5: Add production health alerts, sync-failure observability, secret-free structured logs, and a tested deployment rollback runbook.
 
