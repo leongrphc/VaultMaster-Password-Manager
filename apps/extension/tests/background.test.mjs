@@ -3,11 +3,13 @@ import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import test from "node:test";
 
-async function loadBackground({ vaultTab = { id: 7, windowId: 1 }, tabResponse = { ok: true, payload: { valid: true } } } = {}) {
+async function loadBackground({ frames: fixtureFrames, onVaultRequest, vaultTab = { id: 7, windowId: 1 }, tabResponse = { ok: true, payload: { valid: true } } } = {}) {
   const listeners = [];
   const localStorage = new Map();
   const sessionStorage = new Map();
   const tabMessages = [];
+  let currentSender;
+
 
   globalThis.chrome = {
     runtime: {
@@ -17,6 +19,14 @@ async function loadBackground({ vaultTab = { id: 7, windowId: 1 }, tabResponse =
       onMessage: { addListener: (listener) => listeners.push(listener) },
       onInstalled: { addListener: () => undefined },
     },
+    webNavigation: { getAllFrames: async () => {
+      if (fixtureFrames) return fixtureFrames;
+      const sender = currentSender;
+      const origin = sender?.tab?.url || sender?.url || 'https://example.com';
+      const main = { frameId: 0, parentFrameId: -1, documentId: 'main', url: origin, documentLifecycle: 'active' };
+      return sender?.frameId > 0 ? [main, { frameId: sender.frameId, parentFrameId: 0,
+        parentDocumentId: 'main', documentId: 'child', url: sender.url, documentLifecycle: 'active' }] : [main];
+    } },
     commands: { onCommand: { addListener: () => undefined } },
     contextMenus: {
       onClicked: { addListener: () => undefined },
@@ -44,7 +54,7 @@ async function loadBackground({ vaultTab = { id: 7, windowId: 1 }, tabResponse =
   };
 
   globalThis.__vaultFixture = { ready: Promise.resolve(), status: async () => ({ isAuthenticated: true, isLocked: false }),
-    request: async (type, payload) => { tabMessages.push({ type, ...payload }); return tabResponse; } };
+    request: async (type, payload) => { await onVaultRequest?.(); tabMessages.push({ type, ...payload }); return tabResponse; } };
   const source = (await readFile(resolve("src/background.js"), "utf8"))
     .replace("import { nativeVault } from './vault-session.js';", 'const nativeVault = globalThis.__vaultFixture;');
   await import(`data:text/javascript,${encodeURIComponent(source)}#${Date.now()}-${Math.random()}`);
@@ -53,6 +63,8 @@ async function loadBackground({ vaultTab = { id: 7, windowId: 1 }, tabResponse =
     tabMessages,
     sessionStorage,
     async send(message, sender = { tab: { id: 42 }, url: "https://example.com/login", frameId: 0 }) {
+      sender = { documentId: sender.frameId > 0 ? 'child' : 'main', ...sender };
+      currentSender = sender;
       return new Promise((resolve) => {
         for (const listener of listeners) {
           if (listener(message, sender, resolve) === true) {
@@ -310,10 +322,10 @@ for (const type of ["GET_LOGIN_CREDENTIAL", "GET_PASSWORD_FOR_FILL", "VALIDATE_C
   });
 }
 
-test("credential lookup uses the actual frame document, not the claimed path or top-level URL", async () => {
+test("credential lookup uses the actual frame document, not the claimed path", async () => {
   const background = await loadBackground();
   await background.send({ type: "GET_LOGIN_CREDENTIAL", itemId: "item-1", pageUrl: "https://example.com/claimed" }, {
-    tab: { id: 42, url: "https://other.test" }, url: "https://example.com/actual", frameId: 3,
+    tab: { id: 42, url: "https://example.com/top" }, url: "https://example.com/actual", frameId: 3,
   });
   assert.equal(background.tabMessages[0].pageUrl, "https://example.com/actual");
 });
@@ -325,3 +337,48 @@ for (const sender of [{}, { tab: { id: 42 }, url: "about:blank" }, { tab: { id: 
     assert.equal(background.tabMessages.length, 0);
   });
 }
+
+for (const type of ['LIST_AUTOFILL_TARGETS', 'FILL_AUTOFILL_TARGET']) {
+  test(`${type} accepts only the extension popup sender`, async () => {
+    const background = await loadBackground();
+    for (const sender of [{ tab: { id: 42 }, url: 'https://example.com' },
+      { id: 'other-extension', url: 'chrome-extension://fixture-extension/popup.html' }]) {
+      assert.equal((await background.send({ type, tabId: 42, itemId: 'item-1' }, sender)).ok, false);
+    }
+    assert.equal(background.tabMessages.length, 0);
+  });
+}
+
+for (const sender of [
+  { tab: { id: 42, url: 'https://other.test' }, url: 'https://example.com', frameId: 3 },
+  { tab: { id: 42 }, url: 'https://example.com', origin: 'null' },
+  { tab: { id: 42 }, url: 'https://example.com', origin: 'https://evil.test' },
+  { tab: { id: 42 }, url: 'https://example.com', documentId: 'replaced-document' },
+]) {
+  test(`rejects cross-origin, opaque or stale source: ${JSON.stringify(sender)}`, async () => {
+    const background = await loadBackground();
+    assert.equal((await background.send({ type: 'GET_LOGIN_CREDENTIAL', itemId: 'item-1', pageUrl: sender.url, forceFill: true }, sender)).ok, false);
+    assert.equal(background.tabMessages.length, 0);
+  });
+}
+
+test('same-origin descendants inside a foreign ancestor are unsupported', async () => {
+  const frames = [
+    { frameId: 0, documentId: 'main', url: 'https://example.com', documentLifecycle: 'active' },
+    { frameId: 1, documentId: 'foreign', parentFrameId: 0, parentDocumentId: 'main', url: 'https://evil.test', documentLifecycle: 'active' },
+    { frameId: 2, documentId: 'child', parentFrameId: 1, parentDocumentId: 'foreign', url: 'https://example.com', documentLifecycle: 'active' },
+  ];
+  const background = await loadBackground({ frames });
+  assert.equal((await background.send({ type: 'GET_LOGIN_CREDENTIAL', itemId: 'item-1', pageUrl: 'https://example.com' },
+    { tab: { id: 42 }, frameId: 2, documentId: 'child', url: 'https://example.com' })).ok, false);
+  assert.equal(background.tabMessages.length, 0);
+});
+
+test('rechecks the browser document after asynchronous vault work before returning a secret', async () => {
+  const frames = [{ frameId: 0, documentId: 'main', url: 'https://example.com/login', documentLifecycle: 'active' }];
+  const background = await loadBackground({ frames, onVaultRequest: () => { frames[0].documentLifecycle = 'cached'; },
+    tabResponse: { ok: true, payload: { status: 'ready', credential: { password: 'must-not-return' } } } });
+  const response = await background.send({ type: 'GET_LOGIN_CREDENTIAL', itemId: 'item-1', pageUrl: frames[0].url });
+  assert.equal(response.ok, false);
+  assert.equal(JSON.stringify(response).includes('must-not-return'), false);
+});

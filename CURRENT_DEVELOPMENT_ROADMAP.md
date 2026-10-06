@@ -19,7 +19,7 @@ The active branch already includes client-side AES-256-GCM vault encryption, PBK
 
 ## P1 — first-release product completeness
 
-- [ ] P1-1: Improve autofill for iframe and Shadow DOM forms with explicit source-origin and trust decisions.
+- [x] P1-1: Improve autofill for iframe and Shadow DOM forms with explicit source-origin and trust decisions. [Policy, verification and limitations](docs/ADVANCED_AUTOFILL_SECURITY.md): same-origin ancestor chains and open Shadow DOM login forms; browser-verified document/frame sources and protected extension-popup selection. Cross-origin/opaque frames and closed roots explicitly unsupported; Chrome 127+. 60 extension and 82 web tests, 12 real Chromium extension checks, three web/proxy checks, typecheck, lint and static build passed. No production deployment; P1-2 remains untouched.
 - [ ] P1-2: Improve password-change form detection: current-password/new-password separation, generation, save/update prompts, and SPA navigation coverage.
 - [ ] P1-3: Add import duplicate detection and safe conflict resolution.
 - [ ] P1-4: Add health-report progress, cancellation, and privacy explanations.

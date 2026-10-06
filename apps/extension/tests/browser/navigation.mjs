@@ -8,7 +8,7 @@ import { resolve, join } from 'node:path';
 import { chromium, expect } from '@playwright/test';
 import { deriveMasterKey, generateAuthHash, createVaultKey, wrapVaultKey, encryptJSON, decryptJSON, exportMasterKeyBase64 } from '../../../../packages/crypto/dist/index.js';
 
-test('real independent extension logs in, fills, locks, restarts and saves without any web vault tab', { timeout: 90000 }, async () => {
+test('real independent extension logs in, fills, locks, restarts and saves without any web vault tab', { timeout: 120000 }, async (t) => {
   const temp = await mkdtemp(join(tmpdir(), 'vaultmaster-browser-'));
   const extension = join(temp, 'extension');
   const email = 'native-browser@example.test', password = 'Native-browser-master-password-2026!';
@@ -18,7 +18,15 @@ test('real independent extension logs in, fills, locks, restarts and saves witho
   const vaultKeyEnvelope = { ...await wrapVaultKey(key, passwordKey), version: 1 };
   const credential = { type: 'login', title: 'Fixture', username: 'octo', password: 'fixture-secret', url: 'https://example.test' };
   const ciphertext = await encryptJSON(credential, key);
-  let items = [{ id: 'fixture-login', encryptedData: ciphertext.ciphertext, iv: ciphertext.iv, folderId: null }];
+  const httpCiphertext = await encryptJSON({ ...credential, title: 'HTTP Fixture', url: 'http://example.test' }, key);
+  let items = [{ id: 'http-login', encryptedData: httpCiphertext.ciphertext, iv: httpCiphertext.iv, folderId: null }, { id: 'fixture-login', encryptedData: ciphertext.ciphertext, iv: ciphertext.iv, folderId: null }];
+  for (const data of [
+    { type: 'credit_card', title: 'Card Fixture', cardholderName: 'Synthetic User', cardNumber: '4111111111111111', expMonth: '12', expYear: '2030', cvv: '123' },
+    { type: 'identity', title: 'Identity Fixture', fullName: 'Synthetic User', email: 'fixture@example.test', phone: '5550100' },
+  ]) {
+    const encrypted = await encryptJSON(data, key);
+    items.push({ id: data.type, encryptedData: encrypted.ciphertext, iv: encrypted.iv, folderId: null });
+  }
   let revoked = false, failSave = false, reads = 0;
   const saved = [];
   const authenticatorKeys = generateKeyPairSync('ec', { namedCurve: 'prime256v1' });
@@ -92,8 +100,17 @@ test('real independent extension logs in, fills, locks, restarts and saves witho
     }
     assert.equal(await popup.locator('#master-password').inputValue(), '');
     assert.ok(!context.pages().some(page => page.url().startsWith('http://localhost:3000')));
-    await context.route(/https:\/\/(example|evil)\.test\//, route => {
+    await context.route(/https?:\/\/(example|evil|example.test.evil)\.test\//, route => {
       const step = new URL(route.request().url()).pathname;
+      const form = '<form><input id="email" type="email" autocomplete="username"><input id="password" type="password" autocomplete="current-password"></form>';
+      if (step === '/card') return route.fulfill({ contentType: 'text/html', body: '<form><input id="card" autocomplete="cc-number"><input id="holder" autocomplete="cc-name"></form>' });
+      if (step === '/identity') return route.fulfill({ contentType: 'text/html', body: '<form><input id="full-name" name="full-name"><input id="phone" type="tel" autocomplete="tel"></form>' });
+      if (step === '/nested-foreign') return route.fulfill({ contentType: 'text/html', body: '<!doctype html><iframe src="https://evil.test/same-frame"></iframe>' });
+      if (step === '/opaque') return route.fulfill({ contentType: 'text/html', body: `<iframe sandbox="allow-scripts" srcdoc='${form}'></iframe>` });
+      if (step === '/same-frame'  || step === '/cross-frame') return route.fulfill({ contentType: 'text/html',
+        body: `<!doctype html><iframe src="https://${step === '/same-frame' ? 'example' : 'evil'}.test/login"></iframe>` });
+      if (step === '/open-shadow' || step === '/closed-shadow') return route.fulfill({ contentType: 'text/html', body:
+        `<!doctype html><div id="host"></div><script>const root = document.querySelector('#host').attachShadow({mode:'${step === '/open-shadow' ? 'open' : 'closed'}'}); root.innerHTML = ${JSON.stringify(form)}; window.closedFixture = root;</script>` });
       if (step === '/success') return route.fulfill({ contentType: 'text/html', body: '<!doctype html><p>Signed in</p>' });
       return route.fulfill({ contentType: 'text/html', body: `<!doctype html><form action="/success" method="post">
         ${step !== '/password' ? '<input id="email" autocomplete="username" type="email">' : ''}
@@ -102,20 +119,151 @@ test('real independent extension logs in, fills, locks, restarts and saves witho
     });
     const target = await context.newPage();
     async function fill() { return worker.evaluate(async () => { const tabs = await chrome.tabs.query({ url: 'https://example.test/*' });
-      return chrome.tabs.sendMessage(tabs[0].id, { type: 'FILL_LOGIN_CREDENTIAL', itemId: 'fixture-login' }); }); }
+      return chrome.tabs.sendMessage(tabs[0].id, { type: 'FILL_LOGIN_CREDENTIAL', itemId: 'fixture-login', formToken: (await chrome.tabs.sendMessage(tabs[0].id, { type: 'GET_PAGE_AUTOFILL_STATE' }, { frameId: 0 })).payload.formToken }, { frameId: 0 }); }); }
     async function unlock() {
-      await popup.bringToFront(); await popup.reload();
+      await popup.bringToFront(); await target.bringToFront(); await popup.reload();
       await popup.getByLabel('Ana şifre', { exact: true }).fill(password);
       await popup.getByRole('button', { name: 'Kilidi Aç', exact: true }).click();
       await expect(popup.locator('#vault-status')).toHaveText('Vault açık ✓');
     }
-    await target.goto('https://example.test/login'); await target.locator('#email').focus();
-    await expect(target.locator('[data-action="fill"]')).toBeVisible();
+    await target.goto('https://example.test/login'); await target.locator('#email').focus(); await target.bringToFront(); await popup.reload();
+    await expect(popup.locator('[data-item-id="fixture-login"]')).toBeVisible();
     const beforeSynthetic = reads;
-    await target.locator('[data-action="fill"]').evaluate(button => button.click());
+    await popup.locator('[data-item-id="fixture-login"]').evaluate(button => button.click());
     assert.equal(reads, beforeSynthetic); await expect(target.locator('#password')).toHaveValue('');
-    await target.locator('[data-action="fill"]').click(); await expect(target.locator('#password')).toHaveValue(credential.password);
-    await target.locator('#password').fill('');
+    await popup.locator('[data-item-id="fixture-login"]').click(); await expect(target.locator('#password')).toHaveValue(credential.password);
+    // Real Chromium frame and Shadow DOM checks with the production extension UI.
+    await t.test('same-origin iframe fills only its selected document', async () => {
+      await target.goto('https://example.test/same-frame'); await target.bringToFront(); await popup.reload();
+      await expect(popup.locator('[data-item-id="fixture-login"]')).toBeVisible();
+      await popup.locator('[data-item-id="fixture-login"]').click();
+      await expect(target.frameLocator('iframe').locator('#password')).toHaveValue(credential.password);
+    });
+    await t.test('cross-origin iframe denies even a forced credential request', async () => {
+      await target.goto('https://example.test/cross-frame'); await target.bringToFront(); await popup.reload();
+      await expect(popup.locator('#items')).toContainText('Desteklenmiyor');
+      assert.equal(await popup.locator('[data-item-id="fixture-login"]').count(), 0);
+      await expect(target.frameLocator('iframe').locator('#password')).toHaveValue('');
+      // A privileged test message cannot bypass the background's cross-origin policy.
+      const deniedFrame = await worker.evaluate(async () => {
+        const [tab] = await chrome.tabs.query({ url: 'https://example.test/cross-frame' });
+        const frames = await chrome.webNavigation.getAllFrames({ tabId: tab.id });
+        const child = frames.find(frame => frame.frameId !== 0);
+        const state = await chrome.tabs.sendMessage(tab.id, { type: 'GET_PAGE_AUTOFILL_STATE' }, { documentId: child.documentId });
+        return chrome.tabs.sendMessage(tab.id, { type: 'FILL_LOGIN_CREDENTIAL', itemId: 'fixture-login',
+          formToken: state.payload.formToken, forceFill: true }, { documentId: child.documentId });
+      });
+      assert.equal(deniedFrame.ok, false);
+    });
+    await t.test('foreign ancestors and opaque iframe documents are unsupported', async () => {
+      for (const path of ['nested-foreign', 'opaque']) {
+        await target.goto(`https://example.test/${path}`); await target.bringToFront(); await popup.reload();
+        await expect(popup.locator('#items')).toContainText('Desteklenmiyor');
+        assert.equal(await popup.locator('[data-item-id="fixture-login"]').count(), 0);
+        for (const frame of target.frames().slice(1)) {
+          if (await frame.locator('#password').count()) await expect(frame.locator('#password')).toHaveValue('');
+        }
+      }
+    });
+    await t.test('open Shadow DOM fills through protected extension selection', async () => {
+      await target.goto('https://example.test/open-shadow'); await target.locator('#email').click(); await target.bringToFront(); await popup.reload();
+      await expect(popup.locator('[data-item-id="fixture-login"]')).toBeVisible();
+      // Page-created account selectors cannot read or retarget the popup selection.
+      await target.evaluate(() => { const fake = document.createElement('button'); fake.dataset.itemId = 'attacker';
+        fake.textContent = 'VaultMaster'; document.body.appendChild(fake); fake.click(); });
+      await expect(target.locator('#password')).toHaveValue('');
+      await popup.locator('[data-item-id="fixture-login"]').click();
+      await expect(target.locator('#password')).toHaveValue(credential.password);
+    });
+    await t.test('closed Shadow DOM is unsupported without interception', async () => {
+      await target.goto('https://example.test/closed-shadow'); await target.bringToFront(); await popup.reload();
+      assert.equal(await fill().then(result => result.ok), false);
+      assert.equal(await target.evaluate(() => window.closedFixture.querySelector('#password').value), '');
+    });
+    await t.test('page-script launcher clicks cannot select a credential', async () => {
+      // Even a real click on the page launcher opens selection only; it never fills.
+      await target.goto('https://example.test/login');
+      await expect(target.locator('#vaultmaster-autofill-launcher')).toBeVisible();
+      await target.locator('#vaultmaster-autofill-launcher').evaluate(button => {
+        button.dataset.itemId = 'fixture-login'; button.click();
+      });
+      await expect(target.locator('#password')).toHaveValue('');
+      await target.locator('#vaultmaster-autofill-launcher').click();
+      await expect(target.locator('#password')).toHaveValue('');
+    });
+    await t.test('HTTP supports HTTP records and rejects forced HTTPS downgrade', async () => {
+      await target.goto('http://example.test/login'); await target.bringToFront(); await popup.reload();
+      assert.equal(await popup.locator('[data-item-id="fixture-login"]').count(), 0);
+      const insecure = await worker.evaluate(async () => {
+        const [tab] = await chrome.tabs.query({ url: 'http://example.test/*' });
+        const state = await chrome.tabs.sendMessage(tab.id, { type: 'GET_PAGE_AUTOFILL_STATE' }, { frameId: 0 });
+        return chrome.tabs.sendMessage(tab.id, { type: 'FILL_LOGIN_CREDENTIAL', itemId: 'fixture-login',
+          formToken: state.payload.formToken, forceFill: true }, { frameId: 0 });
+      });
+      assert.equal(insecure.status, 'domain_mismatch'); await expect(target.locator('#password')).toHaveValue('');
+      await expect(popup.locator('[data-item-id="http-login"]')).toBeVisible();
+      await popup.locator('[data-item-id="http-login"]').click();
+      await expect(target.locator('#password')).toHaveValue(credential.password);
+    });
+    await t.test('phishing and deceptive hostnames receive no suggestions', async () => {
+      await target.goto('https://evil.test/login'); await target.bringToFront(); await popup.reload();
+      assert.equal(await popup.locator('[data-item-id="fixture-login"]').count(), 0);
+      await target.goto('https://example.test/login'); await target.bringToFront(); await popup.reload();
+      await target.goto('https://example.test.evil.test/login'); await target.bringToFront(); await popup.reload();
+      assert.equal(await popup.locator('[data-item-id="fixture-login"]').count(), 0);
+      await expect(target.locator('#password')).toHaveValue('');
+      await target.goto('https://example.test/login'); await target.bringToFront(); await popup.reload();
+    });
+    await t.test('Chrome sender origin rejects a forged origin from the content world', async () => {
+      const contexts = [];
+      const sourceCdp = await context.newCDPSession(target);
+      sourceCdp.on('Runtime.executionContextCreated', ({ context: execution }) => contexts.push(execution));
+      await sourceCdp.send('Runtime.enable');
+      const isolated = contexts.find(execution => execution.origin === extensionOrigin || execution.name === extensionOrigin);
+      assert.ok(isolated, 'actual extension isolated world exists');
+      const forged = await sourceCdp.send('Runtime.evaluate', { contextId: isolated.id, awaitPromise: true, returnByValue: true,
+        expression: `chrome.runtime.sendMessage({type:'GET_LOGIN_CREDENTIAL',itemId:'fixture-login',pageUrl:'https://evil.test',forceFill:true})` });
+      assert.equal(forged.result.value.ok, false);
+      const verifiedPath = await sourceCdp.send('Runtime.evaluate', { contextId: isolated.id, awaitPromise: true, returnByValue: true,
+        expression: `chrome.runtime.sendMessage({type:'LIST_LOGIN_SUGGESTIONS',pageUrl:'https://example.test/claimed-path',identifier:''})` });
+      assert.equal(verifiedPath.result.value.ok, true);
+      await expect(target.locator('#password')).toHaveValue('');
+    });
+    await t.test('stale form and document selections fail closed', async () => {
+      // A popup selection becomes invalid after frame navigation or form replacement.
+      await target.locator('form').evaluate(form => form.outerHTML = form.outerHTML);
+      await popup.locator('[data-item-id="fixture-login"]').click();
+      await expect(popup.locator('#status')).toContainText('formu değişti');
+      await expect(target.locator('#password')).toHaveValue('');
+      await target.goto('https://example.test/login'); await target.bringToFront(); await popup.reload();
+      const stale = await popup.evaluate(async () => {
+        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+        const response = await chrome.runtime.sendMessage({ type: 'LIST_AUTOFILL_TARGETS', tabId: tab.id });
+        return { tabId: tab.id, ...response.payload.targets.find(target => target.frameId === 0) };
+      });
+      await target.reload();
+      const staleResult = await popup.evaluate(target => chrome.runtime.sendMessage({ type: 'FILL_AUTOFILL_TARGET',
+        tabId: target.tabId, documentId: target.documentId, formToken: target.formToken, itemId: 'fixture-login' }), stale);
+      assert.equal(staleResult.ok, false);
+      assert.match(staleResult.message, /Hedef belge değişti/);
+      await expect(target.locator('#password')).toHaveValue('');
+      await target.bringToFront(); await popup.reload();
+      await target.locator('#password').fill('');
+    });
+    await t.test('existing card and identity autofill also uses protected selection', async () => {
+      for (const [path, itemId, field, value] of [
+        ['card', 'credit_card', '#card', '4111111111111111'], ['identity', 'identity', '#full-name', 'Synthetic User'],
+      ]) {
+        await target.goto(`https://example.test/${path}`); await target.bringToFront(); await popup.reload();
+        await expect(popup.locator(`[data-item-id="${itemId}"]`)).toBeVisible();
+        assert.equal(await target.locator('[data-action="fill-structured"]').count(), 0);
+        await popup.locator(`[data-item-id="${itemId}"]`).evaluate(button => button.click());
+        await expect(target.locator(field)).toHaveValue('');
+        await popup.locator(`[data-item-id="${itemId}"]`).click();
+        await expect(target.locator(field)).toHaveValue(value);
+      }
+      await target.goto('https://example.test/login'); await target.bringToFront(); await popup.reload();
+    });
     await popup.getByRole('button', { name: 'Kilitle', exact: true }).click();
     await expect(popup.locator('#vault-status')).toHaveText('Vault kilitli 🔒');
     assert.equal((await fill()).ok, false); await expect(target.locator('#password')).toHaveValue('');
@@ -123,8 +271,8 @@ test('real independent extension logs in, fills, locks, restarts and saves witho
     await popup.getByRole('button', { name: 'Kilidi Aç', exact: true }).click();
     await expect(popup.locator('#status')).toContainText('Fixture request rejected');
     await expect(popup.locator('#vault-status')).toHaveText('Vault kilitli 🔒'); await unlock();
-    await target.goto('https://example.test/login'); await target.locator('#email').focus();
-    await expect(target.locator('[data-action="fill"]')).toBeVisible();
+    await target.goto('https://example.test/login'); await target.locator('#email').focus(); await target.bringToFront(); await popup.reload();
+    await expect(popup.locator('[data-item-id="fixture-login"]')).toBeVisible();
     // Exercise the warning UI with a deterministic domain-rejection fixture.
     // Native URL/scheme checks are separately tested against actual ciphertext.
     await worker.evaluate(async () => {
@@ -134,9 +282,9 @@ test('real independent extension logs in, fills, locks, restarts and saves witho
       nativeVault.request = (type, payload) => type === 'VM_GET_LOGIN_CREDENTIAL_REQUEST' && !payload.forceFill
         ? Promise.resolve({ ok: true, payload: { status: 'domain_mismatch' } }) : original(type, payload);
     });
-    await target.locator('[data-action="fill"]').click(); await expect(target.locator('[data-action="force-fill"]')).toBeVisible();
-    await target.locator('[data-action="force-fill"]').evaluate(button => button.click()); await expect(target.locator('#password')).toHaveValue('');
-    await target.locator('[data-action="force-fill"]').click(); await expect(target.locator('#password')).toHaveValue(credential.password);
+    await popup.locator('[data-item-id="fixture-login"]').click(); await expect(popup.locator('[data-action="force-fill"]')).toBeVisible();
+    await popup.locator('[data-action="force-fill"]').evaluate(button => button.click()); await expect(target.locator('#password')).toHaveValue('');
+    await popup.locator('[data-action="force-fill"]').click(); await expect(target.locator('#password')).toHaveValue(credential.password);
     await worker.evaluate(async () => {
       globalThis.__vaultFixture.request = globalThis.__originalRequest;
     });
@@ -149,7 +297,7 @@ test('real independent extension logs in, fills, locks, restarts and saves witho
     const { targetInfos } = await cdp.send('Target.getTargets');
     const workerTarget = targetInfos.find(info => info.type === 'service_worker' && info.url.includes(extensionId));
     assert.ok(workerTarget); await cdp.send('Target.closeTarget', { targetId: workerTarget.targetId });
-    await popup.reload(); await expect(popup.locator('#vault-status')).toHaveText('Vault açık ✓');
+    await target.bringToFront(); await popup.reload(); await expect(popup.locator('#vault-status')).toHaveText('Vault açık ✓');
     worker = context.serviceWorkers().find(candidate => candidate.url().includes(extensionId)) || await context.waitForEvent('serviceworker');
     await target.goto('https://example.test/login'); assert.equal((await fill()).ok, true);
     await expect(target.locator('#password')).toHaveValue(credential.password);

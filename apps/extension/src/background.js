@@ -32,13 +32,78 @@ function isHttpUrlString(value) {
 	}
 }
 
-// Chrome supplies the document URL; never let a request claim another site's origin.
-function getContentPageUrl(sender, claimedUrl) {
+// All URLs and ancestry come from Chrome, never from the page or popup labels.
+function isTrustedPopup(sender) {
+	return sender.id === chrome.runtime.id && sender.url === chrome.runtime.getURL('popup.html');
+}
+
+function supportedFrame(frame, frames) {
+	if (!frame || frame.errorOccurred || frame.documentLifecycle !== 'active' ||
+		!isHttpUrlString(frame.url) || !isString(frame.documentId)) return false;
+	const origin = new URL(frame.url).origin;
+	const seen = new Set();
+	let current = frame;
+	while (current) {
+		if (seen.has(current.frameId) || current.errorOccurred || current.documentLifecycle !== 'active' ||
+			!isHttpUrlString(current.url) || new URL(current.url).origin !== origin) return false;
+		seen.add(current.frameId);
+		if (current.frameId === 0) return true;
+		current = frames.find(entry => entry.frameId === current.parentFrameId &&
+			entry.documentId === current.parentDocumentId);
+	}
+	return false;
+}
+
+async function getContentPageUrl(sender, claimedUrl) {
 	if (!Number.isInteger(sender.tab?.id) || !isHttpUrlString(sender.url) ||
-		(sender.documentLifecycle && sender.documentLifecycle !== "active")) return null;
+		(sender.id !== undefined && sender.id !== chrome.runtime.id) ||
+		(sender.origin !== undefined && sender.origin !== new URL(sender.url).origin) ||
+		(sender.documentLifecycle && sender.documentLifecycle !== 'active')) return null;
 	if (claimedUrl !== undefined && (!isHttpUrlString(claimedUrl) ||
 		new URL(claimedUrl).origin !== new URL(sender.url).origin)) return null;
-	return sender.url;
+	try {
+		const frames = await chrome.webNavigation.getAllFrames({ tabId: sender.tab.id }) || [];
+		const frame = frames.find(entry => entry.frameId === (sender.frameId ?? 0) && entry.documentId === sender.documentId);
+		if (!supportedFrame(frame, frames) || frame.url !== sender.url) return null;
+		return sender.url;
+	} catch { return null; }
+}
+
+async function sendVerifiedContentResponse(sender, pageUrl, response, sendResponse) {
+	// Vault/API work can outlive the document which requested a secret.
+	if (!(await getContentPageUrl(sender, pageUrl))) { rejectInvalidPayload(sendResponse); return; }
+	sendResponse(response);
+}
+
+async function popupAutofill(message, sender, sendResponse) {
+	if (!isTrustedPopup(sender) || !Number.isInteger(message.tabId)) {
+		rejectInvalidPayload(sendResponse); return;
+	}
+	try {
+		const tab = await chrome.tabs.get(message.tabId);
+		if (!tab.active || !isHttpUrlString(tab.url)) throw new Error('Aktif HTTP/HTTPS sekme gerekli.');
+		const frames = await chrome.webNavigation.getAllFrames({ tabId: tab.id }) || [];
+		if (message.type === 'LIST_AUTOFILL_TARGETS') {
+			const targets = await Promise.all(frames.map(async frame => {
+				const supported = supportedFrame(frame, frames);
+				let state = null;
+				if (supported) state = await chrome.tabs.sendMessage(tab.id, { type: 'GET_PAGE_AUTOFILL_STATE' },
+					{ documentId: frame.documentId }).catch(() => null);
+				return { frameId: frame.frameId, documentId: frame.documentId, url: frame.url,
+					origin: isHttpUrlString(frame.url) ? new URL(frame.url).origin : null,
+					supported, kind: state?.payload?.kind || 'login', formToken: state?.payload?.formToken,
+					suggestions: state?.payload?.formToken ? state.payload.suggestions || [] : [] };
+			}));
+			sendResponse({ ok: true, payload: { targets } }); return;
+		}
+		const frame = frames.find(entry => entry.documentId === message.documentId);
+		if (!supportedFrame(frame, frames) || !isString(message.itemId) || !isString(message.formToken)) {
+			throw new Error('Hedef belge değişti veya desteklenmiyor. Eklentiyi yeniden açın.');
+		}
+		const response = await chrome.tabs.sendMessage(tab.id, { type: 'FILL_LOGIN_CREDENTIAL',
+			itemId: message.itemId, formToken: message.formToken, forceFill: message.forceFill === true }, { documentId: frame.documentId });
+		sendResponse(response);
+	} catch (error) { sendResponse({ ok: false, message: error.message }); }
 }
 
 function isLoginCredentialPayload(value) {
@@ -104,6 +169,15 @@ function rejectInvalidPayload(sendResponse) {
 }
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+	if (['LIST_AUTOFILL_TARGETS', 'FILL_AUTOFILL_TARGET'].includes(message?.type)) {
+		void popupAutofill(message, sender, sendResponse); return true;
+	}
+	if (message?.type === 'OPEN_AUTOFILL_POPUP') {
+		void getContentPageUrl(sender).then(async url => {
+			if (!url) { rejectInvalidPayload(sendResponse); return; }
+			await chrome.action.openPopup(); sendResponse({ ok: true });
+		}).catch(() => sendResponse({ ok: false })); return true;
+	}
 	if (message?.type?.startsWith('NATIVE_')) {
 		if (sender.id !== chrome.runtime.id || sender.url !== chrome.runtime.getURL('popup.html')) {
 			rejectInvalidPayload(sendResponse); return true;
@@ -224,7 +298,7 @@ chrome.commands.onCommand.addListener(async (command) => {
 	if (command === "_execute_action") {
 		const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
 		if (tab?.id) {
-			chrome.tabs.sendMessage(tab.id, { type: "TRIGGER_AUTOFILL" });
+			await chrome.action.openPopup();
 		}
 	}
 });
@@ -241,7 +315,7 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
 	}
 
 	if (info.menuItemId === "vaultmaster-fill") {
-		chrome.tabs.sendMessage(tab.id, { type: "TRIGGER_AUTOFILL" });
+		await chrome.action.openPopup();
 		return;
 	}
 
@@ -384,7 +458,7 @@ async function lookupPasswordSuggestion(message, sender, sendResponse) {
 		return;
 	}
 
-	const pageUrl = getContentPageUrl(sender, message.pageUrl);
+	const pageUrl = await getContentPageUrl(sender, message.pageUrl);
 	if (!pageUrl) { rejectInvalidPayload(sendResponse); return; }
 	const response = await requestVaultTab("VM_LOOKUP_PASSWORD_REQUEST", {
 		identifier: message.identifier,
@@ -401,7 +475,7 @@ async function resolvePasswordForFill(message, sender, sendResponse) {
 		return;
 	}
 
-	const pageUrl = getContentPageUrl(sender, message.pageUrl);
+	const pageUrl = await getContentPageUrl(sender, message.pageUrl);
 	if (!pageUrl) { rejectInvalidPayload(sendResponse); return; }
 
 	const response = await requestVaultTab("VM_GET_PASSWORD_REQUEST", {
@@ -411,7 +485,7 @@ async function resolvePasswordForFill(message, sender, sendResponse) {
 		sourceTabId: sender.tab?.id ?? null,
 	});
 
-	sendResponse(response);
+	await sendVerifiedContentResponse(sender, sender.url, response, sendResponse);
 }
 
 async function listLoginSuggestions(message, sender, sendResponse) {
@@ -421,7 +495,7 @@ async function listLoginSuggestions(message, sender, sendResponse) {
 	}
 
 	const trustedPopup = sender.id === chrome.runtime.id && sender.url === chrome.runtime.getURL?.('popup.html');
-	const pageUrl = trustedPopup ? message.pageUrl : getContentPageUrl(sender, message.pageUrl);
+	const pageUrl = trustedPopup ? message.pageUrl : await getContentPageUrl(sender, message.pageUrl);
 	if (!pageUrl) { rejectInvalidPayload(sendResponse); return; }
 	const response = await requestVaultTab("VM_LIST_LOGIN_SUGGESTIONS_REQUEST", {
 		identifier: message.identifier || "",
@@ -454,7 +528,7 @@ async function getLoginCredential(message, sender, sendResponse) {
 		return;
 	}
 
-	const pageUrl = getContentPageUrl(sender, message.pageUrl);
+	const pageUrl = await getContentPageUrl(sender, message.pageUrl);
 	if (!pageUrl) { rejectInvalidPayload(sendResponse); return; }
 
 	const response = await requestVaultTab("VM_GET_LOGIN_CREDENTIAL_REQUEST", {
@@ -464,10 +538,11 @@ async function getLoginCredential(message, sender, sendResponse) {
 		sourceTabId: sender.tab?.id ?? null,
 	});
 
-	sendResponse(response);
+	await sendVerifiedContentResponse(sender, sender.url, response, sendResponse);
 }
 
 async function listCreditCards(sender, sendResponse) {
+	if (!(await getContentPageUrl(sender))) { rejectInvalidPayload(sendResponse); return; }
 	const response = await requestVaultTab("VM_LIST_CREDIT_CARDS_REQUEST", {
 		sourceTabId: sender.tab?.id ?? null,
 	});
@@ -476,7 +551,7 @@ async function listCreditCards(sender, sendResponse) {
 }
 
 async function getCreditCard(message, sender, sendResponse) {
-	if (!isString(message.itemId) || !getContentPageUrl(sender)) {
+	if (!isString(message.itemId) || !(await getContentPageUrl(sender))) {
 		rejectInvalidPayload(sendResponse);
 		return;
 	}
@@ -486,10 +561,11 @@ async function getCreditCard(message, sender, sendResponse) {
 		sourceTabId: sender.tab?.id ?? null,
 	});
 
-	sendResponse(response);
+	await sendVerifiedContentResponse(sender, sender.url, response, sendResponse);
 }
 
 async function listIdentities(sender, sendResponse) {
+	if (!(await getContentPageUrl(sender))) { rejectInvalidPayload(sendResponse); return; }
 	const response = await requestVaultTab("VM_LIST_IDENTITIES_REQUEST", {
 		sourceTabId: sender.tab?.id ?? null,
 	});
@@ -498,7 +574,7 @@ async function listIdentities(sender, sendResponse) {
 }
 
 async function getIdentity(message, sender, sendResponse) {
-	if (!isString(message.itemId) || !getContentPageUrl(sender)) {
+	if (!isString(message.itemId) || !(await getContentPageUrl(sender))) {
 		rejectInvalidPayload(sendResponse);
 		return;
 	}
@@ -508,11 +584,11 @@ async function getIdentity(message, sender, sendResponse) {
 		sourceTabId: sender.tab?.id ?? null,
 	});
 
-	sendResponse(response);
+	await sendVerifiedContentResponse(sender, sender.url, response, sendResponse);
 }
 
 async function saveLoginCredential(message, sender, sendResponse) {
-	if (!isLoginCredentialPayload(message.credential) || !getContentPageUrl(sender, message.credential.url)) {
+	if (!isLoginCredentialPayload(message.credential) || !(await getContentPageUrl(sender, message.credential.url))) {
 		rejectInvalidPayload(sendResponse);
 		return;
 	}
@@ -549,7 +625,7 @@ async function trackAutofillSelection(message, sendResponse) {
 async function setPendingAutofill(message, sender, sendResponse) {
 	const tabId = sender.tab?.id;
 	if (tabId === undefined || !isPendingAutofillPayload(message.pendingAutofill) ||
-		!isHttpUrlString(sender.url) || new URL(sender.url).origin !== message.pendingAutofill.origin) {
+		!(await getContentPageUrl(sender)) || new URL(sender.url).origin !== message.pendingAutofill.origin) {
 		rejectInvalidPayload(sendResponse);
 		return;
 	}
@@ -575,7 +651,7 @@ async function getPendingAutofill(sender, sendResponse) {
 	const stored = await getPendingAutofillMap();
 	const key = `${tabId}:${sender.frameId ?? 0}`;
 	const pending = stored[key];
-	const valid = pending && pending.expiresAt > Date.now() && isHttpUrlString(sender.url) &&
+	const valid = pending && pending.expiresAt > Date.now() && Boolean(await getContentPageUrl(sender)) &&
 		new URL(sender.url).origin === pending.origin;
 	if (pending && !valid) {
 		delete stored[key];
@@ -612,7 +688,7 @@ async function validateCredentialDomain(message, sender, sendResponse) {
 		return;
 	}
 
-	const pageUrl = getContentPageUrl(sender, message.expectedUrl);
+	const pageUrl = await getContentPageUrl(sender, message.expectedUrl);
 	if (!pageUrl) { rejectInvalidPayload(sendResponse); return; }
 
 	const response = await requestVaultTab("VM_VALIDATE_CREDENTIAL_DOMAIN_REQUEST", {
@@ -626,7 +702,7 @@ async function validateCredentialDomain(message, sender, sendResponse) {
 
 // TOTP code isteme
 async function getTotpCode(message, sender, sendResponse) {
-	if (!isString(message.itemId) || !getContentPageUrl(sender)) {
+	if (!isString(message.itemId) || !(await getContentPageUrl(sender))) {
 		rejectInvalidPayload(sendResponse);
 		return;
 	}
@@ -637,7 +713,7 @@ async function getTotpCode(message, sender, sendResponse) {
 		sourceTabId: sender.tab?.id ?? null,
 	});
 
-	sendResponse(response);
+	await sendVerifiedContentResponse(sender, sender.url, response, sendResponse);
 }
 
 // Vault durumu isteme
@@ -701,7 +777,7 @@ function decodeBytes(value) {
 }
 
 async function handlePendingSave(message, sender, sendResponse) {
-	if (sender.tab?.id === undefined || !isHttpUrlString(sender.url)) {
+	if (sender.tab?.id === undefined || !(await getContentPageUrl(sender))) {
 		rejectInvalidPayload(sendResponse);
 		return;
 	}

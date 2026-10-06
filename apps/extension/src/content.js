@@ -168,14 +168,15 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 
 // Klavye kısayolu dinleyicisi (Ctrl+Shift+V ile tetiklenir)
 if (!isVaultMasterPage()) {
-	chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+	chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+		if (sender.id !== chrome.runtime.id || sender.tab) return false;
 		if (message?.type === "GET_PAGE_AUTOFILL_STATE") {
-			void getPageAutofillState(message, sendResponse);
+			void getPageAutofillState(message, sendResponse).catch(() => sendResponse({ ok: false }));
 			return true;
 		}
 
 		if (message?.type === "FILL_LOGIN_CREDENTIAL") {
-			void fillCredentialFromMessage(message, sendResponse);
+			void fillCredentialFromMessage(message, sendResponse).catch(() => sendResponse({ ok: false, message: "Doldurma tamamlanamadı." }));
 			return true;
 		}
 
@@ -352,7 +353,7 @@ function initializeAutofillAssistant() {
 }
 
 function onFieldActivity(event) {
-	const target = event.target;
+	const target = event.composedPath()[0];
 	if (!(target instanceof HTMLInputElement)) {
 		return;
 	}
@@ -417,12 +418,22 @@ function schedulePrewarm(delay = 220) {
 	}, delay);
 }
 
-async function getPageAutofillState(_message, sendResponse) {
-	if (Date.now() - pageAutofillState.updatedAt > SUGGESTION_CACHE_TTL_MS) {
-		await prewarmPageAutofillState({ silent: true });
-	}
+function getSelectionContext() {
+	const detector = window.VaultMasterFormDetector;
+	return detector?.detectCardFormContext(activeField) || detector?.detectIdentityFormContext(activeField) || getPageLoginContext();
+}
 
-	sendResponse({ ok: true, payload: pageAutofillState });
+async function getPageAutofillState(_message, sendResponse) {
+	const context = getSelectionContext();
+	const kind = context?.type || 'login';
+	if (kind !== 'login') {
+		const payload = kind === 'credit_card' ? await fetchCreditCards() : await fetchIdentities();
+		sendResponse({ ok: true, payload: { kind, formToken: getFormToken(context),
+			suggestions: payload?.cards || payload?.identities || [] } }); return;
+	}
+	if (Date.now() - pageAutofillState.updatedAt > SUGGESTION_CACHE_TTL_MS) await prewarmPageAutofillState();
+	sendResponse({ ok: true, payload: { ...pageAutofillState, kind,
+		formToken: context ? getFormToken(context) : null } });
 }
 
 async function prewarmPageAutofillState() {
@@ -470,7 +481,6 @@ async function evaluateAutofillOpportunity() {
 				items: cardsPayload.cards,
 				title: "VaultMaster Cards",
 				subtitle: "Ödeme formu algılandı",
-				fillAction: fillCreditCard,
 			});
 			return;
 		}
@@ -485,7 +495,6 @@ async function evaluateAutofillOpportunity() {
 				items: identitiesPayload.identities,
 				title: "VaultMaster Identities",
 				subtitle: "Kimlik/iletişim formu algılandı",
-				fillAction: fillIdentity,
 			});
 			return;
 		}
@@ -545,120 +554,29 @@ async function evaluateAutofillOpportunity() {
 	});
 }
 
-function showSuggestionPanel({ context, panelKey, typedIdentifier, suggestions, isUsingOfflineData }) {
-	// An earlier asynchronous lookup must not replace an explicit warning or
-	// rebuild an unchanged button while the user is clicking it.
-	if (activePanel?.locked) return;
-	const fingerprint = JSON.stringify({ suggestions, isUsingOfflineData });
-	const shouldReuse =
-		activePanel &&
-		activePanel.panelKey === panelKey &&
-		activePanel.anchorInput === context.anchorInput;
-	if (shouldReuse && activePanel.fingerprint === fingerprint) { updatePanelPosition(); return; }
+function showSuggestionPanel({ suggestions }) {
+	// Page DOM is only a launcher. Account selection belongs to extension UI.
+	ensureLauncher(suggestions);
+}
 
-	if (!shouldReuse) {
-		removePanel();
+const formTokens = new WeakMap();
+function getContextInputs(context) {
+	return Object.values(context).filter(value => value instanceof HTMLInputElement);
+}
+
+function getFormToken(context) {
+	const inputs = getContextInputs(context);
+	const anchor = context.passwordInput || context.usernameInput || inputs[0];
+	let entry = formTokens.get(anchor);
+	if (!entry || entry.inputs.length !== inputs.length || entry.inputs.some((input, index) => input !== inputs[index])) {
+		entry = { token: generatePendingNonce(), inputs };
+		formTokens.set(anchor, entry);
 	}
-
-	const panel = shouldReuse ? activePanel.element : document.createElement("div");
-	panel.id = "vaultmaster-inline-autofill";
-	panel.style.cssText = [
-		"position:fixed",
-		"z-index:2147483647",
-		"width:min(380px, calc(100vw - 24px))",
-		"background:linear-gradient(180deg, rgba(11,17,31,0.98) 0%, rgba(7,11,22,0.98) 100%)",
-		"border:1px solid rgba(0,255,178,0.18)",
-		"border-radius:18px",
-		"box-shadow:0 20px 56px rgba(0,0,0,0.32)",
-		"backdrop-filter:blur(18px)",
-		"color:#eef2ff",
-		"font:13px/1.45 'Segoe UI', Arial, sans-serif",
-		"overflow:hidden",
-	].join(";");
-
-	panel.innerHTML = `
-  <div style="padding:14px 14px 10px;border-bottom:1px solid rgba(144,160,195,0.12);display:flex;align-items:start;justify-content:space-between;gap:12px;">
-    <div>
-      <div style="display:flex;align-items:center;gap:8px;font-weight:700;margin-bottom:4px;">
-        <span style="display:inline-flex;width:10px;height:10px;border-radius:999px;background:#00ffb2;box-shadow:0 0 12px rgba(0,255,178,0.45);"></span>
-        VaultMaster Autofill
-      </div>
-      <div style="color:#90a0c3;font-size:12px;">
-        ${typedIdentifier ? "Hesap eşleşmeleri bulundu" : "Bu site için kayıtlı girişler"}
-        ${isUsingOfflineData ? " • offline snapshot" : ""}
-      </div>
-    </div>
-    <button data-action="dismiss" style="border:0;background:transparent;color:#90a0c3;cursor:pointer;font-size:18px;line-height:1;padding:0;">×</button>
-  </div>
-  <div style="padding:8px;display:grid;gap:8px;">
-    ${suggestions
-			.map(
-				(suggestion) => `
-      <button
-        data-action="fill"
-        data-item-id="${escapeHtml(suggestion.itemId)}"
-        style="border:1px solid rgba(144,160,195,0.14);background:rgba(18,26,49,0.9);border-radius:14px;padding:12px;text-align:left;color:#eef2ff;cursor:pointer;display:grid;gap:6px;"
-      >
-        <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;">
-          <div style="font-weight:700;">${escapeHtml(suggestion.title)}</div>
-          <div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:end;">
-            ${suggestion.isPreferred ? badgeHtml("Son kullanılan", "#00ffb2", "rgba(0,255,178,0.10)") : ""}
-            ${suggestion.isExactIdentifierMatch ? badgeHtml("Tam eşleşme", "#7dd3fc", "rgba(125,211,252,0.10)") : ""}
-          </div>
-        </div>
-        <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;color:#90a0c3;">
-          <div>${escapeHtml(maskIdentifier(suggestion.username))}</div>
-          <div style="font-size:12px;">${escapeHtml(formatHostname(suggestion.url || window.location.href))}</div>
-        </div>
-        <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;">
-          <div style="color:#90a0c3;font-size:12px;">${escapeHtml(getPanelFootnote(context))}</div>
-          <span style="display:inline-flex;align-items:center;justify-content:center;border-radius:999px;background:#00ffb2;color:#04111d;padding:5px 10px;font-weight:700;font-size:12px;">
-            Doldur
-          </span>
-        </div>
-      </button>
-    `
-			)
-			.join("")}
-  </div>
-`;
-
-	panel.querySelector("[data-action='dismiss']")?.addEventListener("click", () => {
-		dismissedPanelKeys.add(panelKey);
-		removePanel();
-	});
-
-	panel.querySelectorAll("[data-action='fill']").forEach((node) => {
-		node.addEventListener("click", async (event) => {
-			if (!event.isTrusted) return;
-			const itemId = node.getAttribute("data-item-id");
-			if (!itemId) {
-				return;
-			}
-
-			await handleCredentialFill(itemId, context, panelKey);
-		});
-	});
-
-	if (!shouldReuse) {
-		document.body.appendChild(panel);
-	}
-
-	activePanel = {
-		fingerprint,
-		element: panel,
-		anchorInput: context.anchorInput,
-		usernameInput: context.usernameInput,
-		passwordInput: context.passwordInput,
-		panelKey,
-	};
-
-	updatePanelPosition();
+	return entry.token;
 }
 
 async function fillCredentialFromMessage(message, sendResponse) {
-	activeField = getBestAnchorInput();
-	const context = getPageLoginContext();
+	const context = getSelectionContext();
 	if (!context) {
 		sendResponse({ ok: false, message: "Giriş alanı bulunamadı." });
 		return;
@@ -670,7 +588,27 @@ async function fillCredentialFromMessage(message, sendResponse) {
 		return;
 	}
 
-	const result = await fillCredentialIntoContext(itemId, context, { forceFill: false });
+	if (message.formToken !== getFormToken(context)) {
+		sendResponse({ ok: false, message: 'Giriş formu değişti. Eklentiyi yeniden açın.' }); return;
+	}
+	if (context.type === 'credit_card' || context.type === 'identity') {
+		const inputs = getContextInputs(context), roots = inputs.map(input => input.getRootNode());
+		const card = context.type === 'credit_card';
+		const response = await sendRuntimeMessage({ type: card ? 'GET_CREDIT_CARD' : 'GET_IDENTITY', itemId }).catch(() => null);
+		const data = card ? response?.payload?.card : response?.payload?.identity;
+		if (!response?.ok || !data || inputs.some((input, index) => !input.isConnected || input.getRootNode() !== roots[index])) {
+			sendResponse({ ok: false, message: 'Hedef form değişti veya kasa kilitli.' }); return;
+		}
+		const values = card ? { cardNumberInput: data.cardNumber, cardholderNameInput: data.cardholderName,
+			expMonthInput: data.expMonth, expYearInput: data.expYear, expiryInput: `${data.expMonth}/${String(data.expYear).slice(-2)}` }
+			: { fullNameInput: data.fullName, emailInput: data.email, phoneInput: data.phone,
+				organizationInput: data.organization, addressInput: data.address };
+		for (const [key, value] of Object.entries(values)) {
+			if (context[key]?.isConnected && value) setNativeValue(context[key], value);
+		}
+		sendResponse({ ok: true, message: 'Dolduruldu.' }); return;
+	}
+	const result = await fillCredentialIntoContext(itemId, context, { forceFill: message.forceFill === true });
 	if (result.ok) {
 		if (result.filledFields?.includes("password")) suppressAutofillForContext(context);
 		removePanel();
@@ -679,29 +617,8 @@ async function fillCredentialFromMessage(message, sendResponse) {
 	sendResponse(result);
 }
 
-async function handleCredentialFill(itemId, context, panelKey, options = {}) {
-	const result = await fillCredentialIntoContext(itemId, context, options);
-	if (!result.ok) {
-		if (result.status === "domain_mismatch" && !options.forceFill) {
-			showPhishingWarning(itemId, context, panelKey);
-			return;
-		}
-		updatePanelNotice(result.message || "Kayıt alınamadı. Eklentiden kasanın kilidini açıp tekrar deneyin.", true);
-		if (options.fromLauncher) {
-			showLauncherFeedback("Kayit alinamadi");
-		}
-		return;
-	}
-
-	updatePanelNotice(result.message, false);
-	if (options.fromLauncher) {
-		showLauncherFeedback(result.filledFields.includes("identifier") && !result.filledFields.includes("password") ? "Kullanici adi dolduruldu" : "Doldurma tamamlandi");
-	}
-	dismissedPanelKeys.add(panelKey);
-	window.setTimeout(() => removePanel(), result.hasTotp ? 3000 : 1200);
-}
-
 async function fillCredentialIntoContext(itemId, context, options = {}) {
+	const originalRoots = [context.usernameInput?.getRootNode(), context.passwordInput?.getRootNode()];
 	const credentialResult = await requestCredential(itemId, { forceFill: options.forceFill });
 	const credential = credentialResult?.credential;
 	if (!credential) {
@@ -713,7 +630,11 @@ async function fillCredentialIntoContext(itemId, context, options = {}) {
 				: "Kayıt alınamadı. Eklentiden kasanın kilidini açıp tekrar deneyin.",
 		};
 	}
-	const latestContext = getPageLoginContext() || context;
+	// Do not retarget a credential after asynchronous vault work or page events.
+	const latestContext = context;
+	if ([context.usernameInput, context.passwordInput].some((input, index) => input && (!input.isConnected || input.getRootNode() !== originalRoots[index]))) {
+		return { ok: false, message: 'Giriş formu değişti.' };
+	}
 	const filledFields = [];
 
 	if (latestContext.usernameInput && credential.username && (options.forceFill || !latestContext.usernameInput.value.trim())) {
@@ -721,7 +642,7 @@ async function fillCredentialIntoContext(itemId, context, options = {}) {
 		filledFields.push("identifier");
 	}
 
-	if (latestContext.passwordInput && credential.password && (options.forceFill || !latestContext.passwordInput.value.trim())) {
+	if (latestContext.passwordInput?.isConnected && credential.password && (options.forceFill || !latestContext.passwordInput.value.trim())) {
 		setNativeValue(latestContext.passwordInput, credential.password);
 		latestContext.passwordInput.focus();
 		filledFields.push("password");
@@ -781,85 +702,6 @@ async function requestCredential(itemId, options = {}) {
 
 	credentialRequests.set(requestKey, request);
 	return request;
-}
-
-// Phishing koruması - domain doğrulama
-async function validateCredentialForDomain(itemId, pageUrl) {
-	try {
-		const response = await sendRuntimeMessage({
-			type: "VALIDATE_CREDENTIAL_DOMAIN",
-			itemId,
-			expectedUrl: pageUrl,
-		});
-		return response?.payload?.valid === true;
-	} catch {
-		return false;
-	}
-}
-
-// Phishing uyarısı göster
-function showPhishingWarning(itemId, context, panelKey) {
-	if (!activePanel?.element) {
-		return;
-	}
-
-	activePanel.locked = true;
-
-	const body = activePanel.element.querySelector("div:nth-of-type(2)");
-	if (!(body instanceof HTMLElement)) {
-		return;
-	}
-
-	body.innerHTML = `
-    <div style="padding:12px;border-radius:14px;background:rgba(255,77,106,0.12);border:1px solid rgba(255,77,106,0.35);color:#ff9aac;">
-      <div style="font-weight:700;margin-bottom:6px;">⚠️ Güvenlik Uyarısı</div>
-      <div style="font-size:12px;line-height:1.5;">
-        Bu kayıt, bu sayfa için güvenli eşleşme olarak doğrulanamadı. Site adresini ve HTTPS kullanımını kontrol edin.
-      </div>
-      <div style="margin-top:10px;display:flex;gap:8px;">
-        <button data-action="dismiss-warning" style="flex:1;padding:8px;border-radius:8px;border:1px solid rgba(255,77,106,0.3);background:transparent;color:#ff9aac;cursor:pointer;font-size:12px;font-weight:600;">
-          İptal
-        </button>
-        <button data-action="force-fill" data-item-id="${escapeHtml(itemId)}" style="flex:1;padding:8px;border-radius:8px;border:0;background:rgba(255,77,106,0.2);color:#ff9aac;cursor:pointer;font-size:12px;font-weight:600;">
-          Yine de doldur
-        </button>
-      </div>
-    </div>
-  `;
-
-	activePanel.element.querySelector("[data-action='dismiss-warning']")?.addEventListener("click", () => {
-		dismissedPanelKeys.add(panelKey + "-warning");
-		removePanel();
-	});
-
-	activePanel.element.querySelector("[data-action='force-fill']")?.addEventListener("click", async (event) => {
-		if (!event.isTrusted) return;
-		const forceItemId = activePanel.element.querySelector("[data-action='force-fill']")?.getAttribute("data-item-id");
-		if (forceItemId) {
-			await handleCredentialFill(forceItemId, context, panelKey, { forceFill: true });
-		}
-	});
-}
-
-// TOTP kodu kopyalandı feedback
-function showTotpCopiedFeedback() {
-	if (!activePanel?.element) {
-		return;
-	}
-
-	const body = activePanel.element.querySelector("div:nth-of-type(2)");
-	if (!(body instanceof HTMLElement)) {
-		return;
-	}
-
-	body.innerHTML = `
-    <div style="padding:12px;border-radius:14px;background:rgba(0,255,178,0.10);border:1px solid rgba(0,255,178,0.20);color:#b7ffe8;">
-      <div style="display:flex;align-items:center;gap:8px;">
-        <span style="font-size:16px;">✓</span>
-        <span style="font-weight:600;">TOTP kodu panoya kopyalandı</span>
-      </div>
-    </div>
-  `;
 }
 
 function updatePanelNotice(message, isError) {
@@ -953,65 +795,8 @@ function showSavePrompt(credential) {
 	}, Math.max(0, credential.expiresAt - Date.now()));
 }
 
-function showStructuredSuggestionPanel({ context, items, title, subtitle, fillAction }) {
-	removePanel();
-	const panel = document.createElement("div");
-	panel.id = "vaultmaster-inline-autofill";
-	panel.style.cssText = [
-		"position:fixed",
-		"z-index:2147483647",
-		"width:min(380px, calc(100vw - 24px))",
-		"background:linear-gradient(180deg, rgba(11,17,31,0.98) 0%, rgba(7,11,22,0.98) 100%)",
-		"border:1px solid rgba(0,255,178,0.18)",
-		"border-radius:18px",
-		"box-shadow:0 20px 56px rgba(0,0,0,0.32)",
-		"backdrop-filter:blur(18px)",
-		"color:#eef2ff",
-		"font:13px/1.45 'Segoe UI', Arial, sans-serif",
-		"overflow:hidden",
-	].join(";");
-
-	panel.innerHTML = `
-		<div style="padding:14px 14px 10px;border-bottom:1px solid rgba(144,160,195,0.12);display:flex;align-items:start;justify-content:space-between;gap:12px;">
-			<div>
-				<div style="display:flex;align-items:center;gap:8px;font-weight:700;margin-bottom:4px;">
-					<span style="display:inline-flex;width:10px;height:10px;border-radius:999px;background:#00ffb2;box-shadow:0 0 12px rgba(0,255,178,0.45);"></span>
-					${escapeHtml(title)}
-				</div>
-				<div style="color:#90a0c3;font-size:12px;">${escapeHtml(subtitle)}</div>
-			</div>
-			<button data-action="dismiss" style="border:0;background:transparent;color:#90a0c3;cursor:pointer;font-size:18px;line-height:1;padding:0;">×</button>
-		</div>
-		<div style="padding:8px;display:grid;gap:8px;">
-			${items.map((item) => `
-				<button data-action="fill-structured" data-item-id="${escapeHtml(item.itemId)}" style="border:1px solid rgba(144,160,195,0.14);background:rgba(18,26,49,0.9);border-radius:14px;padding:12px;text-align:left;color:#eef2ff;cursor:pointer;display:grid;gap:6px;">
-					<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;">
-						<div style="font-weight:700;">${escapeHtml(item.title)}</div>
-						<span style="display:inline-flex;align-items:center;justify-content:center;border-radius:999px;background:#00ffb2;color:#04111d;padding:5px 10px;font-weight:700;font-size:12px;">Doldur</span>
-					</div>
-					<div style="color:#90a0c3;font-size:12px;">${escapeHtml(formatStructuredItemSubtitle(item))}</div>
-				</button>
-			`).join("")}
-		</div>
-	`;
-
-	panel.querySelector("[data-action='dismiss']")?.addEventListener("click", removePanel);
-	panel.querySelectorAll("[data-action='fill-structured']").forEach((node) => {
-		node.addEventListener("click", async (event) => {
-			if (!event.isTrusted) return;
-			const itemId = node.getAttribute("data-item-id");
-			if (itemId) await fillAction(itemId, context);
-		});
-	});
-
-	document.body.appendChild(panel);
-	activePanel = {
-		element: panel,
-		anchorInput: context.anchorInput || activeField,
-		panelKey: `${context.type}|${window.location.hostname}`,
-		locked: true,
-	};
-	updatePanelPosition();
+function showStructuredSuggestionPanel({ items }) {
+	ensureLauncher(items);
 }
 
 function updatePanelPosition() {
@@ -1019,7 +804,7 @@ function updatePanelPosition() {
 		return;
 	}
 
-	if (activePanel?.locked && activePanel.anchorInput && document.body.contains(activePanel.anchorInput)) {
+	if (activePanel?.locked && activePanel.anchorInput && activePanel.anchorInput.isConnected) {
 		const rect = activePanel.anchorInput.getBoundingClientRect();
 		const panel = activePanel.element;
 		const top = Math.min(rect.bottom + 10, window.innerHeight - panel.offsetHeight - 12);
@@ -1029,7 +814,7 @@ function updatePanelPosition() {
 		return;
 	}
 
-	if (!activePanel?.anchorInput || !document.body.contains(activePanel.anchorInput)) {
+	if (!activePanel?.anchorInput || !activePanel.anchorInput.isConnected) {
 		removePanel();
 		return;
 	}
@@ -1087,34 +872,7 @@ function ensureLauncher(suggestions) {
 
 		launcher.addEventListener("click", async (event) => {
 			if (!event.isTrusted) return;
-			const focusTarget = getBestAnchorInput();
-			if (focusTarget) {
-				activeField = focusTarget;
-				focusTarget.focus();
-			}
-
-			const context = getLoginFormContext(activeField) || getFallbackLoginFormContext();
-			if (!context) {
-				showLauncherFeedback("Giris alani bulunamadi");
-				return;
-			}
-
-			if (await tryApplyPendingAutofill(context)) {
-				showLauncherFeedback("Sifre dolduruldu");
-				return;
-			}
-
-			const typedIdentifier = context.usernameInput?.value.trim() || "";
-			const payload = await fetchSuggestions(typedIdentifier);
-			if (!payload?.suggestions?.length) {
-				showLauncherFeedback("Uygun hesap bulunamadi");
-				return;
-			}
-
-			const panelKey = buildPanelKey(context, typedIdentifier);
-			await handleCredentialFill(payload.suggestions[0].itemId, context, panelKey, {
-				fromLauncher: true,
-			});
+			await sendRuntimeMessage({ type: 'OPEN_AUTOFILL_POPUP' }).catch(() => null);
 		});
 
 		document.body.appendChild(launcher);
@@ -1207,13 +965,21 @@ function getPageLoginContext() {
 	return getLoginFormContext(activeField) || getFallbackLoginFormContext();
 }
 
+function collectOpenInputs(root) {
+	const inputs = Array.from(root.querySelectorAll('input'));
+	for (const element of root.querySelectorAll('*')) {
+		if (element.shadowRoot?.mode === 'open') inputs.push(...collectOpenInputs(element.shadowRoot));
+	}
+	return inputs;
+}
+
 function getScopedVisibleInputs(currentInput) {
 	const scopeRoot =
 		currentInput instanceof HTMLElement ? currentInput.closest("form") : null;
 
 	const inputList = scopeRoot
 		? Array.from(scopeRoot.querySelectorAll("input"))
-		: Array.from(document.querySelectorAll("input"));
+		: collectOpenInputs(currentInput?.getRootNode() || document);
 
 	return inputList.filter((input) => {
 		if (!(input instanceof HTMLInputElement)) {
@@ -1443,45 +1209,6 @@ async function fetchIdentities() {
 	const payload = response?.payload;
 	if (!response?.ok || payload?.status !== "ready" || !payload.identities?.length) return null;
 	return payload;
-}
-
-async function fillCreditCard(itemId, context) {
-	const response = await sendRuntimeMessage({ type: "GET_CREDIT_CARD", itemId }).catch(() => null);
-	const card = response?.payload?.card;
-	if (!response?.ok || response.payload?.status !== "ready" || !card) {
-		updatePanelNotice("Kart bilgisi alınamadı. Eklentiden kasanın kilidini açın.", true);
-		return;
-	}
-
-	if (context.cardNumberInput) setNativeValue(context.cardNumberInput, card.cardNumber);
-	if (context.cardholderNameInput) setNativeValue(context.cardholderNameInput, card.cardholderName);
-	if (context.expMonthInput) setNativeValue(context.expMonthInput, card.expMonth);
-	if (context.expYearInput) setNativeValue(context.expYearInput, card.expYear);
-	if (context.expiryInput) setNativeValue(context.expiryInput, `${card.expMonth}/${String(card.expYear).slice(-2)}`);
-	updatePanelNotice(`${card.title} kartı dolduruldu.`, false);
-	window.setTimeout(removePanel, 1200);
-}
-
-async function fillIdentity(itemId, context) {
-	const response = await sendRuntimeMessage({ type: "GET_IDENTITY", itemId }).catch(() => null);
-	const identity = response?.payload?.identity;
-	if (!response?.ok || response.payload?.status !== "ready" || !identity) {
-		updatePanelNotice("Kimlik bilgisi alınamadı. Eklentiden kasanın kilidini açın.", true);
-		return;
-	}
-
-	if (context.fullNameInput) setNativeValue(context.fullNameInput, identity.fullName);
-	if (context.emailInput && identity.email) setNativeValue(context.emailInput, identity.email);
-	if (context.phoneInput && identity.phone) setNativeValue(context.phoneInput, identity.phone);
-	if (context.organizationInput && identity.organization) setNativeValue(context.organizationInput, identity.organization);
-	if (context.addressInput && identity.address) setNativeValue(context.addressInput, identity.address);
-	updatePanelNotice(`${identity.title} kimliği dolduruldu.`, false);
-	window.setTimeout(removePanel, 1200);
-}
-
-function formatStructuredItemSubtitle(item) {
-	if (item.last4) return `${item.cardholderName || "Kart"} •••• ${item.last4} • ${item.expMonth}/${item.expYear}`;
-	return [item.fullName, item.email].filter(Boolean).join(" • ") || "Kimlik bilgisi";
 }
 
 async function fetchSuggestions(identifier, options = {}) {

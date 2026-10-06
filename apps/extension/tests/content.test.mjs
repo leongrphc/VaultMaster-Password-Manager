@@ -25,6 +25,7 @@ async function loadContent({ credential, domainValid = true, state = {} } = {}) 
 
   dom.window.chrome = {
     runtime: {
+      id: "vaultmaster",
       lastError: null,
       getURL: (path) => `chrome-extension://vaultmaster/${path}`,
       onMessage: { addListener: (listener) => listeners.push(listener) },
@@ -54,10 +55,14 @@ async function loadContent({ credential, domainValid = true, state = {} } = {}) 
   return {
     window: dom.window,
     runtimeMessages,
-    send(message) {
+    async send(message) {
+      if (message.type === 'FILL_LOGIN_CREDENTIAL' && !message.formToken) {
+        const state = await this.send({ type: 'GET_PAGE_AUTOFILL_STATE' });
+        message.formToken = state.payload.formToken;
+      }
       return new Promise((resolve) => {
         for (const listener of listeners) {
-          if (listener(message, {}, resolve) === true) {
+          if (listener(message, { id: "vaultmaster" }, resolve) === true) {
             return;
           }
         }
@@ -163,7 +168,7 @@ test("ignores a page-script click on the autofill panel", async (t) => {
   content.window.document.querySelector("#email").focus();
   await new Promise((resolve) => content.window.setTimeout(resolve, 300));
 
-  const fillButton = content.window.document.querySelector("[data-action='fill']");
+  const fillButton = content.window.document.querySelector("#vaultmaster-autofill-launcher");
   assert.ok(fillButton);
   fillButton.click();
   await new Promise((resolve) => content.window.setTimeout(resolve, 0));
@@ -240,3 +245,30 @@ for (const locked of [false, true]) {
     assert.ok(next.runtimeMessages.some(m => m.type === "GET_LOGIN_CREDENTIAL"));
   });
 }
+
+test('rejects an approval for a replaced form before requesting secrets', async (t) => {
+  const content = await loadContent({ credential: loginCredential });
+  t.after(() => content.window.close());
+  const before = await content.send({ type: 'GET_PAGE_AUTOFILL_STATE' });
+  const form = content.window.document.querySelector('form');
+  form.outerHTML = form.outerHTML;
+  const result = await content.send({ type: 'FILL_LOGIN_CREDENTIAL', itemId: 'item-1', formToken: before.payload.formToken });
+  assert.equal(result.ok, false);
+  assert.equal(content.runtimeMessages.some(message => message.type === 'GET_LOGIN_CREDENTIAL'), false);
+});
+
+test('discovers nested open roots without pairing separate root inputs', async (t) => {
+  const content = await loadContent({ credential: loginCredential });
+  t.after(() => content.window.close());
+  content.window.document.querySelector('form').remove();
+  const first = content.window.document.createElement('div');
+  const second = content.window.document.createElement('div');
+  content.window.document.body.append(first, second);
+  const outer = first.attachShadow({ mode: 'open' });
+  outer.innerHTML = '<div id="nested"></div>';
+  outer.querySelector('div').attachShadow({ mode: 'open' }).innerHTML = '<input type="email" id="email">';
+  second.attachShadow({ mode: 'open' }).innerHTML = '<input type="password" id="password">';
+  const result = await content.send({ type: 'FILL_LOGIN_CREDENTIAL', itemId: 'item-1' });
+  assert.deepEqual(Array.from(result.filledFields), ['identifier']);
+  assert.equal(second.shadowRoot.querySelector('input').value, '');
+});

@@ -17,7 +17,9 @@ sessionForm.addEventListener('submit', event => { event.preventDefault(); void a
 document.getElementById('webauthn-button').addEventListener('click', () => { void authenticate(true); });
 document.getElementById('lock-button').addEventListener('click', () => { void sessionAction('NATIVE_LOCK'); });
 document.getElementById('logout-button').addEventListener('click', () => { void sessionAction('NATIVE_LOGOUT'); });
-chrome.storage.onChanged.addListener((_changes, area) => { if (area === 'session' && !busy) void loadState(); });
+chrome.storage.onChanged.addListener((changes, area) => {
+	if (area === 'session' && changes.vaultmasterNativeSession && !busy) void loadState();
+});
 
 async function nativeMessage(message) {
 	const response = await sendRuntimeMessage(message);
@@ -108,29 +110,25 @@ async function loadState() {
 		return;
 	}
 
-	const pageState = activeTab?.id
-		? await sendTabMessage(activeTab.id, { type: "GET_PAGE_AUTOFILL_STATE" }).catch(() => null)
-		: null;
-	let payload = pageState?.payload;
-
-	if (payload?.status !== "ready" || !payload.suggestions?.length) {
-		const suggestionsResponse = await sendRuntimeMessage({
-			type: "LIST_LOGIN_SUGGESTIONS",
-			pageUrl: activeUrl,
-			identifier: "",
-		}).catch(() => null);
-		payload = suggestionsResponse?.payload;
+	const result = await sendRuntimeMessage({ type: 'LIST_AUTOFILL_TARGETS', tabId: activeTab.id }).catch(() => null);
+	const targets = result?.payload?.targets || [];
+	itemsNode.innerHTML = '';
+	for (const target of targets) {
+		const label = document.createElement('p');
+		label.textContent = `${target.frameId === 0 ? 'Ana sayfa' : `Frame ${target.frameId}`} • ${target.origin || target.url}`;
+		itemsNode.appendChild(label);
+		if (!target.supported) {
+			const notice = document.createElement('p');
+			notice.textContent = 'Desteklenmiyor: farklı köken, opak veya etkin olmayan belge. Bu adresi ayrı sekmede açın.';
+			itemsNode.appendChild(notice); continue;
+		}
+		const decision = document.createElement('p');
+		decision.textContent = target.formToken ? 'Aynı köken: bu form için seçim yapabilirsiniz.' : 'Aynı köken: görünür desteklenen form bulunamadı.';
+		itemsNode.appendChild(decision);
+		renderSuggestions(target.suggestions, { ...target, tabId: activeTab.id });
 	}
-
-	if (payload?.status !== "ready" || !payload.suggestions?.length) {
-		setStatus("VaultMaster hazır. Bu domaine uygun kayıt bulunamadı veya giriş formu bekleniyor.");
-		renderEmptyState("Bu site için eşleşen hesap görünmüyor.");
-		updateVaultStatusBadge(true);
-		return;
-	}
-
-	setStatus("Hazır. Bir hesaba tıklayınca aktif sayfadaki boş alanlar doldurulur.");
-	renderSuggestions(payload.suggestions.slice(0, 4));
+	setStatus('Hedef adresi kontrol edin, sonra bir hesap seçin. Kapalı Shadow DOM desteklenmez.');
+	if (!targets.length) renderEmptyState('Desteklenen giriş formu bulunamadı.');
 	updateVaultStatusBadge(true);
 }
 
@@ -178,15 +176,16 @@ async function updateVaultStatusBadge(isOpen) {
 	// Badge zaten background.js tarafından güncelleniyor, burada sadece UI feedback
 }
 
-function renderSuggestions(suggestions) {
-	itemsNode.innerHTML = suggestions
+function renderSuggestions(suggestions, target) {
+	const group = document.createElement("div");
+	group.innerHTML = suggestions
 		.map(
 			(suggestion) => `
 			<button class="item suggestion-item" type="button" data-item-id="${escapeHtml(suggestion.itemId)}">
 				<div class="item-main">
 					<div>
 						<p class="item-title">${escapeHtml(suggestion.title)}</p>
-						<p class="item-meta">${escapeHtml(maskIdentifier(suggestion.username))}</p>
+						<p class="item-meta">${escapeHtml(target.kind === 'login' ? maskIdentifier(suggestion.username) : suggestion.last4 ? `•••• ${suggestion.last4}` : suggestion.fullName || '')}</p>
 					</div>
 					<span class="score">Doldur</span>
 				</div>
@@ -201,13 +200,16 @@ function renderSuggestions(suggestions) {
 		)
 		.join("");
 
-	itemsNode.querySelectorAll("[data-item-id]").forEach((node) => {
-		node.addEventListener("click", async () => {
+	group.querySelectorAll("[data-item-id]").forEach((node) => {
+		node.addEventListener("click", async (event) => {
+			if (!event.isTrusted) return;
 			const itemId = node.getAttribute("data-item-id");
 			if (!itemId) return;
-			await fillActiveTab(itemId);
+			await fillActiveTab(itemId, target);
 		});
 	});
+
+	itemsNode.appendChild(group);
 }
 
 function renderEmptyState(message) {
@@ -229,27 +231,22 @@ function renderEmptyState(message) {
 	`;
 }
 
-async function fillActiveTab(itemId) {
-	const [activeTab] = await queryTabs({ active: true, currentWindow: true });
-	if (!activeTab?.id || !activeTab.url) {
-		setStatus("Aktif sekme bulunamadı.");
-		return;
+async function fillActiveTab(itemId, target, forceFill = false) {
+	setStatus('Dolduruluyor...');
+	const response = await sendRuntimeMessage({ type: 'FILL_AUTOFILL_TARGET', tabId: target.tabId,
+		documentId: target.documentId, formToken: target.formToken, itemId, forceFill }).catch(() => null);
+	if (response?.status === 'domain_mismatch' && !forceFill) {
+		setStatus(`Kayıt ${target.url} için doğrulanamadı. HTTPS kayıtları HTTP üzerinde doldurulmaz.`);
+		const confirm = document.createElement('button');
+		confirm.dataset.action = 'force-fill';
+		confirm.textContent = 'Adresi kontrol ettim: yine de doldur';
+		confirm.addEventListener('click', event => {
+			if (!event.isTrusted) return;
+			confirm.remove(); void fillActiveTab(itemId, target, true);
+		});
+		itemsNode.appendChild(confirm); return;
 	}
-
-	setStatus("Dolduruluyor...");
-	const response = await sendTabMessage(activeTab.id, {
-		type: "FILL_LOGIN_CREDENTIAL",
-		itemId,
-		pageUrl: activeTab.url,
-	}).catch(() => null);
-
-	if (response?.ok) {
-		setStatus(response.message || "Doldurma isteği gönderildi.");
-		window.setTimeout(() => window.close(), 450);
-		return;
-	}
-
-	setStatus(response?.message || "Doldurma yapılamadı. Sayfayı yenileyip tekrar deneyin.");
+	setStatus(response?.message || (response?.ok ? 'Dolduruldu.' : 'Doldurma reddedildi. Hedefi yeniden kontrol edin.'));
 }
 
 function setStatus(text) {
@@ -265,20 +262,6 @@ function queryTabs(query) {
 function sendRuntimeMessage(payload) {
 	return new Promise((resolve, reject) => {
 		chrome.runtime.sendMessage(payload, (response) => {
-			const runtimeError = chrome.runtime.lastError;
-			if (runtimeError) {
-				reject(new Error(runtimeError.message));
-				return;
-			}
-
-			resolve(response);
-		});
-	});
-}
-
-function sendTabMessage(tabId, payload) {
-	return new Promise((resolve, reject) => {
-		chrome.tabs.sendMessage(tabId, payload, (response) => {
 			const runtimeError = chrome.runtime.lastError;
 			if (runtimeError) {
 				reject(new Error(runtimeError.message));

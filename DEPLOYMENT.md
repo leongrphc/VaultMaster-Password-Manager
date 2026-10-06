@@ -411,3 +411,16 @@ Policy, budgets, notification/privacy behavior, maintenance SQL, rollback effect
 and limitations are documented in
 [the P0-4 security record](docs/SENSITIVE_ACTION_SECURITY.md).
 This branch was tested locally with synthetic data; it has not been deployed.
+
+## Advanced autofill (P1-1)
+
+Extension 1.2.0 requires Chrome 127+, adds `webNavigation` for browser-verified
+frame/document ancestry, and injects per HTTP/HTTPS frame. Users select the
+source frame and account in the extension popup; inline controls only open it.
+Same-origin ancestor chains and open Shadow DOM login forms are supported.
+Cross-origin/opaque frames and closed roots are explicitly unsupported.
+No API or database migration is required, and the stable identity key is retained.
+Rebuild and reload/distribute the extension ZIP with the existing packaging flow.
+This change is locally verified and has not been deployed.
+Policy, verification and rollback effects:
+[advanced autofill security record](docs/ADVANCED_AUTOFILL_SECURITY.md).
