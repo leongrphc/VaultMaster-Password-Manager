@@ -27,7 +27,7 @@ test('real independent extension logs in, fills, locks, restarts and saves witho
     const encrypted = await encryptJSON(data, key);
     items.push({ id: data.type, encryptedData: encrypted.ciphertext, iv: encrypted.iv, folderId: null });
   }
-  let revoked = false, failSave = false, reads = 0;
+  let revoked = false, failSave = false, skipMfa = false, reads = 0;
   const saved = [];
   const authenticatorKeys = generateKeyPairSync('ec', { namedCurve: 'prime256v1' });
   const credentialId = randomBytes(32);
@@ -41,12 +41,14 @@ test('real independent extension logs in, fills, locks, restarts and saves witho
     const reply = (data, status = 200) => { res.writeHead(status, { 'content-type': 'application/json', 'access-control-allow-origin': '*' }); res.end(JSON.stringify({ success: status < 400, data, error: status >= 400 ? 'Fixture request rejected' : undefined })); };
     if (path.endsWith('/auth/login')) {
       if (input.authHash !== authHash) return reply(null, 401);
-      if (!input.webAuthnResponse) return reply({ requires2FA: true, webAuthnOptions: { challengeToken: 'fixture-challenge-token', options: {
+      if (!input.webAuthnResponse && !skipMfa) return reply({ requires2FA: true, webAuthnOptions: { challengeToken: 'fixture-challenge-token', options: {
         challenge, rpId: 'vaultmaster.mozkan.com.tr', allowCredentials: [{ type: 'public-key', id: credentialId.toString('base64url') }], userVerification: 'preferred', timeout: 60000 } } });
-      const assertion = input.webAuthnResponse.response;
-      const client = Buffer.from(assertion.clientDataJSON, 'base64url');
-      assert.equal(JSON.parse(client).origin, extensionOrigin); assert.equal(JSON.parse(client).challenge, challenge);
-      assert.equal(verify('sha256', Buffer.concat([Buffer.from(assertion.authenticatorData, 'base64url'), createHash('sha256').update(client).digest()]), authenticatorKeys.publicKey, Buffer.from(assertion.signature, 'base64url')), true);
+      if (input.webAuthnResponse) {
+        const assertion = input.webAuthnResponse.response;
+        const client = Buffer.from(assertion.clientDataJSON, 'base64url');
+        assert.equal(JSON.parse(client).origin, extensionOrigin); assert.equal(JSON.parse(client).challenge, challenge);
+        assert.equal(verify('sha256', Buffer.concat([Buffer.from(assertion.authenticatorData, 'base64url'), createHash('sha256').update(client).digest()]), authenticatorKeys.publicKey, Buffer.from(assertion.signature, 'base64url')), true);
+      }
       return reply({ user: { id: 'user-1', email }, tokens: { accessToken: 'fixture-access', refreshToken: 'fixture-refresh' }, deviceId: 'device-1', vaultKeyEnvelope });
     }
     if (revoked) return reply(null, 401);
@@ -85,6 +87,7 @@ test('real independent extension logs in, fills, locks, restarts and saves witho
     context.setDefaultTimeout(10000);
     let worker = context.serviceWorkers()[0] || await context.waitForEvent('serviceworker');
     const extensionId = new URL(worker.url()).hostname;
+    assert.equal(extensionId, 'cajnckjhhpbgephllmoaceolbifmnkoa');
     extensionOrigin = `chrome-extension://${extensionId}`;
     const popup = await context.newPage();
     const pageErrors = []; popup.on('pageerror', error => pageErrors.push(error.message));
@@ -457,8 +460,35 @@ test('real independent extension logs in, fills, locks, restarts and saves witho
     failSave = true; await target.locator('[data-action="save"]').click(); await expect(target.locator('[data-save-error]')).toBeVisible();
     failSave = false; await target.locator('[data-action="save"]').click(); await expect.poll(() => saved.length).toBe(1);
     assert.equal(saved[0].password, 'new-login-secret');
-    await popup.getByRole('button', { name: 'Çıkış Yap', exact: true }).click();
-    await expect(popup.locator('#vault-status')).toHaveText('Giriş yapılmadı');
+    assert.deepEqual(pageErrors, []);
+    await t.test('in-place version update keeps identity and local state but clears trusted session', async () => {
+      await worker.evaluate(() => chrome.storage.local.set({ releaseUpdatePreference: 'synthetic-preference' }));
+      const before = await worker.evaluate(() => chrome.storage.local.get(null));
+      assert.ok(await worker.evaluate(async () => (await chrome.storage.session.get('vaultmasterNativeSession')).vaultmasterNativeSession));
+      await context.close();
+      const updateManifest = JSON.parse(await readFile(join(extension, 'manifest.json'), 'utf8'));
+      updateManifest.version = '1.3.1'; // synthetic next-version update, never packaged/published
+      await writeFile(join(extension, 'manifest.json'), JSON.stringify(updateManifest));
+      context = await chromium.launchPersistentContext(join(temp, 'profile'), { channel: 'chromium', headless: true,
+        args: [`--disable-extensions-except=${extension}`, `--load-extension=${extension}`] });
+      context.setDefaultTimeout(10000);
+      worker = context.serviceWorkers()[0] || await context.waitForEvent('serviceworker');
+      assert.equal(new URL(worker.url()).hostname, extensionId);
+      assert.equal(await worker.evaluate(() => chrome.runtime.getManifest().version), '1.3.1');
+      assert.equal(await worker.evaluate(async () => (await chrome.storage.session.get('vaultmasterNativeSession')).vaultmasterNativeSession), undefined);
+      const after = await worker.evaluate(() => chrome.storage.local.get(null));
+      for (const [name, value] of Object.entries(before)) assert.deepEqual(after[name], value);
+    });
+    const updatedPopup = await context.newPage();
+    await updatedPopup.goto(`chrome-extension://${extensionId}/popup.html`);
+    await expect(updatedPopup.locator('#vault-status')).toHaveText('Giriş yapılmadı');
+    skipMfa = true; // post-update password login fixture; signed MFA was verified above
+    await updatedPopup.getByLabel('E-posta').fill(email);
+    await updatedPopup.getByLabel('Ana şifre', { exact: true }).fill(password);
+    await updatedPopup.getByRole('button', { name: 'Giriş Yap', exact: true }).click();
+    await expect(updatedPopup.locator('#vault-status')).toHaveText('Vault açık ✓');
+    await updatedPopup.getByRole('button', { name: 'Çıkış Yap', exact: true }).click();
+    await expect(updatedPopup.locator('#vault-status')).toHaveText('Giriş yapılmadı');
     assert.equal(await worker.evaluate(async () => (await chrome.storage.session.get('vaultmasterNativeSession')).vaultmasterNativeSession), undefined);
     assert.deepEqual(pageErrors, []);
   } finally {

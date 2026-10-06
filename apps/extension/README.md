@@ -18,7 +18,7 @@ Behavior:
 Requirements:
 
 - Sign in from the extension popup using email, master password and any configured second factor.
-- Unlock from the popup; no VaultMaster web tab is needed. Chrome/Edge 122+ only.
+- Unlock from the popup; no VaultMaster web tab is needed. Chrome/Edge 127+ only.
 - The API must be reachable for login, unlock and secret fills.
 - The vault locks after five minutes or device lock. Browser restart requires a fresh login.
 - Tokens and the unlocked key live only in trusted Chrome session memory; persistent storage contains ciphertext only.
@@ -54,3 +54,6 @@ card, identity and forced-fill buttons ignore synthetic page-script clicks.
 HTTPS logins cannot automatically match an HTTP page; any override still needs
 an explicit trusted click on the security warning. These safeguards are covered
 by the real-extension browser test as well as unit tests.
+
+Store candidate packaging, permission justifications, stable identity and manual/store update
+checklists: [P1-5 release preparation](../../docs/EXTENSION_STORE_PREPARATION.md).

@@ -424,3 +424,11 @@ Rebuild and reload/distribute the extension ZIP with the existing packaging flow
 This change is locally verified and has not been deployed.
 Policy, verification and rollback effects:
 [advanced autofill security record](docs/ADVANCED_AUTOFILL_SECURITY.md).
+
+## Extension store preparation (P1-5)
+
+Candidate 1.3.0 is prepared locally, not deployed or store-published. Follow the
+[permission, identity, deterministic ZIP and installation/update checklist](docs/EXTENSION_STORE_PREPARATION.md)
+before distributing a new build. Existing deployed release evidence above remains
+historical. Store-assigned IDs require exact allowlist verification; the current
+public key guarantees the unpacked identity only.

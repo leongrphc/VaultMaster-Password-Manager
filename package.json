@@ -22,7 +22,9 @@
     "drill:backup-restore": "bash scripts/backup-restore-drill.sh",
     "test:backup-drill-safety": "node --test scripts/tests/backup-drill-safety.test.mjs",
     "audit:dependencies": "node scripts/dependency-audit.mjs",
-    "test:dependency-audit": "node --test scripts/tests/dependency-audit.test.mjs"
+    "test:dependency-audit": "node --test scripts/tests/dependency-audit.test.mjs",
+    "package:extension": "node scripts/package-extension.mjs",
+    "verify:extension": "node scripts/verify-extension.mjs"
   },
   "devDependencies": {
     "@playwright/test": "^1.60.0",

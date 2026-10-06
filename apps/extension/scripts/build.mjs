@@ -18,13 +18,21 @@ if (appUrl.username || appUrl.password || appUrl.pathname !== "/" || appUrl.sear
   throw new Error("VAULTMASTER_APP_URL must be an origin without a path or credentials.");
 }
 
+const metadata = JSON.parse(readFileSync(resolve(root, 'package.json'), 'utf8'));
+const sourceManifest = JSON.parse(readFileSync(resolve(srcDir, 'manifest.json'), 'utf8'));
+if (metadata.version !== sourceManifest.version) throw new Error('Extension package/manifest version mismatch');
 rmSync(distDir, { recursive: true, force: true });
 mkdirSync(distDir, { recursive: true });
-cpSync(srcDir, distDir, { recursive: true });
+// Explicit release allowlist: never recursively copy source or local artifacts.
+for (const file of ['manifest.json', 'background.js', 'config.js', 'content.js',
+  'form-detector.js', 'passkey-injected.js', 'popup.js', 'popup.html', 'popup.css', 'vault-session.js']) {
+  cpSync(resolve(srcDir, file), resolve(distDir, file));
+}
 const cryptoDir = resolve(distDir, 'crypto');
 mkdirSync(cryptoDir, { recursive: true });
 for (const file of ['key-derivation.js', 'password-hash.js', 'vault-key.js', 'encryption.js', 'utils.js', 'totp.js']) {
-  cpSync(resolve(root, '../../packages/crypto/dist', file), resolve(cryptoDir, file));
+  const compiled = readFileSync(resolve(root, '../../packages/crypto/dist', file), 'utf8');
+  writeFileSync(resolve(cryptoDir, file), compiled.replace(/^\/\/# sourceMappingURL=.*(?:\r?\n|$)/gm, ''));
 }
 const apiUrl = new URL(process.env.VAULTMASTER_API_URL || (appUrl.protocol === 'https:'
   ? 'https://vaultmaster-api.onrender.com/api' : 'http://localhost:4000/api'));
@@ -46,7 +54,7 @@ if (process.env.VAULTMASTER_APP_URL) {
     .replace('["http://localhost:3000", "http://127.0.0.1:3000"]', origins));
   const manifestPath = resolve(distDir, "manifest.json");
   const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
-  manifest.host_permissions = ["<all_urls>"];
+  manifest.host_permissions = ["http://*/*", "https://*/*"];
   writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));
 }
 

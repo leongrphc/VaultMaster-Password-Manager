@@ -95,6 +95,12 @@ jobs:
         run: pnpm lint && pnpm typecheck
       - name: Build all packages and the static web app
         run: NODE_ENV=production pnpm build
+      - name: Verify reproducible extension release archives
+        run: |
+          pnpm package:extension test-results/extension-first.zip
+          pnpm package:extension test-results/extension-second.zip
+          cmp test-results/extension-first.zip test-results/extension-second.zip
+          pnpm verify:extension test-results/extension-first.zip
       - name: Run unit and database integration tests
         run: pnpm test
       - name: Install Chromium
