@@ -479,14 +479,17 @@ test('real independent extension logs in, fills, locks, restarts and saves witho
       assert.ok(await worker.evaluate(async () => (await chrome.storage.session.get('vaultmasterNativeSession')).vaultmasterNativeSession));
       await context.close();
       const updateManifest = JSON.parse(await readFile(join(extension, 'manifest.json'), 'utf8'));
-      updateManifest.version = '1.3.1'; // synthetic next-version update, never packaged/published
+      const versionParts = updateManifest.version.split('.').map(Number);
+      versionParts[2] += 1;
+      const nextVersion = versionParts.join('.');
+      updateManifest.version = nextVersion; // synthetic next-version update, never packaged/published
       await writeFile(join(extension, 'manifest.json'), JSON.stringify(updateManifest));
       context = await chromium.launchPersistentContext(join(temp, 'profile'), { channel: 'chromium', headless: true,
         args: [`--disable-extensions-except=${extension}`, `--load-extension=${extension}`] });
       context.setDefaultTimeout(10000);
       worker = context.serviceWorkers()[0] || await context.waitForEvent('serviceworker');
       assert.equal(new URL(worker.url()).hostname, extensionId);
-      assert.equal(await worker.evaluate(() => chrome.runtime.getManifest().version), '1.3.1');
+      assert.equal(await worker.evaluate(() => chrome.runtime.getManifest().version), nextVersion);
       assert.equal(await worker.evaluate(async () => (await chrome.storage.session.get('vaultmasterNativeSession')).vaultmasterNativeSession), undefined);
       const after = await worker.evaluate(() => chrome.storage.local.get(null));
       for (const [name, value] of Object.entries(before)) assert.deepEqual(after[name], value);

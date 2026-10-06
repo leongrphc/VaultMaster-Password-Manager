@@ -14,7 +14,13 @@
 			<p id="active-domain">Aktif sekme analiz ediliyor...</p>
 		</header>
 
-		<div id="vault-status" class="vault-status unknown">Durum yükleniyor...</div>
+		<div class="session-bar">
+			<div id="vault-status" class="vault-status unknown">Durum yükleniyor...</div>
+			<div class="session-actions">
+				<button id="lock-button" class="ghost" hidden>Kasayı Kilitle</button>
+				<button id="logout-button" class="ghost" hidden>Çıkış Yap</button>
+			</div>
+		</div>
 		<section id="session-panel" class="panel" hidden>
 			<form id="session-form">
 				<h2 id="session-title">Eklentiye Giriş Yap</h2>
@@ -27,12 +33,7 @@
 				<p class="session-note">Ana şifreniz sunucuya gönderilmez. Kasa 5 dakika sonra ve cihaz kilitlenince kilitlenir.</p>
 			</form>
 		</section>
-		<div class="session-actions">
-			<button id="lock-button" class="ghost" hidden>Kasayı Kilitle</button>
-			<button id="logout-button" class="ghost" hidden>Çıkış Yap</button>
-		</div>
-
-		<section class="panel">
+		<section class="panel suggestions-panel" aria-label="Otomatik doldurma önerileri">
 			<div class="panel-header">
 				<h2>Aktif Site İçin Öneriler</h2>
 				<button id="refresh-button" class="ghost">Yenile</button>

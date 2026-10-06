@@ -49,7 +49,7 @@
   "modelSha256": "8ac8bbc554866ad3064b408f7e441a4bc5bdb6d5a52ea1613d0f5d95599cfd78",
   "reviewedSources": {
     "apps/api/src": "95881844ab0e15ed23923df582a797090e70d2653471e8fc4ed6299329fd00ee",
-    "apps/extension/src": "4bb9ae3043ad527065cbc3e2d2dfe9ccc9033ab721130fd1614c47dcd99c4a0f",
+    "apps/extension/src": "7169be3c306dd25565798904d52ab308eb87a0f2aa6464f2fce9b622e2c43280",
     "apps/web/src": "6b66aff9e46daf3426436b29885679474b693a43e782eea70f86d012f5a950e3",
     "apps/web/public": "59ede556242c99b16a0a1b74a71ee8989ca87665172efb2596a3e3f042478a73",
     "packages/crypto/src": "a2cf1bb294f479239f5bd8474f07d03c9ddf1f053b7baff8e68b2553e8f05e79",
@@ -62,7 +62,7 @@
     "pnpm-lock.yaml": "655aa1c4adef44598a5e2bc915d13665a7d0527f7b4c11d81a1dd8c7bbeba8e8",
     "package.json": "6b25a7f1068f711c0761c50aca820fe00ab84468cac7d6a3ec00f1591f87714f",
     "apps/api/package.json": "6688e35fac2224c64e5daae18a03c6827c13a41324b4dab84fb64b70cda58116",
-    "apps/extension/package.json": "f4b790ec4d96e625de94cd8670e63faf007e3917092da3d6987b69aec16da324",
+    "apps/extension/package.json": "737683a784231786a255aba3135e1532abe3498190b47aab5abe8c3ccefa0283",
     "apps/web/package.json": "1f014b027b8169214aa4d0d088280f5c7cea5f0fdcf2c57186a279837f93ec35",
     "packages/crypto/package.json": "4f1cf6362bebf3054a3eb908711e9cb658f82cc6dea8d5c362353d6ffa2ad8ad",
     "packages/shared/package.json": "a0310b8b54596150d478dde89c77464d7e14e795bd8c2f36718d69e5615f6bd1"

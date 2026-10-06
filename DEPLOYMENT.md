@@ -15,6 +15,24 @@ Current deployment:
   but the 6 October push produced no deployment event; this release required a
   manual deploy. Always confirm a deploy for the intended commit after a push.
 
+### Extension popup patch — 2026-10-06
+
+- Chromium and unsigned Firefox download packages are now **1.3.1**.
+  Existing unpacked installations require replacing the extracted files and
+  reloading the extension. Store distribution remains separate.
+- Cloudflare version: `073c6c03-4dd2-4ee1-9719-c1a6c2342e52`.
+  Only the two extension ZIPs and their checksums changed in the published
+  static assets; the web application and Render API retain the release below.
+- Chromium SHA-256: `b57d1ec9e11aa0bfea61ac0b54298464fb801755893378e90406e6ed7342948a`.
+- Firefox SHA-256: `e4921d8debf59c7c4f0350afc2f6e634071d36e28274f4465672372957e14474`.
+- The popup has one suggestions scroller, fixed footer actions, wrapping cards,
+  compact session controls and collapsed unsupported-frame diagnostics.
+  [Layout and security review](docs/EXTENSION_POPUP_LAYOUT.md).
+- Validation: 87 extension unit tests, 24 real MV3 browser tests and four
+  documentation checks passed. Synthetic 360/400 px login, locked and unlocked
+  screenshots show no outer overflow and visible footer controls. Live package
+  inventories and SHA-256 are verified after deployment propagation.
+
 ### Verified release — 2026-10-06
 
 - Consolidated application code: `aa582f4af519269d3cb0a5d060c2313b6574bb35`,

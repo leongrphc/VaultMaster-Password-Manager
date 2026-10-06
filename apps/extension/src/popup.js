@@ -114,18 +114,32 @@ async function loadState() {
 	const result = await sendRuntimeMessage({ type: 'LIST_AUTOFILL_TARGETS', tabId: activeTab.id }).catch(() => null);
 	const targets = result?.payload?.targets || [];
 	itemsNode.innerHTML = '';
-	for (const target of targets) {
+	const otherTargets = document.createElement('details');
+	otherTargets.className = 'frame-details';
+	const otherSummary = document.createElement('summary');
+	const inactiveTargets = targets.filter(target => !target.supported || (!target.formToken && target.frameId !== 0));
+	otherSummary.textContent = `Desteklenmiyor veya form yok · ${inactiveTargets.length} sayfa alanı`;
+	otherTargets.appendChild(otherSummary);
+	const orderedTargets = [...targets.filter(target => !inactiveTargets.includes(target)), ...inactiveTargets];
+	for (const target of orderedTargets) {
+		const group = document.createElement('section');
+		group.className = 'target-group';
+		(inactiveTargets.includes(target) ? otherTargets : itemsNode).appendChild(group);
 		const label = document.createElement('p');
-		label.textContent = `${target.frameId === 0 ? 'Ana sayfa' : `Frame ${target.frameId}`} • ${target.origin || target.url}`;
-		itemsNode.appendChild(label);
+		label.className = 'target-label';
+		label.textContent = `${target.frameId === 0 ? 'Ana sayfa' : `Sayfa alanı ${target.frameId}`} • ${target.origin || target.url}`;
+		group.appendChild(label);
 		if (!target.supported) {
 			const notice = document.createElement('p');
+			notice.className = 'target-decision';
 			notice.textContent = 'Desteklenmiyor: farklı köken, opak veya etkin olmayan belge. Bu adresi ayrı sekmede açın.';
-			itemsNode.appendChild(notice); continue;
+			group.appendChild(notice); continue;
 		}
 		const decision = document.createElement('p');
-		decision.textContent = target.formToken ? 'Aynı köken: bu form için seçim yapabilirsiniz.' : 'Aynı köken: görünür desteklenen form bulunamadı.';
-		itemsNode.appendChild(decision);
+		decision.className = 'target-decision';
+		decision.hidden = Boolean(target.formToken && (!target.passwordMode || target.passwordMode === 'login'));
+		decision.textContent = target.formToken ? 'Bu sayfadaki form için öneriler' : 'Görünür desteklenen form bulunamadı.';
+		group.appendChild(decision);
 		if (target.passwordMode) decision.textContent += target.passwordMode === 'change' ? ' Mevcut şifre doldurulur; yeni şifre ayrı tutulur.' : target.passwordMode === 'ambiguous' ? ' Şifre alanları belirsiz; doldurulmaz.' : target.passwordMode === 'new' ? ' Yeni şifre formu.' : '';
 		if (target.canGenerate && target.formToken) {
 			const generate = document.createElement('button');
@@ -138,11 +152,12 @@ async function loadState() {
 					documentId: target.documentId, formToken: target.formToken }).catch(() => null);
 				setStatus(result?.message || 'Şifre üretilemedi. Formu yeniden kontrol edin.'); generate.disabled = false;
 			});
-			itemsNode.appendChild(generate);
+			group.appendChild(generate);
 		}
-		if (target.passwordMode !== 'ambiguous') renderSuggestions(target.suggestions, { ...target, tabId: activeTab.id });
+		if (target.passwordMode !== 'ambiguous') renderSuggestions(target.suggestions, { ...target, tabId: activeTab.id }, group);
 	}
-	setStatus('Hedef adresi kontrol edin, sonra bir giriş bilgisi seçin. Kapalı Shadow DOM desteklenmez.');
+	if (inactiveTargets.length) itemsNode.appendChild(otherTargets);
+	setStatus('Bir giriş bilgisi seçin; form gönderilmez.');
 	if (!targets.length) renderEmptyState('Desteklenen giriş formu bulunamadı.');
 	updateVaultStatusBadge(true);
 }
@@ -191,8 +206,9 @@ async function updateVaultStatusBadge(isOpen) {
 	// Badge zaten background.js tarafından güncelleniyor, burada sadece UI feedback
 }
 
-function renderSuggestions(suggestions, target) {
+function renderSuggestions(suggestions, target, parent = itemsNode) {
 	const group = document.createElement("div");
+	group.className = 'suggestion-list';
 	group.innerHTML = suggestions
 		.map(
 			(suggestion) => `
@@ -224,7 +240,7 @@ function renderSuggestions(suggestions, target) {
 		});
 	});
 
-	itemsNode.appendChild(group);
+	parent.appendChild(group);
 }
 
 function renderEmptyState(message) {
