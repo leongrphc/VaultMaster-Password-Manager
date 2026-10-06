@@ -146,3 +146,120 @@ test('oversized snapshots and restore requests fail explicitly without partial b
     await stopTestServer(server);
   }
 });
+
+test('v4 exports above legacy limit and restores staged chunks atomically with lost-response retry', async () => {
+  const { server, baseUrl } = await startTestServer();
+  const { prisma } = await import('../dist/config/prisma.js');
+  let source, target;
+  try {
+    source = await registerUser(baseUrl); target = await registerUser(baseUrl);
+    const sourceHeaders = { authorization: `Bearer ${source.accessToken}` };
+    const targetHeaders = { authorization: `Bearer ${target.accessToken}` };
+    const key = await createVaultKey();
+    const payload = { title: 'Large encrypted fixture', value: 'x'.repeat(13 * 1024 * 1024) };
+    const encrypted = await encryptJSON(payload, key);
+    await prisma.vaultItem.create({ data: { userId: source.data.user.id, encryptedData: encrypted.ciphertext, iv: encrypted.iv } });
+    assert.equal((await request(baseUrl, '/api/backups/snapshot', { headers: sourceHeaders })).status, 413);
+    const manifest = await request(baseUrl, '/api/backups/snapshot?version=4', { headers: sourceHeaders });
+    assert.equal(manifest.status, 200);
+    const exported = [];
+    for (let index = 0; index < manifest.body.data.chunkCount; index++) {
+      const endpoint = `/api/backups/transfers/${manifest.body.data.transferId}/chunks/${index}`;
+      assert.equal((await request(baseUrl, endpoint, { headers: targetHeaders })).status, 404);
+      const chunk = await request(baseUrl, endpoint, { headers: sourceHeaders });
+      assert.equal(chunk.status, 200);
+      assert.equal(chunk.headers.get('cache-control'), 'no-store');
+      assert.deepEqual((await request(baseUrl, endpoint, { headers: sourceHeaders })).body, chunk.body);
+      exported.push(Buffer.from(chunk.body.data.data, 'base64'));
+    }
+    const snapshot = JSON.parse(Buffer.concat(exported).toString('utf8'));
+    const { encryptChunkedBackup, decryptChunkedBackup } = await import('../../../packages/crypto/dist/index.js');
+    const file = await encryptChunkedBackup({ ...snapshot, vaultKeyBase64: await exportMasterKeyBase64(key) }, 'independent-backup-password');
+    await prisma.user.delete({ where: { id: source.data.user.id } }); source = null;
+    const recovered = await decryptChunkedBackup(file, 'independent-backup-password');
+    const targetKey = await createVaultKey();
+    const next = await encryptJSON(await decryptJSON(recovered.snapshot.items[0].encryptedData, recovered.snapshot.items[0].iv, key), targetKey);
+    Object.assign(recovered.snapshot.items[0], { encryptedData: next.ciphertext, iv: next.iv });
+    const body = { backupId: recovered.backupId, snapshot: recovered.snapshot };
+    const bytes = Buffer.from(JSON.stringify(body));
+    const chunkBytes = 1024 * 1024;
+    const count = Math.ceil(bytes.length / chunkBytes);
+    assert.equal((await request(baseUrl, '/api/backups/transfers', { method: 'POST', headers: targetHeaders,
+      body: { totalBytes: 65 * chunkBytes + 1, chunkCount: 66 } })).status, 400);
+    const created = await request(baseUrl, '/api/backups/transfers', { method: 'POST', headers: targetHeaders,
+      body: { totalBytes: bytes.length, chunkCount: count } });
+    assert.equal(created.status, 200);
+    const endpoint = `/api/backups/transfers/${created.body.data.transferId}`;
+    const chunk = index => ({ index, data: bytes.subarray(index * chunkBytes, (index + 1) * chunkBytes).toString('base64') });
+    assert.equal((await request(baseUrl, `${endpoint}/commit`, { method: 'POST', headers: targetHeaders })).status, 409);
+    assert.equal((await request(baseUrl, `${endpoint}/chunks`, { method: 'PUT', headers: targetHeaders, body: chunk(1) })).status, 409);
+    for (let index = 0; index < count; index++) {
+      assert.equal((await request(baseUrl, `${endpoint}/chunks`, { method: 'PUT', headers: targetHeaders, body: chunk(index) })).status, 200);
+      // Simulate an interrupted connection after acceptance: retry exact bytes.
+      assert.equal((await request(baseUrl, `${endpoint}/chunks`, { method: 'PUT', headers: targetHeaders, body: chunk(index) })).status, 200);
+      if (index === 0) {
+        const changed = chunk(0); changed.data = 'AAAA' + changed.data.slice(4);
+        assert.equal((await request(baseUrl, `${endpoint}/chunks`, { method: 'PUT', headers: targetHeaders, body: changed })).status, 409);
+        assert.equal(await prisma.vaultItem.count({ where: { userId: target.data.user.id } }), 0);
+      }
+    }
+    const [first, retry] = await Promise.all([1, 2].map(() => request(baseUrl, `${endpoint}/commit`, { method: 'POST', headers: targetHeaders })));
+    assert.equal(first.status, 200); assert.equal(retry.status, 200);
+    assert.notEqual(first.body.data.alreadyRestored, retry.body.data.alreadyRestored);
+    assert.equal(await prisma.vaultItem.count({ where: { userId: target.data.user.id } }), 1);
+    const restored = await prisma.vaultItem.findFirstOrThrow({ where: { userId: target.data.user.id } });
+    assert.deepEqual(await decryptJSON(restored.encryptedData, restored.iv, targetKey), payload);
+    await prisma.backupTransfer.update({ where: { id: created.body.data.transferId }, data: { expiresAt: new Date(0) } });
+    assert.equal((await request(baseUrl, `${endpoint}/commit`, { method: 'POST', headers: targetHeaders })).status, 404);
+    const cleanup = await request(baseUrl, '/api/backups/transfers', { method: 'POST', headers: targetHeaders, body: { totalBytes: 1, chunkCount: 1 } });
+    assert.equal(cleanup.status, 200);
+    assert.equal(await prisma.backupTransfer.count({ where: { id: created.body.data.transferId } }), 0);
+  } finally {
+    if (source?.data?.user) await prisma.user.delete({ where: { id: source.data.user.id } });
+    if (target?.data?.user) await prisma.user.delete({ where: { id: target.data.user.id } });
+    await stopTestServer(server);
+  }
+});
+
+test('v4 staging rejects invalid bodies, isolates users, enforces quotas and rolls back failed commits', async () => {
+  const { server, baseUrl } = await startTestServer();
+  const { prisma } = await import('../dist/config/prisma.js');
+  const originalTransaction = prisma.$transaction.bind(prisma);
+  let user, other;
+  try {
+    user = await registerUser(baseUrl); other = await registerUser(baseUrl);
+    const headers = { authorization: `Bearer ${user.accessToken}` };
+    const otherHeaders = { authorization: `Bearer ${other.accessToken}` };
+    const date = '2026-10-06T00:00:00.000Z';
+    const body = { backupId: randomUUID(), snapshot: { folders: [{ id: randomUUID(), name: 'Rollback', createdAt: date, updatedAt: date }], items: [] } };
+    const bytes = Buffer.from(JSON.stringify(body));
+    const created = await request(baseUrl, '/api/backups/transfers', { method: 'POST', headers, body: { totalBytes: bytes.length, chunkCount: 1 } });
+    const id = created.body.data.transferId;
+    const endpoint = `/api/backups/transfers/${id}`;
+    const chunk = { index: 0, data: bytes.toString('base64') };
+    assert.equal((await request(baseUrl, `${endpoint}/chunks`, { method: 'PUT', headers: otherHeaders, body: chunk })).status, 404);
+    await request(baseUrl, endpoint, { method: 'DELETE', headers: otherHeaders });
+    assert.equal(await prisma.backupTransfer.count({ where: { id } }), 1);
+    assert.equal((await request(baseUrl, `${endpoint}/chunks`, { method: 'PUT', headers, body: { ...chunk, sourceKey: 'forbidden' } })).status, 400);
+    assert.equal((await request(baseUrl, `${endpoint}/chunks`, { method: 'PUT', headers, body: { index: 0, data: 'YQ==' } })).status, 400);
+    assert.equal((await request(baseUrl, `${endpoint}/chunks`, { method: 'PUT', headers, body: chunk })).status, 200);
+    prisma.$transaction = (operation, options) => originalTransaction(async tx => {
+      tx.backupRestore.create = async () => { throw new Error('Injected chunk commit failure'); };
+      return operation(tx);
+    }, options);
+    assert.equal((await request(baseUrl, `${endpoint}/commit`, { method: 'POST', headers })).status, 500);
+    prisma.$transaction = originalTransaction;
+    assert.equal(await prisma.folder.count({ where: { userId: user.data.user.id } }), 0);
+    assert.equal(await prisma.backupRestore.count({ where: { userId: user.data.user.id } }), 0);
+    assert.equal((await request(baseUrl, `${endpoint}/commit`, { method: 'POST', headers })).status, 200);
+    assert.equal((await request(baseUrl, '/api/backups/transfers', { method: 'POST', headers, body: { totalBytes: 1, chunkCount: 1 } })).status, 200);
+    assert.equal((await request(baseUrl, '/api/backups/transfers', { method: 'POST', headers, body: { totalBytes: 1, chunkCount: 1 } })).status, 429);
+    await request(baseUrl, endpoint, { method: 'DELETE', headers });
+    assert.equal(await prisma.backupTransferChunk.count({ where: { transferId: id } }), 0);
+  } finally {
+    prisma.$transaction = originalTransaction;
+    if (user?.data?.user) await prisma.user.delete({ where: { id: user.data.user.id } });
+    if (other?.data?.user) await prisma.user.delete({ where: { id: other.data.user.id } });
+    await stopTestServer(server);
+  }
+});

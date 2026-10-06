@@ -8,7 +8,7 @@ export interface EncryptedBackup {
   iv: string;
   ciphertext: string;
 }
-async function backupKey(password: string, salt: ArrayBuffer) {
+export async function backupKey(password: string, salt: ArrayBuffer) {
   const material = await crypto.subtle.importKey("raw", new TextEncoder().encode(password), "PBKDF2", false, ["deriveKey"]);
   return crypto.subtle.deriveKey({ name: "PBKDF2", salt, iterations: ITERATIONS, hash: "SHA-256" },
     material, { name: "AES-GCM", length: 256 }, false, ["encrypt", "decrypt"]);

@@ -25,6 +25,7 @@ model User {
 
   vaultItems               VaultItem[]
   backupRestores           BackupRestore[]
+  backupTransfers          BackupTransfer[]
   folders                  Folder[]
   devices                  Device[]
   auditEvents              AuditEvent[]
@@ -239,4 +240,25 @@ model EmergencyAccessGrant {
   @@unique([ownerId, contactId])
   @@index([contactId])
   @@map("emergency_access_grants")
+}
+
+model BackupTransfer {
+  id String @id @default(uuid())
+  userId String
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  direction String
+  totalBytes Int
+  chunkCount Int
+  expiresAt DateTime
+  chunks BackupTransferChunk[]
+  @@index([userId, expiresAt])
+  @@map("backup_transfers")
+}
+model BackupTransferChunk {
+  transferId String
+  transfer BackupTransfer @relation(fields: [transferId], references: [id], onDelete: Cascade)
+  index Int
+  data String
+  @@id([transferId, index])
+  @@map("backup_transfer_chunks")
 }

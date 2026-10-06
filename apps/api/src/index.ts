@@ -55,12 +55,15 @@ export function createApp(): Express {
   app.use(cors({ origin: env.CORS_ORIGIN, credentials: true }));
   app.use(cookieParser());
   app.use(webSessionProtection);
+  app.use("/api/backups/transfers", express.json({ limit: "1400kb" }));
   app.use("/api/backups/restore", express.json({ limit: "16mb" }));
   app.use(express.json({ limit: "10mb" }));
 
   const limiter = rateLimit({
     windowMs: 15 * 60 * 1000,
     max: 100,
+    // Chunk transfers have their own authenticated per-account budget.
+    skip: req => /^\/backups\/transfers\/[0-9a-f-]{36}\/chunks(?:\/[0-9]+)?$/.test(req.path),
     standardHeaders: true,
     legacyHeaders: false,
     message: { success: false, error: "Çok fazla istek, lütfen bekleyin" },

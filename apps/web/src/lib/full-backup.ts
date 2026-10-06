@@ -1,7 +1,7 @@
 import { z } from "zod";
-import { countBackup, MAX_BACKUP_FILE_BYTES, MAX_BACKUP_SNAPSHOT_BYTES, personalSnapshotSchema,
+import { countBackup, MAX_BACKUP_FILE_BYTES, MAX_CHUNKED_SNAPSHOT_BYTES, personalSnapshotSchema,
   type PersonalSnapshot } from "@vaultmaster/shared";
-import { decryptBackup, encryptBackup, decryptBinary, encryptBinary, decryptJSON, encryptJSON, importMasterKey } from "@vaultmaster/crypto";
+import { decryptBackup, encryptChunkedBackup, decryptChunkedBackup, MAX_CHUNKED_BACKUP_FILE_BYTES, decryptBinary, encryptBinary, decryptJSON, encryptJSON, importMasterKey } from "@vaultmaster/crypto";
 
 export const backupArchiveSchema = z.object({
   scope: z.literal("personal-vault"), backupId: z.string().uuid(), exportedAt: z.string().datetime(),
@@ -45,21 +45,26 @@ async function transformSnapshot(snapshot: PersonalSnapshot, sourceKey: CryptoKe
 
 export async function createFullBackup(archive: BackupArchive, password: string, assertCurrent: () => void): Promise<string> {
   const parsed = backupArchiveSchema.parse(archive);
-  if (new TextEncoder().encode(JSON.stringify(parsed.snapshot)).byteLength > MAX_BACKUP_SNAPSHOT_BYTES) throw new Error("Kasa yedek boyut sınırını aşıyor.");
+  if (new TextEncoder().encode(JSON.stringify(parsed.snapshot)).byteLength > MAX_CHUNKED_SNAPSHOT_BYTES) throw new Error("Kasa yedek boyut sınırını aşıyor.");
   // Verify every encrypted record, including historical data, before claiming
   // that the archive is restorable. Never silently omit unreadable content.
   await transformSnapshot(parsed.snapshot, await importMasterKey(parsed.vaultKeyBase64), null, assertCurrent);
-  const file = JSON.stringify(await encryptBackup(parsed, password));
+  const file = JSON.stringify(await encryptChunkedBackup(parsed, password, assertCurrent));
   assertCurrent();
-  if (new TextEncoder().encode(file).byteLength > MAX_BACKUP_FILE_BYTES) throw new Error("Yedek dosyası boyut sınırını aşıyor.");
+  if (new TextEncoder().encode(file).byteLength > MAX_CHUNKED_BACKUP_FILE_BYTES) throw new Error("Yedek dosyası boyut sınırını aşıyor.");
   return file;
 }
 
 export async function openFullBackup(text: string, password: string): Promise<BackupArchive> {
-  if (new TextEncoder().encode(text).byteLength > MAX_BACKUP_FILE_BYTES) throw new Error("Yedek dosyası 24 MiB sınırını aşıyor.");
+  if (new TextEncoder().encode(text).byteLength > MAX_CHUNKED_BACKUP_FILE_BYTES) throw new Error("Yedek dosyası 90 MiB sınırını aşıyor.");
   let archive: BackupArchive;
-  try { archive = backupArchiveSchema.parse(await decryptBackup(JSON.parse(text), password)); }
+  try {
+    const file = JSON.parse(text);
+    if (file.version === 3 && new TextEncoder().encode(text).byteLength > MAX_BACKUP_FILE_BYTES) throw new Error("Legacy size limit");
+    archive = backupArchiveSchema.parse(await (file.version === 4 ? decryptChunkedBackup(file, password) : decryptBackup(file, password)));
+  }
   catch { throw new Error("Yedek açılamadı. Yedek şifresini ve dosyanın bütünlüğünü kontrol edin."); }
+  if (new TextEncoder().encode(JSON.stringify(archive.snapshot)).byteLength > MAX_CHUNKED_SNAPSHOT_BYTES) throw new Error("Kasa yedek boyut sınırını aşıyor.");
   await transformSnapshot(archive.snapshot, await importMasterKey(archive.vaultKeyBase64), null, () => undefined);
   return archive;
 }
@@ -69,7 +74,7 @@ export async function prepareBackupRestore(archive: BackupArchive, targetKeyBase
   const snapshot = await transformSnapshot(parsed.snapshot, await importMasterKey(parsed.vaultKeyBase64),
     await importMasterKey(targetKeyBase64), assertCurrent);
   const body = { backupId: parsed.backupId, snapshot };
-  if (new TextEncoder().encode(JSON.stringify(body)).byteLength > MAX_BACKUP_SNAPSHOT_BYTES) throw new Error("Yedek geri yükleme boyut sınırını aşıyor.");
+  if (new TextEncoder().encode(JSON.stringify(snapshot)).byteLength > MAX_CHUNKED_SNAPSHOT_BYTES) throw new Error("Yedek geri yükleme boyut sınırını aşıyor.");
   return body;
 }
 export { countBackup };

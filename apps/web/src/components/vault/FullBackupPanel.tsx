@@ -3,7 +3,7 @@
 import { useRef, useState } from "react";
 import { useStore } from "@/lib/store";
 import { openFullBackup, countBackup, type BackupArchive } from "@/lib/full-backup";
-import { MAX_BACKUP_FILE_BYTES } from "@vaultmaster/shared";
+import { MAX_CHUNKED_BACKUP_FILE_BYTES } from "@vaultmaster/crypto";
 
 export default function FullBackupPanel() {
   const [password, setPassword] = useState("");
@@ -28,7 +28,7 @@ export default function FullBackupPanel() {
   return <section className="glass rounded-2xl p-6 space-y-5">
     <div><h3 className="font-semibold">Tam Şifreli Kasa Yedeği</h3>
       <p className="mt-1 text-sm text-text-secondary">Klasörler, aktif kayıtlar, çöp kutusu, tüm kayıt geçmişi ve ekler birlikte saklanır. Yeni bir hesaba da geri yüklenebilir.</p>
-      <p className="mt-2 text-xs text-text-muted">Yedek şifresini güvenle saklayın; unutulursa dosya açılamaz. Kişisel kasa içindir; hesap oturumları, 2FA ayarları ve paylaşılan kasalar dahil değildir. Bu sürümde kasa içeriği sınırı 16 MiB.</p>
+      <p className="mt-2 text-xs text-text-muted">Yedek şifresini güvenle saklayın; unutulursa dosya açılamaz. Kişisel kasa içindir; hesap oturumları, 2FA ayarları ve paylaşılan kasalar dahil değildir. Kasa içeriği sınırı 64 MiB; eski yedek dosyaları da açılabilir.</p>
     </div>
     <form className="space-y-3" onSubmit={event => {
       event.preventDefault();
@@ -50,7 +50,7 @@ export default function FullBackupPanel() {
       <input ref={fileInput} aria-label="Tam yedek dosyası" type="file" accept=".json" disabled={busy} onChange={event => {
         setPreview(null); previewGuard.current = null; setMessage(""); setError("");
         const selected = event.target.files?.[0] ?? null;
-        if (selected && selected.size > MAX_BACKUP_FILE_BYTES) { setFile(null); setError("Yedek dosyası 24 MiB sınırını aşıyor."); }
+        if (selected && selected.size > MAX_CHUNKED_BACKUP_FILE_BYTES) { setFile(null); setError("Yedek dosyası 90 MiB sınırını aşıyor."); }
         else setFile(selected);
       }} className="block w-full text-sm text-text-secondary" />
       <input aria-label="Geri yüklenecek yedeğin şifresi" type="password" autoComplete="off" value={restorePassword} onChange={event => { setRestorePassword(event.target.value); setPreview(null); }} placeholder="Dosyanın yedek şifresi" className={inputClass} />

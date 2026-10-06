@@ -49,3 +49,16 @@ export function countBackup(snapshot: PersonalSnapshot): BackupCounts {
     versions: snapshot.items.reduce((count, item) => count + item.versions.length, 0),
     attachments: snapshot.items.reduce((count, item) => count + item.attachments.length, 0) };
 }
+
+// Version 3 limits remain unchanged. Version 4 transport is bounded separately.
+export const MAX_CHUNKED_SNAPSHOT_BYTES = 64 * 1024 * 1024;
+export const BACKUP_TRANSFER_CHUNK_BYTES = 1024 * 1024;
+export const MAX_BACKUP_TRANSFER_BYTES = 65 * 1024 * 1024;
+export const backupTransferSchema = z.object({
+  totalBytes: z.number().int().positive().max(MAX_BACKUP_TRANSFER_BYTES),
+  chunkCount: z.number().int().positive().max(65),
+}).strict().refine(value => value.chunkCount === Math.ceil(value.totalBytes / BACKUP_TRANSFER_CHUNK_BYTES));
+export const backupTransferChunkSchema = z.object({
+  index: z.number().int().min(0).max(64),
+  data: z.string().min(4).max(4 * Math.ceil(BACKUP_TRANSFER_CHUNK_BYTES / 3)).regex(/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/),
+}).strict();

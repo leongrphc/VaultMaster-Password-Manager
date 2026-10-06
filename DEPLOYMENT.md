@@ -265,8 +265,8 @@ separate from full backup recovery.
 
 This first format supports at most 16 MiB of serialized encrypted snapshot data,
 10,000 folders/items, 10,000 versions and 1,000 files per item, and a 24 MiB file.
-Over-limit accounts fail explicitly; no content is dropped. Larger vaults need
-streaming/chunked backups in a later format. A copied backup remains decryptable
+Over-limit accounts fail explicitly; no content is dropped. Version 4, described
+below, provides bounded chunking for larger vaults. A copied backup remains decryptable
 with its backup password after account/password changes; store it accordingly.
 The backup password cannot be reset by the service.
 
@@ -276,3 +276,97 @@ existing records, retry concurrently, and inject a transaction failure to prove
 rollback. Chromium tests exercise download, wrong-password rejection, preview
 and explicit restore. Production data is not used.
 Reference: [OWASP Key Management](https://cheatsheetseries.owasp.org/cheatsheets/Key_Management_Cheat_Sheet.html).
+
+## Chunked personal backups (version 4, P0-1)
+
+Apply `20261006000000_chunked_backup_transfers` before deploying the API; deploy
+that API before the new web client. Version 3 files and the legacy `/snapshot`
+and `/restore` contracts remain supported with their original limits. New web
+exports use version 4 JSON, with the same personal archive contents and independent
+backup password. Older clients cannot open version 4 files.
+
+Version 4 uses PBKDF2-SHA256 (600,000 iterations, fresh 32-byte salt) and
+AES-256-GCM (128-bit tags, fresh random 96-bit IV per chunk). UTF-8 archive bytes
+are divided into 1 MiB chunks. Each chunk authenticates the canonical header
+`{format, version, kdf, chunkBytes, totalBytes, chunkCount}` plus its zero-based
+`index`. Fixed chunk size, exact lengths/count/order and KDF parameters are
+validated before derivation. Reordering/relabeling, duplication, truncation,
+header edits or ciphertext edits fail the entire archive. No preview or restore
+is available before all chunks and all contained vault ciphertext are verified.
+The source DEK, email and folders stay inside the password-encrypted file.
+
+Explicit limits:
+
+- Version 4 encrypted snapshot JSON: 64 MiB; archive/transfer payload: 65 MiB;
+  downloadable JSON: 90 MiB. Chunk size: 1 MiB, at most 65 chunks.
+- The existing 10,000 folders/items, 10,000 versions per item and 1,000 attachments
+  per item schema limits remain. Attachments retain the existing 25 MiB limit.
+- Transfer chunk HTTP bodies: 1,400 KiB (base64 plus envelope). Authenticated chunk
+  traffic has its own 400-request/account/15-minute budget; other API operations
+  retain their existing request limits.
+- One staged export and at most two unfinished restores per account, valid for
+  one hour. New exports replace that account's previous staged export.
+
+`GET /api/backups/snapshot?version=4` freezes an account-scoped repeatable-read
+snapshot and returns `{transferId,totalBytes,chunkCount}`. Fetch its immutable
+base64 chunks with `GET /transfers/:id/chunks/:index`. Restore starts with
+`POST /transfers` and `{totalBytes,chunkCount}`, uploads sequential chunks using
+`PUT /transfers/:id/chunks` and `{index,data}`, then uses `POST /transfers/:id/commit`.
+All paths are under `/api/backups`, require current account authentication and
+return `Cache-Control: no-store`. Duplicate uploads must match accepted bytes;
+conflicting or out-of-order uploads and incomplete commits fail explicitly.
+`DELETE /transfers/:id` discards only the authenticated account's transfer.
+
+The web re-encrypts every record/history/file for the destination DEK before
+uploading. Staging contains that ciphertext and the existing snapshot metadata;
+it never receives the source DEK, backup password or decrypted vault secrets.
+Commit strictly validates the assembled snapshot and uses the same atomic,
+additive import and unique backup receipt as version 3. Concurrent/lost-response
+commit retries cannot insert duplicates. No staging data becomes visible in the
+vault before commit. The web retries network failures up to three attempts for
+immutable chunk reads/writes and commit, checking its vault-session guard each
+time. HTTP errors are surfaced, not blindly retried.
+
+Limitations: this is bounded chunking, not constant-memory streaming. Snapshot
+creation, file opening and final transactional import still assemble data in
+memory; concurrent maximum-size jobs need memory headroom on Render Free.
+The web does not persist a transfer handle or resume automatically across a page
+reload. Interrupted API transfers can retry with their existing handle until
+expiry; a new web attempt starts a new transfer. Completed or abandoned web transfers are deleted
+by the client on a best-effort basis. Expired transfers are inaccessible immediately and physically
+removed on the account's next transfer creation/export or account deletion.
+For inactive accounts, run this maintenance SQL periodically on the server:
+
+```sql
+DELETE FROM backup_transfers WHERE "expiresAt" < CURRENT_TIMESTAMP;
+```
+
+Rollback can retain the additive migration and old backup endpoints; revert the
+web to version 3 only if users understand it cannot read newly downloaded v4
+files. Keep v4 files and their passwords; no account reset can recover them.
+Operational server backups/recovery drills remain separate roadmap work.
+
+P0-1 verification on 2026-10-06 (local test data only):
+
+```sh
+node --test packages/crypto/tests/chunked-backup.test.mjs
+pnpm --filter @vaultmaster/web test tests/full-backup.test.ts tests/backup-transfer.test.ts
+VAULTMASTER_TEST_DATABASE_URL=<disposable-postgresql> node --test apps/api/tests/backups.integration.test.mjs
+node --test packages/crypto/tests/*.test.mjs
+NODE_OPTIONS=--no-experimental-webstorage pnpm --filter @vaultmaster/web test
+VAULTMASTER_TEST_DATABASE_URL=<disposable-postgresql> node --test apps/api/tests/rate-limit.integration.test.mjs
+pnpm typecheck
+pnpm lint
+VAULTMASTER_STATIC_EXPORT=1 pnpm build
+node --test tests/browser/session-security.mjs
+```
+
+The focused suites ran first. All 5 migrations applied to a new disposable
+PostgreSQL 18 instance. Results: 14 crypto tests, 74 web tests, 5 backup integration
+tests, 1 existing rate-limit test, 1 Chromium flow passed; typecheck, lint and
+static production build passed. Lint retains 3 existing navigation warnings.
+This host's Node web-storage global required `--no-experimental-webstorage` for
+the full Vitest suite; Playwright on Ubuntu 26.04 required
+`PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=ubuntu24.04-x64` and a locally downloaded
+Chromium (`PLAYWRIGHT_BROWSERS_PATH` under ignored `node_modules`). No production
+services were deployed or queried for verification.

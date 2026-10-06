@@ -1,18 +1,26 @@
+import rateLimit from "express-rate-limit";
 import { randomUUID } from "node:crypto";
 import { Router, type Request, type Response, type NextFunction } from "express";
 import { Prisma } from "@prisma/client";
-import { countBackup, MAX_BACKUP_SNAPSHOT_BYTES, personalSnapshotSchema, restoreBackupSchema } from "@vaultmaster/shared";
+import { countBackup, MAX_BACKUP_SNAPSHOT_BYTES, MAX_CHUNKED_SNAPSHOT_BYTES, MAX_BACKUP_TRANSFER_BYTES, BACKUP_TRANSFER_CHUNK_BYTES, backupTransferSchema, backupTransferChunkSchema, personalSnapshotSchema, restoreBackupSchema } from "@vaultmaster/shared";
 import { prisma } from "../config/prisma.js";
 import { authMiddleware } from "../middleware/auth.js";
 import { logAuditEvent } from "../utils/audit-log.js";
 
 const router: Router = Router();
 router.use(authMiddleware);
+router.use((_req, res, next) => { res.setHeader("Cache-Control", "no-store"); next(); });
+const chunkLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 400,
+  keyGenerator: req => req.user!.userId, standardHeaders: true, legacyHeaders: false,
+  message: { success: false, error: "Too many backup chunk requests" } });
+router.use("/transfers/:id/chunks", chunkLimiter);
 class BackupTooLarge extends Error {}
 
 router.get("/snapshot", async (req: Request, res: Response, next: NextFunction) => {
   try {
     const userId = req.user!.userId;
+    const chunked = req.query.version === "4";
+    const limit = chunked ? MAX_CHUNKED_SNAPSHOT_BYTES : MAX_BACKUP_SNAPSHOT_BYTES;
     const snapshot = await prisma.$transaction(async tx => {
       // Reject large accounts before loading their encrypted blobs into memory.
       const sizes = await tx.$queryRaw<Array<{ bytes: bigint }>>`
@@ -20,7 +28,7 @@ router.get("/snapshot", async (req: Request, res: Response, next: NextFunction) 
           + COALESCE((SELECT SUM(OCTET_LENGTH(v."encryptedData")) FROM vault_item_versions v JOIN vault_items i ON i.id = v."vaultItemId" WHERE i."userId" = ${userId}), 0)
           + COALESCE((SELECT SUM(OCTET_LENGTH("encryptedBlob") + OCTET_LENGTH("encryptedMetadata")) FROM attachments WHERE "userId" = ${userId}), 0) AS bytes
       `;
-      if (Number(sizes[0]!.bytes) > MAX_BACKUP_SNAPSHOT_BYTES ||
+      if (Number(sizes[0]!.bytes) > limit ||
           await tx.vaultItem.count({ where: { userId } }) > 10000 || await tx.folder.count({ where: { userId } }) > 10000) throw new BackupTooLarge();
       const folders = await tx.folder.findMany({ where: { userId }, orderBy: { id: "asc" },
         select: { id: true, name: true, createdAt: true, updatedAt: true } });
@@ -33,25 +41,39 @@ router.get("/snapshot", async (req: Request, res: Response, next: NextFunction) 
             encryptedBlob: true, blobIv: true, size: true, createdAt: true, updatedAt: true } },
         } });
       const serialized = JSON.stringify({ folders, items });
-      if (Buffer.byteLength(serialized) > MAX_BACKUP_SNAPSHOT_BYTES) throw new BackupTooLarge();
+      if (Buffer.byteLength(serialized) > limit) throw new BackupTooLarge();
       return personalSnapshotSchema.parse(JSON.parse(serialized));
     }, { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead, timeout: 30000 });
     await logAuditEvent({ userId, action: "vault.backup.export", status: "success" });
     res.setHeader("Cache-Control", "no-store");
-    res.json({ success: true, data: { backupId: randomUUID(), exportedAt: new Date().toISOString(),
-      sourceEmail: req.user!.email, snapshot } });
+    const data = { backupId: randomUUID(), exportedAt: new Date().toISOString(), sourceEmail: req.user!.email, snapshot };
+    if (!chunked) { res.json({ success: true, data }); return; }
+    const bytes = Buffer.from(JSON.stringify(data));
+    if (bytes.length > MAX_BACKUP_TRANSFER_BYTES) throw new BackupTooLarge();
+    const chunks: Array<{ index: number; data: string }> = [];
+    for (let offset = 0; offset < bytes.length; offset += BACKUP_TRANSFER_CHUNK_BYTES) {
+      chunks.push({ index: chunks.length, data: bytes.subarray(offset, offset + BACKUP_TRANSFER_CHUNK_BYTES).toString("base64") });
+    }
+    const transfer = await prisma.$transaction(async tx => {
+      await tx.$queryRaw`SELECT id FROM users WHERE id = ${userId} FOR UPDATE`;
+      await tx.backupTransfer.deleteMany({ where: { userId, OR: [{ expiresAt: { lt: new Date() } }, { direction: "export" }] } });
+      return tx.backupTransfer.create({ data: { userId, direction: "export", totalBytes: bytes.length, chunkCount: chunks.length,
+        expiresAt: new Date(Date.now() + 3600000), chunks: { create: chunks } } });
+    }, { timeout: 60000 });
+    res.json({ success: true, data: { transferId: transfer.id, totalBytes: transfer.totalBytes, chunkCount: transfer.chunkCount } });
   } catch (error) {
-    if (error instanceof BackupTooLarge) { res.status(413).json({ success: false, error: "Kasa bu yedek sürümünün 16 MiB sınırını aşıyor. Hiçbir içerik atlanmadı." }); return; }
+    if (error instanceof BackupTooLarge) { res.status(413).json({ success: false, error: "Kasa seçilen yedek sürümünün boyut sınırını aşıyor. Hiçbir içerik atlanmadı." }); return; }
     next(error);
   }
 });
 
-router.post("/restore", async (req: Request, res: Response, next: NextFunction) => {
+async function restore(req: Request, res: Response, next: NextFunction, chunked = false) {
   try {
-    if (Buffer.byteLength(JSON.stringify(req.body)) > MAX_BACKUP_SNAPSHOT_BYTES) {
+    if (Buffer.byteLength(JSON.stringify(req.body)) > (chunked ? MAX_BACKUP_TRANSFER_BYTES : MAX_BACKUP_SNAPSHOT_BYTES)) {
       res.status(413).json({ success: false, error: "Yedek geri yükleme boyut sınırını aşıyor." }); return;
     }
     const { backupId, snapshot } = restoreBackupSchema.parse(req.body);
+    if (Buffer.byteLength(JSON.stringify(snapshot)) > (chunked ? MAX_CHUNKED_SNAPSHOT_BYTES : MAX_BACKUP_SNAPSHOT_BYTES)) throw new BackupTooLarge();
     const userId = req.user!.userId;
     const counts = countBackup(snapshot);
     const result = await prisma.$transaction(async tx => {
@@ -84,6 +106,78 @@ router.post("/restore", async (req: Request, res: Response, next: NextFunction) 
     }, { timeout: 60000, maxWait: 10000 });
     await logAuditEvent({ userId, action: "vault.backup.restore", status: "success", metadata: { backupId, alreadyRestored: result.alreadyRestored } });
     res.json({ success: true, data: result });
+  } catch (error) {
+    if (error instanceof BackupTooLarge) { res.status(413).json({ success: false, error: "Backup size limit exceeded" }); return; }
+    next(error);
+  }
+}
+router.post("/restore", (req, res, next) => void restore(req, res, next));
+
+router.post("/transfers", async (req, res, next) => {
+  try {
+    const manifest = backupTransferSchema.parse(req.body);
+    const userId = req.user!.userId;
+    const transfer = await prisma.$transaction(async tx => {
+      await tx.$queryRaw`SELECT id FROM users WHERE id = ${userId} FOR UPDATE`;
+      await tx.backupTransfer.deleteMany({ where: { userId, expiresAt: { lt: new Date() } } });
+      if (await tx.backupTransfer.count({ where: { userId, direction: "restore" } }) >= 2) return null;
+      return tx.backupTransfer.create({ data: { ...manifest, userId, direction: "restore", expiresAt: new Date(Date.now() + 3600000) } });
+    });
+    if (!transfer) { res.status(429).json({ success: false, error: "Too many unfinished backup transfers" }); return; }
+    res.json({ success: true, data: { transferId: transfer.id } });
+  } catch (error) { next(error); }
+});
+router.get("/transfers/:id/chunks/:index", async (req, res, next) => {
+  try {
+    const transfer = await prisma.backupTransfer.findFirst({ where: { id: String(req.params.id), userId: req.user!.userId,
+      direction: "export", expiresAt: { gt: new Date() } } });
+    const index = Number(req.params.index);
+    if (!transfer || !Number.isInteger(index) || index < 0 || index >= transfer.chunkCount) { res.status(404).json({ success: false, error: "Backup transfer not found or expired" }); return; }
+    const chunk = await prisma.backupTransferChunk.findUniqueOrThrow({ where: { transferId_index: { transferId: transfer.id, index } } });
+    res.setHeader("Cache-Control", "no-store");
+    res.json({ success: true, data: { index: chunk.index, data: chunk.data } });
+  } catch (error) { next(error); }
+});
+router.put("/transfers/:id/chunks", async (req, res, next) => {
+  try {
+    const chunk = backupTransferChunkSchema.parse(req.body);
+    const result = await prisma.$transaction(async tx => {
+      await tx.$queryRaw`SELECT id FROM users WHERE id = ${req.user!.userId} FOR UPDATE`;
+      const transfer = await tx.backupTransfer.findFirst({ where: { id: String(req.params.id), userId: req.user!.userId,
+        direction: "restore", expiresAt: { gt: new Date() } } });
+      if (!transfer) return 404;
+      const expected = Math.min(BACKUP_TRANSFER_CHUNK_BYTES, transfer.totalBytes - chunk.index * BACKUP_TRANSFER_CHUNK_BYTES);
+      const bytes = Buffer.from(chunk.data, "base64");
+      if (chunk.index >= transfer.chunkCount || bytes.length !== expected || bytes.toString("base64") !== chunk.data) return 400;
+      const previous = await tx.backupTransferChunk.findUnique({ where: { transferId_index: { transferId: transfer.id, index: chunk.index } } });
+      if (previous) return previous.data === chunk.data ? 200 : 409;
+      const count = await tx.backupTransferChunk.count({ where: { transferId: transfer.id } });
+      if (chunk.index !== count) return 409;
+      await tx.backupTransferChunk.create({ data: { ...chunk, transferId: transfer.id } });
+      return 200;
+    });
+    res.status(result).json({ success: result === 200, error: result === 200 ? undefined : "Invalid or conflicting backup chunk" });
+  } catch (error) { next(error); }
+});
+router.post("/transfers/:id/commit", async (req, res, next) => {
+  try {
+    const transfer = await prisma.backupTransfer.findFirst({ where: { id: String(req.params.id), userId: req.user!.userId,
+      direction: "restore", expiresAt: { gt: new Date() } }, include: { chunks: { orderBy: { index: "asc" } } } });
+    if (!transfer) { res.status(404).json({ success: false, error: "Backup transfer not found or expired" }); return; }
+    if (transfer.chunks.length !== transfer.chunkCount || transfer.chunks.some((chunk, index) => chunk.index !== index)) {
+      res.status(409).json({ success: false, error: "Incomplete backup transfer" }); return;
+    }
+    const bytes = Buffer.concat(transfer.chunks.map(chunk => Buffer.from(chunk.data, "base64")));
+    if (bytes.length !== transfer.totalBytes) { res.status(400).json({ success: false, error: "Invalid backup transfer size" }); return; }
+    try { req.body = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes)); }
+    catch { res.status(400).json({ success: false, error: "Invalid backup JSON" }); return; }
+    await restore(req, res, next, true);
+  } catch (error) { next(error); }
+});
+router.delete("/transfers/:id", async (req, res, next) => {
+  try {
+    await prisma.backupTransfer.deleteMany({ where: { id: String(req.params.id), userId: req.user!.userId } });
+    res.json({ success: true });
   } catch (error) { next(error); }
 });
 

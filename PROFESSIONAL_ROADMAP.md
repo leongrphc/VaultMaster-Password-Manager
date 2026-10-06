@@ -45,7 +45,7 @@ Dağıtım kimlikleri ve doğrulama kapsamı: [DEPLOYMENT.md](DEPLOYMENT.md).
 | Öncelik | Eksik / kodda görülen durum | Tamamlanma koşulu |
 | --- | --- | --- |
 | P0 | Bağımlılık taramasında hâlâ yüksek/orta/düşük bulgular var. Kritik sayısının sıfır olması tüm bulguların giderildiği anlamına gelmez. | Doğrudan/dolaylı ve üretim/geliştirme bağımlılıklarını ayırıp düzeltme veya somut uygulanabilirlik değerlendirmesi; düzenli güncellemeler. |
-| P0 | Tam kişisel kasa yedeği canlıda; büyük kasalar ve operasyonel sunucu yedekleri ayrı iş. | 16 MiB üzerindeki kasalar için akış/parça desteği; planlı yedek ve geri dönüş tatbikatı. Hesap güvenliği ve paylaşım ayarları bu kişisel arşive dahil değil. |
+| P0 | Tam kişisel kasa yedeği canlıda; P0-1 ile 64 MiB için sürüm 4 parça desteği eklendi. Operasyonel sunucu yedekleri ayrı iş. | Kişisel yedek için 64 MiB parça desteği tamamlandı; planlı sunucu yedek ve geri dönüş tatbikatı bekliyor. Hesap güvenliği ve paylaşım ayarları bu kişisel arşive dahil değil. |
 | P1 | Bağımsız eklenti çekirdeği tamamlandı; mağaza dağıtımı ve çevrimdışı kullanım sonraki kapsam. | Chrome/Edge ZIP paketi mevcut. Şu an giriş/açma/doldurma için API gerekir; tarayıcı yeniden başlayınca yeni giriş gerekir. Mağaza kimliği ve izin/otomatik güncelleme süreci ayrı doğrulanmalı. |
 | P1 | iframe ve Shadow DOM formları yeterince desteklenmiyor; inline panel hedef sayfanın DOM'unda. | Frame seçimi ve kaynak doğrulaması; başka kökenden frame için açık karar; Shadow DOM testleri ve sayfanın değiştiremeyeceği seçim arayüzü. Sadece `all_frames` eklemek yeterli değil. |
 | P1 | Yeni hesap/şifre değiştirme formlarında birden çok şifre alanı ve SPA geçişleri tam ele alınmıyor. | `current-password` / `new-password` ayrımı, formdan şifre üretme, güvenilir güncelleme teklifi ve farklı form türleri için geniş fixture seti. |
@@ -74,3 +74,19 @@ Tarayıcı/işletim sistemi ele geçirilmesini veya kullanıcı onayıyla bir sa
 - [Chrome MessageSender](https://developer.chrome.com/docs/extensions/reference/api/runtime#type-MessageSender) ve [Chrome storage](https://developer.chrome.com/docs/extensions/reference/api/storage): kaynak belge bilgisi ve eklenti oturum depolaması.
 - [Next.js güvenlik duyurusu](https://github.com/advisories/GHSA-vcvr-r3jv-pc5j): ilgili sunucu özelliği için düzeltilmiş sürüm. Statik dağıtımın gerçekten kullandığı özellikler ayrıca değerlendirilir.
 - Test komutları ve oturum biçiminin dağıtım etkisi: [DEPLOYMENT.md](DEPLOYMENT.md).
+
+
+## P0-1 — sürümlü parçalı kişisel yedek (6 Ekim 2026)
+
+- [x] Sürüm 4: 1 MiB AES-256-GCM parçaları, doğrulanmış sıra/toplam boyut,
+  64 MiB kasa sınırı, hesapla sınırlı kalıcı aktarım ve atomik eklemeli geri yükleme.
+  Sürüm 3 dosyaları ve eski API uçları korunuyor. Geçmiş/çöp/ekler atlanmıyor;
+  şifre, kaynak veri anahtarı ve çözülmüş kasa sırları API'ye gönderilmiyor.
+
+Doğrulama: 14 crypto, 74 web, 5 gerçek PostgreSQL yedek entegrasyonu, 1 mevcut
+rate-limit testi ve 1 Chromium akışı geçti; typecheck/lint/statik üretim derlemesi
+geçti (lint: mevcut 3 uyarı). Bellekte birleştirme, 64 MiB sınırı, aktarım süresi
+ve sayfa yenilemesinde otomatik devam olmaması: [DEPLOYMENT.md](DEPLOYMENT.md).
+Operasyonel sunucu yedeği ve diğer yol haritası maddelerine başlanmadı.
+`CURRENT_DEVELOPMENT_ROADMAP.md` bu dalın başlangıcında bulunmadığı için P0-1'in
+kontrol listesi burada kaydedildi.

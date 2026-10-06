@@ -1,3 +1,4 @@
+import { encodeBackupTransfer, decodeBackupTransfer, retryBackupTransfer } from "./backup-transfer";
 import type { PasswordChangeInput, RegisterInput, VaultKeyEnvelope, RestoreBackupInput, PersonalSnapshot, BackupCounts } from "@vaultmaster/shared";
 const API_BASE = "/api";
 
@@ -95,8 +96,34 @@ async function mutateSession<T>(operation: () => Promise<T>): Promise<T> {
 
 export const api = {
   backups: {
-    snapshot: (token: string) => request<{ data: { backupId: string; exportedAt: string; sourceEmail: string; snapshot: PersonalSnapshot } }>("/backups/snapshot", { token }),
-    restore: (body: RestoreBackupInput, token: string) => request<{ data: { alreadyRestored: boolean; counts: BackupCounts } }>("/backups/restore", { method: "POST", body, token }),
+    snapshot: async (token: string, guard = () => {}) => {
+      guard();
+      const response = await request<{ data: { transferId: string; totalBytes: number; chunkCount: number } }>("/backups/snapshot?version=4", { token });
+      const manifest = response.data;
+      try {
+        const data = await decodeBackupTransfer<{ backupId: string; exportedAt: string; sourceEmail: string; snapshot: PersonalSnapshot }>(
+          { totalBytes: manifest.totalBytes, chunkCount: manifest.chunkCount },
+          async index => (await request<{ data: unknown }>(`/backups/transfers/${manifest.transferId}/chunks/${index}`, { token })).data, guard);
+        return { data };
+      } finally { await request(`/backups/transfers/${manifest.transferId}`, { method: "DELETE", token }).catch(() => undefined); }
+    },
+    restore: async (body: RestoreBackupInput, token: string, guard = () => {}) => {
+      guard();
+      const encoded = encodeBackupTransfer(body);
+      const response = await request<{ data: { transferId: string } }>("/backups/transfers", { method: "POST", body: encoded.manifest, token });
+      const endpoint = `/backups/transfers/${response.data.transferId}`;
+      try {
+        for (let index = 0; index < encoded.manifest.chunkCount; index++) {
+          await retryBackupTransfer(() => request(`${endpoint}/chunks`, { method: "PUT", body: encoded.chunk(index), token }), guard);
+        }
+        const result = await retryBackupTransfer(() => request<{ data: { alreadyRestored: boolean; counts: BackupCounts } }>(
+          `${endpoint}/commit`, { method: "POST", token }), guard);
+        return result;
+      } finally {
+        // Once retries end, discard staging; failed cleanup is bounded by expiry.
+        await request(endpoint, { method: "DELETE", token }).catch(() => undefined);
+      }
+    },
   },
   auth: {
     register: (body: RegisterInput) =>

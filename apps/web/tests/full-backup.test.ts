@@ -1,6 +1,6 @@
 import { webcrypto } from "node:crypto";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
-import { createVaultKey, exportMasterKeyBase64, encryptJSON, decryptJSON, encryptBinary, decryptBinary } from "@vaultmaster/crypto";
+import { createVaultKey, exportMasterKeyBase64, encryptJSON, decryptJSON, encryptBinary, decryptBinary, encryptBackup } from "@vaultmaster/crypto";
 import { createFullBackup, openFullBackup, prepareBackupRestore, type BackupArchive } from "../src/lib/full-backup";
 
 beforeEach(() => vi.stubGlobal("crypto", webcrypto));
@@ -59,7 +59,7 @@ test("wrong passwords, tampering, unsupported versions and malicious KDF work fa
   parsed.kdf.iterations = 2000000000;
   await expect(openFullBackup(JSON.stringify(parsed), "independent-backup-password")).rejects.toThrow();
   parsed.kdf.iterations = 600000;
-  parsed.ciphertext = (parsed.ciphertext[0] === "A" ? "B" : "A") + parsed.ciphertext.slice(1);
+  parsed.chunks[0].ciphertext = (parsed.chunks[0].ciphertext[0] === "A" ? "B" : "A") + parsed.chunks[0].ciphertext.slice(1);
   await expect(openFullBackup(JSON.stringify(parsed), "independent-backup-password")).rejects.toThrow();
   parsed.version = 99;
   await expect(openFullBackup(JSON.stringify(parsed), "independent-backup-password")).rejects.toThrow();
@@ -79,4 +79,14 @@ test("session invalidation aborts encrypted preparation before any request or do
   let operations = 0;
   const guard = () => { if (++operations > 2) throw new Error("Session locked"); };
   await expect(prepareBackupRestore(archive, archive.vaultKeyBase64, guard)).rejects.toThrow("Session locked");
+});
+
+
+test("version 3 archives still open and restore all personal content", async () => {
+  const { archive } = await fixture();
+  const file = JSON.stringify(await encryptBackup(archive, "independent-backup-password"));
+  expect(await openFullBackup(file, "independent-backup-password")).toEqual(archive);
+  const target = await createVaultKey();
+  const restored = await prepareBackupRestore(await openFullBackup(file, "independent-backup-password"), await exportMasterKeyBase64(target), () => undefined);
+  expect(await decryptJSON(restored.snapshot.items[0]!.encryptedData, restored.snapshot.items[0]!.iv, target)).toEqual((await fixture()).payload);
 });

@@ -38,6 +38,8 @@ test('web preserves its random data key through password change, reload and unlo
     let vaultKeyEnvelope;
     const backupId = crypto.randomUUID();
     let restoreCalls = 0;
+    let exportBytes;
+    const restoreChunks = [];
     let sessionExpired = false;
     let refreshCalls = 0;
     const timestamp = '2026-10-05T00:00:00.000Z';
@@ -62,19 +64,33 @@ test('web preserves its random data key through password change, reload and unlo
         data = { user: { id: 'user-1', email, createdAt: timestamp }, session: true, deviceId: 'device-1', kdfSalt: email, kdfIterations: 600000, vaultKeyEnvelope };
       }
       else if (pathname.endsWith('/backups/snapshot')) {
-        data = { backupId, exportedAt: timestamp, sourceEmail: email, snapshot: { folders: [], items: [{
+        const snapshot = { backupId, exportedAt: timestamp, sourceEmail: email, snapshot: { folders: [], items: [{
           id: crypto.randomUUID(), folderId: null, favorite: false, deletedAt: null,
           encryptedData: encrypted.ciphertext, iv: encrypted.iv, createdAt: timestamp, updatedAt: timestamp,
           versions: [], attachments: [],
         }] } };
+        exportBytes = Buffer.from(JSON.stringify(snapshot));
+        data = { transferId: 'export-transfer', totalBytes: exportBytes.length, chunkCount: 1 };
       }
-      else if (pathname.endsWith('/backups/restore')) {
-        const body = route.request().postDataJSON();
+      else if (pathname.endsWith('/backups/transfers/export-transfer/chunks/0')) data = { index: 0, data: exportBytes.toString('base64') };
+      else if (pathname.endsWith('/backups/transfers') && route.request().method() === 'POST') {
+        restoreChunks.length = 0;
+        data = { transferId: 'restore-transfer' };
+      }
+      else if (pathname.endsWith('/backups/transfers/restore-transfer/chunks')) {
+        const chunk = route.request().postDataJSON();
+        restoreChunks[chunk.index] = Buffer.from(chunk.data, 'base64');
+        assert.ok(!JSON.stringify(chunk).includes(keyBase64));
+        data = {};
+      }
+      else if (pathname.endsWith('/backups/transfers/restore-transfer/commit')) {
+        const body = JSON.parse(Buffer.concat(restoreChunks).toString('utf8'));
         assert.equal(body.backupId, backupId);
         assert.ok(!JSON.stringify(body).includes(keyBase64));
         assert.ok(!JSON.stringify(body).includes('fixture-secret'));
         data = { alreadyRestored: restoreCalls++ > 0, counts: { folders: 0, items: 1, trash: 0, versions: 0, attachments: 0 } };
       }
+      else if (pathname.includes('/backups/transfers/') && route.request().method() === 'DELETE') data = {};
       else if (pathname.endsWith('/auth/change-password')) {
         const body = route.request().postDataJSON();
         assert.equal(body.expectedVaultKeyVersion, 1);
@@ -160,6 +176,7 @@ test('web preserves its random data key through password change, reload and unlo
     await page.getByRole('button', { name: 'Tam Yedeği İndir', exact: true }).click();
     const download = await downloadReady;
     const backupText = await readFile(await download.path(), 'utf8');
+    assert.equal(JSON.parse(backupText).version, 4);
     assert.ok(!backupText.includes(keyBase64));
     assert.ok(!backupText.includes('fixture-secret'));
     await page.getByLabel('Tam yedek dosyası').setInputFiles({ name: 'portable-backup.json', mimeType: 'application/json', buffer: Buffer.from(backupText) });

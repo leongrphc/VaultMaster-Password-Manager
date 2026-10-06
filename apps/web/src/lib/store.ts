@@ -372,7 +372,7 @@ export const useStore = create<AppStore>()(
         const key = get().masterKeyBase64;
         const assertCurrent = () => requireCurrentVaultSession(get(), epoch, key);
         requireCurrentVaultSession(get(), epoch, key);
-        const response = await get().runWithValidAccessToken(token => { assertCurrent(); return api.backups.snapshot(token); });
+        const response = await get().runWithValidAccessToken(token => { assertCurrent(); return api.backups.snapshot(token, assertCurrent); });
         assertCurrent();
         const file = await createFullBackup({ ...response.data, scope: "personal-vault", vaultKeyBase64: key }, password, assertCurrent);
         assertCurrent();
@@ -390,7 +390,7 @@ export const useStore = create<AppStore>()(
         requireCurrentVaultSession(get(), epoch, key);
         const body = await prepareBackupRestore(archive, key, assertCurrent);
         assertCurrent();
-        const response = await get().runWithValidAccessToken(token => { assertCurrent(); return api.backups.restore(body, token); });
+        const response = await get().runWithValidAccessToken(token => { assertCurrent(); return api.backups.restore(body, token, assertCurrent); });
         assertCurrent();
         await get().loadVault();
         assertCurrent();
