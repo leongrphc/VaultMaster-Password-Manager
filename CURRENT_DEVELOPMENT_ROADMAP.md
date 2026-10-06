@@ -48,12 +48,11 @@ The active branch already includes client-side AES-256-GCM vault encryption, PBK
 
 ## Latest completed feature
 
-**P0-2: repeatable isolated backup and restore drill** is complete on
-`feature/p0-2-backup-restore-drill`. [Runbook](docs/BACKUP_RESTORE_DRILL.md) and
-[secret-free evidence](docs/evidence/p0-2-backup-restore-drill.json) cover synthetic
-v4 backup creation and chunk transfer, second-account recovery, duplicate retries,
-injected transaction failure with unchanged before/after state, PostgreSQL dump
-recovery into a second database, and cleanup. Repeated local drills, 5 backup API
-regressions, 2 isolation guard tests, 14 crypto tests and 74 web tests passed;
-frozen-lockfile install, typecheck, lint and static build passed (3 existing lint
-warnings). No production data or credentials were used. P0-3 was not started.
+**P0-3: dependency vulnerability review** is complete on
+`feature/p0-3-dependency-review`. [Review](docs/DEPENDENCY_VULNERABILITY_REVIEW.md)
+and [secret-free evidence](docs/evidence/p0-3-dependency-audit.json) record the
+baseline, production/development separation, two bounded upstream CLI/lint
+follow-ups, expiring exceptions, and repeatable CI audit gates. P0-2 remains
+complete on `feature/p0-2-backup-restore-drill`; its runbook and evidence cover
+synthetic v4 backup creation, second-account recovery, duplicate retries,
+transaction rollback, PostgreSQL dump recovery, and cleanup. P0-4 has not started.
