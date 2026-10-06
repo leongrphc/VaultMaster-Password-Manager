@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ShieldAlert,
   ShieldCheck,
@@ -12,30 +12,40 @@ import {
   Globe,
 } from "lucide-react";
 import { useStore } from "@/lib/store";
+import { checkPasswordBreaches, type HealthProgress } from "@/lib/health-report";
 import { calculateStrength, getStrengthLabel } from "@vaultmaster/crypto";
 
 interface PasswordIssue {
   itemId: string;
-  title: string;
-  username: string;
-  url?: string;
-  password: string;
   issues: string[];
   strength: number;
   strengthLabel: string;
 }
 
 interface DuplicateGroup {
-  password: string;
-  items: { id: string; title: string; username: string }[];
+  items: { id: string }[];
 }
 
 export default function HealthReportPage() {
   const items = useStore((state) => state.items);
-  const [checkedBreaches, setCheckedBreaches] = useState<Record<string, number | null>>({});
-  const [checkingBreaches, setCheckingBreaches] = useState(false);
-  const [breachProgress, setBreachProgress] = useState({ checked: 0, total: 0 });
-  const [breachAbortController, setBreachAbortController] = useState<AbortController | null>(null);
+  const [report, setReport] = useState<{ source: typeof items; results: Record<string, number> } | null>(null);
+  const checkedBreaches = report?.source === items ? report.results : {};
+  const [breachProgress, setBreachProgress] = useState<HealthProgress>({ phase: "idle", completed: 0, total: 0 });
+  const active = useRef<AbortController | null>(null);
+  const checkingBreaches = ["hashing", "requesting", "matching"].includes(breachProgress.phase);
+
+  useEffect(() => {
+    const unsubscribe = useStore.subscribe((state, previous) => {
+      if (state.items !== previous.items || state.masterKeyBase64 !== previous.masterKeyBase64 ||
+          state.userId !== previous.userId || state.isLocked !== previous.isLocked ||
+          state.isAuthenticated !== previous.isAuthenticated) {
+        active.current?.abort(); active.current = null;
+        setReport(null);
+        setBreachProgress({ phase: "idle", completed: 0, total: 0 });
+      }
+    });
+    return () => { unsubscribe(); active.current?.abort(); active.current = null; };
+  }, []);
 
   const loginItems = useMemo(
     () => items.filter((i) => i.data.type === "login").map((i) => ({
@@ -64,10 +74,6 @@ export default function HealthReportPage() {
         if (strength < 60 || issues.length > 0) {
           return {
             itemId: item.id,
-            title: item.data.title,
-            username: item.data.username,
-            url: item.data.url,
-            password: pw,
             issues,
             strength,
             strengthLabel: label,
@@ -80,77 +86,53 @@ export default function HealthReportPage() {
 
   // Tekrar eden şifreler
   const duplicates = useMemo<DuplicateGroup[]>(() => {
-    const pwMap = new Map<string, { id: string; title: string; username: string }[]>();
+    const pwMap = new Map<string, { id: string }[]>();
 
     loginItems.forEach((item) => {
       const pw = item.data.password;
       if (!pwMap.has(pw)) pwMap.set(pw, []);
       pwMap.get(pw)!.push({
         id: item.id,
-        title: item.data.title,
-        username: item.data.username,
       });
     });
 
     return Array.from(pwMap.entries())
       .filter(([, items]) => items.length > 1)
-      .map(([password, items]) => ({ password, items }));
+      .map(([, items]) => ({ items }));
   }, [loginItems]);
 
-  // HIBP kontrolü (k-anonymity)
   const checkBreaches = async () => {
+    if (active.current) return;
     const controller = new AbortController();
-    setCheckingBreaches(true);
-    setBreachAbortController(controller);
-    setBreachProgress({ checked: 0, total: loginItems.length });
-    const results: Record<string, number | null> = {};
-
+    active.current = controller;
+    setReport(null);
+    setBreachProgress({ phase: "hashing", completed: 0, total: loginItems.length });
+    const current = () => {
+      if (active.current !== controller || useStore.getState().items !== items) throw new Error("Report invalidated");
+      guard();
+    };
+    let guard: () => void;
     try {
-      for (const item of loginItems) {
-        if (controller.signal.aborted) break;
-
-        const pw = item.data.password;
-        try {
-          const encoder = new TextEncoder();
-          const data = encoder.encode(pw);
-          const hashBuffer = await crypto.subtle.digest("SHA-1", data);
-          const hashArray = Array.from(new Uint8Array(hashBuffer));
-          const hashHex = hashArray.map((b) => b.toString(16).padStart(2, "0")).join("").toUpperCase();
-
-          const prefix = hashHex.slice(0, 5);
-          const suffix = hashHex.slice(5);
-
-          const res = await fetch(`https://api.pwnedpasswords.com/range/${prefix}`, { signal: controller.signal });
-          const text = await res.text();
-
-          const lines = text.split("\n");
-          const match = lines.find((line) => line.startsWith(suffix));
-
-          if (match) {
-            const count = parseInt(match.split(":")[1].trim(), 10);
-            results[item.id] = count;
-          } else {
-            results[item.id] = 0;
-          }
-        } catch (error) {
-          if (error instanceof DOMException && error.name === "AbortError") break;
-          results[item.id] = null;
-        } finally {
-          if (!controller.signal.aborted) {
-            setBreachProgress((progress) => ({ ...progress, checked: progress.checked + 1 }));
-          }
-        }
-      }
-
-      setCheckedBreaches(results);
+      guard = useStore.getState().getVaultOperationGuard();
+      const results = await checkPasswordBreaches(loginItems.map(item => ({ id: item.id, password: item.data.password })),
+        controller.signal, current, setBreachProgress);
+      current();
+      setReport({ source: items, results });
+      setBreachProgress({ phase: "completed", completed: loginItems.length, total: loginItems.length });
+    } catch {
+      if (active.current === controller) setBreachProgress(progress => ({ ...progress, phase: "error" }));
     } finally {
-      setCheckingBreaches(false);
-      setBreachAbortController(null);
+      if (active.current === controller) active.current = null;
     }
   };
 
   const cancelBreachCheck = () => {
-    breachAbortController?.abort();
+    const controller = active.current;
+    if (!controller) return;
+    active.current = null;
+    controller.abort();
+    setReport(null);
+    setBreachProgress(progress => ({ ...progress, phase: "cancelled" }));
   };
 
   const breachedItems = Object.entries(checkedBreaches).filter(
@@ -185,7 +167,7 @@ export default function HealthReportPage() {
   };
 
   const breachProgressPercent = breachProgress.total > 0
-    ? Math.round((breachProgress.checked / breachProgress.total) * 100)
+    ? Math.round((breachProgress.completed / breachProgress.total) * 100)
     : 0;
 
   if (totalLogins === 0) {
@@ -230,10 +212,10 @@ export default function HealthReportPage() {
 
         <div className="flex-1">
           <h3 className="text-xl font-bold mb-1">
-            {overallScore >= 80 ? "Kasanız güvenli" : overallScore >= 50 ? "İyileştirme gerekli" : "Acil aksiyon gerekiyor"}
+            {overallScore >= 80 ? "Yerel kontroller iyi" : overallScore >= 50 ? "İyileştirme gerekli" : "Acil aksiyon gerekiyor"}
           </h3>
           <p className="text-text-secondary text-sm mb-4">
-            {totalLogins} giriş bilgisi analiz edildi
+            {totalLogins} giriş bilgisi yerel olarak analiz edildi. Sızıntı kontrolü ayrı ve isteğe bağlıdır; bu puan güvenlik garantisi değildir.
           </p>
 
           <div className="grid grid-cols-3 gap-3">
@@ -251,7 +233,7 @@ export default function HealthReportPage() {
             </div>
             <div className="bg-surface rounded-xl p-3 text-center">
               <p className="text-2xl font-bold" style={{ color: breachedCount > 0 ? "#ff4d6a" : "#00ffb2" }}>
-                {breachedCount > 0 ? breachedCount : Object.keys(checkedBreaches).length > 0 ? "0" : "?"}
+                {breachedCount > 0 ? breachedCount : report?.source === items ? "0" : "?"}
               </p>
               <p className="text-xs text-text-muted mt-1">Sızdırılmış</p>
             </div>
@@ -269,7 +251,12 @@ export default function HealthReportPage() {
             <div>
               <h3 className="font-semibold">Sızıntı Kontrolü</h3>
               <p className="text-sm text-text-secondary">
-                Şifreler tarayıcınızda SHA-1 ile özetlenir; HIBP&apos;ye yalnızca ilk 5 hash karakteri gönderilir. Tam hash ve düz metin şifreler cihazınızdan çıkmaz, eşleşme yerel olarak yapılır.
+                Zayıflık ve tekrar analizi cihazınızda yapılır. Sızıntı kontrolü yalnızca Kontrol Et ile başlar.
+                Şifreler tarayıcınızda SHA-1 ile özetlenir; HIBP&apos;ye yalnızca ilk 5 hash karakteri gönderilir.
+                Tam hash, düz metin şifre, kayıt adı, kullanıcı adı ve URL gönderilmez; eşleşme yerel olarak yapılır.
+                HIBP IP adresinizi, istek zamanını ve hash önekini görebilir; ağ sağlayıcıları bağlantı bilgilerini görebilir. Bu tam anonimlik sağlamaz.
+                Çerez ve yönlendiren adres gönderilmez; yanıt dolgusu istenir. Sonuçlar kaydedilmez ve sayfadan ayrılınca silinir.
+                İptal yeni istekleri durdurur ve kısmi sonuçları siler; gönderilmiş bir isteği geri alamaz. Kasanız değiştirilmez. Rapor satırları yalnızca kayıt numarası gösterir.
               </p>
             </div>
           </div>
@@ -302,18 +289,20 @@ export default function HealthReportPage() {
           </div>
         </div>
 
-        {checkingBreaches && (
+        {breachProgress.phase !== "idle" && (
           <div className="mt-4 rounded-xl border border-accent/20 bg-accent/5 p-3">
-            <div className="flex items-center justify-between text-xs text-text-secondary mb-2">
-              <span>{breachProgress.checked} / {breachProgress.total} şifre kontrol edildi</span>
-              <span>{breachProgressPercent}%</span>
-            </div>
-            <div className="h-2 bg-abyss rounded-full overflow-hidden">
-              <div
-                className="h-full bg-accent rounded-full transition-all"
-                style={{ width: `${breachProgressPercent}%` }}
-              />
-            </div>
+            <p role="status" className="text-sm text-text-secondary">
+              {breachProgress.phase === "hashing" && "Özet cihazınızda hazırlanıyor…"}
+              {breachProgress.phase === "requesting" && "HIBP yanıtı bekleniyor; kalan süre bilinmiyor…"}
+              {breachProgress.phase === "matching" && "Yanıt cihazınızda eşleştiriliyor…"}
+              {breachProgress.phase === "completed" && "Sızıntı kontrolü tamamlandı. Eşleşme olmaması güvenlik garantisi değildir."}
+              {breachProgress.phase === "cancelled" && "Kontrol iptal edildi; kısmi sonuçlar silindi."}
+              {breachProgress.phase === "error" && "Kontrol tamamlanamadı; sonuçlar silindi. Yeniden deneyin."}
+            </p>
+            <p className="text-xs text-text-secondary my-2">{breachProgress.completed} / {breachProgress.total} şifre kontrol edildi</p>
+            <progress aria-label="Sızıntı kontrolü ilerlemesi" max={breachProgress.total || 1} value={breachProgress.completed} className="w-full" />
+            {checkingBreaches && <progress aria-label="Geçerli aşama; süre bilinmiyor" className="w-full" />}
+            {breachProgress.phase === "completed" && <p className="text-xs">{breachProgressPercent}%</p>}
           </div>
         )}
 
@@ -326,8 +315,7 @@ export default function HealthReportPage() {
                 <div key={itemId} className="flex items-center gap-3 bg-danger/5 border border-danger/20 rounded-xl p-3">
                   <AlertTriangle className="w-4 h-4 text-danger shrink-0" />
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium truncate">{item.data.title}</p>
-                    <p className="text-xs text-text-muted">{item.data.username}</p>
+                    <p className="text-sm font-medium truncate">Kayıt {loginItems.findIndex(entry => entry.id === item.id) + 1}</p>
                   </div>
                   <span className="text-xs text-danger font-mono shrink-0">
                     {(count as number).toLocaleString()} kez sızdırılmış
@@ -359,8 +347,7 @@ export default function HealthReportPage() {
                   <Globe className="w-4 h-4 text-accent" />
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium truncate">{item.title}</p>
-                  <p className="text-xs text-text-muted truncate">{item.username}</p>
+                  <p className="text-sm font-medium truncate">Kayıt {loginItems.findIndex(entry => entry.id === item.itemId) + 1}</p>
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
                   <div className="w-16 h-1.5 bg-abyss rounded-full overflow-hidden">
@@ -407,8 +394,7 @@ export default function HealthReportPage() {
                   {group.items.map((item) => (
                     <div key={item.id} className="flex items-center gap-2 text-sm">
                       <ChevronRight className="w-3 h-3 text-warning shrink-0" />
-                      <span className="text-text-primary">{item.title}</span>
-                      <span className="text-text-muted">({item.username})</span>
+                      <span className="text-text-primary">Kayıt {loginItems.findIndex(entry => entry.id === item.id) + 1}</span>
                     </div>
                   ))}
                 </div>

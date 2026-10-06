@@ -67,7 +67,7 @@ const storeState: {
 };
 
 vi.mock("../src/lib/store", () => ({
-  useStore: (selector: (state: typeof storeState) => unknown) => selector(storeState),
+  useStore: Object.assign((selector: (state: typeof storeState) => unknown) => selector(storeState), { getState: () => ({ ...storeState, getVaultOperationGuard: () => () => {} }), subscribe: () => () => {} }),
 }));
 
 vi.mock("../src/lib/notify", () => ({
@@ -83,7 +83,8 @@ vi.mock("../src/lib/api", () => ({
     error instanceof Error ? error.message : fallback,
 }));
 
-vi.mock("@vaultmaster/crypto", () => ({
+vi.mock("@vaultmaster/crypto", async importOriginal => ({
+  ...await importOriginal<typeof import("@vaultmaster/crypto")>(),
   calculateStrength: vi.fn((password: string) => password.length >= 12 ? 85 : 35),
   generatePassword: vi.fn(() => "generated-password"),
   getStrengthLabel: vi.fn((score: number) => score >= 80 ? "strong" : "weak"),
@@ -457,9 +458,9 @@ describe("plaintext export warning modal", () => {
 describe("health report breach check", () => {
   test("shows privacy copy and checks HIBP by hash prefix only", async () => {
     const digest = vi.spyOn(crypto.subtle, "digest").mockResolvedValue(
-      new Uint8Array([0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc]).buffer
+      new Uint8Array([0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, ...Array(14).fill(0)]).buffer
     );
-    const fetchMock = vi.fn().mockResolvedValue({ text: async () => "6789ABC:3" });
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, text: async () => "6789ABC" + "0".repeat(28) + ":3" });
     vi.stubGlobal("fetch", fetchMock);
     storeState.items = [{
       id: "item-1",
@@ -494,7 +495,7 @@ describe("health report breach check", () => {
 
   test("shows progress and cancels an active breach check", async () => {
     vi.spyOn(crypto.subtle, "digest").mockResolvedValue(
-      new Uint8Array([0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc]).buffer
+      new Uint8Array([0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, ...Array(14).fill(0)]).buffer
     );
     const fetchMock = vi.fn((_url: string, init?: RequestInit) => new Promise((_resolve, reject) => {
       init?.signal?.addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError")));

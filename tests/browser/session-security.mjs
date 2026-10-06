@@ -1,4 +1,5 @@
 import test from 'node:test';
+import { createHash } from 'node:crypto';
 import { sensitiveAction } from '../../packages/shared/dist/index.js';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
@@ -159,6 +160,75 @@ test('web preserves its random data key through password change, reload and unlo
     await page.getByLabel(/Ana şifremi unutursam/).check();
     await page.getByRole('button', { name: /^Hesap Oluştur/ }).click();
     await expect(page.getByText('Encrypted browser fixture', { exact: true }).first()).toBeVisible();
+    // P1-4: real Chromium, real WebCrypto and built CSP; provider responses are synthetic.
+    let breachMode = 'wait';
+    const pendingBreaches = [];
+    const breachRequests = [];
+    const abortedBreaches = [];
+    page.on('requestfailed', request => {
+      if (request.url().startsWith('https://api.pwnedpasswords.com/')) abortedBreaches.push(request.failure()?.errorText);
+    });
+    const digest = createHash('sha1').update('fixture-secret').digest('hex').toUpperCase();
+    await context.route('https://api.pwnedpasswords.com/range/*', async route => {
+      const request = route.request();
+      breachRequests.push(request);
+      assert.equal(request.url(), `https://api.pwnedpasswords.com/range/${digest.slice(0, 5)}`);
+      assert.equal(request.headers()['add-padding'], 'true');
+      for (const name of ['cookie', 'authorization', 'referer']) assert.equal(request.headers()[name], undefined);
+      assert.equal(request.postData(), null);
+      if (breachMode === 'wait') { pendingBreaches.push(route); return; }
+      return route.fulfill({ status: breachMode === 'http-error' ? 503 : 200,
+        contentType: 'text/plain', body: breachMode === 'malformed' ? 'PRIVATE provider failure' : `${digest.slice(5)}:7\r\n${'0'.repeat(35)}:0` });
+    });
+    await page.getByRole('link', { name: 'Sağlık Raporu' }).click();
+    await expect(page.getByRole('heading', { name: 'Şifre Sağlık Raporu' })).toBeVisible();
+    assert.equal(breachRequests.length, 0);
+    await expect(page.getByText(/HIBP IP adresinizi/)).toBeVisible();
+    await expect(page.getByText('Encrypted browser fixture', { exact: true })).toHaveCount(0);
+    await page.getByRole('button', { name: 'Kontrol Et', exact: true }).click();
+    await expect.poll(() => pendingBreaches.length).toBe(1);
+    await expect(page.getByText('0 / 1 şifre kontrol edildi')).toBeVisible();
+    await expect(page.getByRole('progressbar', { name: 'Geçerli aşama; süre bilinmiyor' })).not.toHaveAttribute('value');
+    await expect(page.getByText(/kontrolü tamamlandı/)).toHaveCount(0);
+    await page.getByRole('button', { name: 'İptal', exact: true }).evaluate(button => { button.click(); button.click(); });
+    await expect(page.getByText(/Kontrol iptal edildi/)).toBeVisible();
+    await pendingBreaches.shift().fulfill({ status: 200, body: `${digest.slice(5)}:99` }).catch(() => {});
+    await expect.poll(() => abortedBreaches.length).toBe(1);
+    assert.match(abortedBreaches[0], /ABORTED/);
+    await expect(page.getByText(/99 kez/)).toHaveCount(0);
+    for (const mode of ['http-error', 'malformed']) {
+      breachMode = mode;
+      await page.getByRole('button', { name: 'Kontrol Et', exact: true }).click();
+      await expect(page.getByText(/Kontrol tamamlanamadı/)).toBeVisible();
+      await expect(page.getByText(/PRIVATE provider failure/)).toHaveCount(0);
+    }
+    breachMode = 'success';
+    await page.getByRole('button', { name: 'Kontrol Et', exact: true }).click();
+    await expect(page.getByText(/kontrolü tamamlandı/)).toBeVisible();
+    await expect(page.getByText('1 / 1 şifre kontrol edildi')).toBeVisible();
+    await expect(page.getByText('7 kez sızdırılmış')).toBeVisible();
+    const reportStorage = await page.evaluate(() => JSON.stringify({ ...localStorage, ...sessionStorage }));
+    assert.ok(!reportStorage.includes('fixture-secret'));
+    assert.ok(!reportStorage.includes(digest));
+    breachMode = 'wait';
+    await page.getByRole('button', { name: 'Kontrol Et', exact: true }).click();
+    await expect.poll(() => pendingBreaches.length).toBe(1);
+    await page.getByRole('link', { name: 'Tüm Öğeler' }).click();
+    await expect(page.getByText('Encrypted browser fixture', { exact: true }).first()).toBeVisible();
+    await pendingBreaches.shift().fulfill({ status: 200, body: `${digest.slice(5)}:99` }).catch(() => {});
+    await page.getByRole('link', { name: 'Sağlık Raporu' }).click();
+    await expect(page.getByRole('button', { name: 'Kontrol Et', exact: true })).toBeEnabled();
+    await expect(page.getByText(/kez sızdırılmış/)).toHaveCount(0);
+    await page.getByRole('button', { name: 'Kontrol Et', exact: true }).click();
+    await expect.poll(() => pendingBreaches.length).toBe(1);
+    await page.getByRole('button', { name: 'Kasayı Kilitle' }).click();
+    await expect(page.getByRole('heading', { name: 'Kasa Kilitli' })).toBeVisible();
+    await pendingBreaches.shift().fulfill({ status: 200, body: `${digest.slice(5)}:99` }).catch(() => {});
+    await page.getByLabel('Ana Şifre', { exact: true }).fill(password);
+    await page.getByRole('button', { name: 'Ana şifre ile kilidi aç' }).click();
+    await expect(page.getByRole('button', { name: 'Kontrol Et', exact: true })).toBeEnabled();
+    await expect(page.getByText(/kez sızdırılmış/)).toHaveCount(0);
+    await page.getByRole('link', { name: 'Tüm Öğeler' }).click();
     const persisted = await page.evaluate(() => ({ local: JSON.stringify({ ...localStorage }), session: JSON.stringify({ ...sessionStorage }) }));
     assert.ok(!persisted.local.includes(keyBase64));
     assert.ok(!persisted.session.includes(keyBase64));

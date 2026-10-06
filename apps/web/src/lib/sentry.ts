@@ -13,6 +13,13 @@ export function initWebSentry() {
     dsn: process.env.NEXT_PUBLIC_SENTRY_DSN,
     environment: process.env.NODE_ENV,
     tracesSampleRate: 0,
+    // Range URLs contain a password-derived prefix. Never retain them as
+    // breadcrumbs on unrelated errors when optional telemetry is enabled.
+    beforeBreadcrumb(breadcrumb) {
+      const url = breadcrumb.data?.url;
+      if (typeof url === "string" && url.startsWith("https://api.pwnedpasswords.com/")) return null;
+      return breadcrumb;
+    },
   });
 
   initialized = true;
