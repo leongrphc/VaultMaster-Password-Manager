@@ -20,7 +20,7 @@ The P1-6 [documentation record](EXTENSION_DOCUMENTATION.md) covers current user 
 | `webNavigation` | Browser-verified frame/document/ancestor origin checks and SPA approval invalidation; removing it would weaken the fail-closed security policy. No browsing history is stored. |
 | `http://*/*`, `https://*/*` host access | Cross-origin API fetch, HTTP(S) tab URL queries and arbitrary user-chosen login sites. Broad HTTP(S) access is retained explicitly because persistent detection, trusted-submit save capture and navigation-continuation operate before/after toolbar invocation. `activeTab` alone would not preserve these flows. Browser site-access controls can restrict access; unsupported/withheld documents fail closed. |
 | HTTP(S) content-script matches, `all_frames` | Discover login forms in top-level pages and same-origin frames; runtime ancestor policy rejects cross-origin/opaque frames. No origin fallback injection. |
-| HTTP(S) web-accessible `passkey-injected.js` | Existing consent-only page-world WebAuthn notice bridge; no vault/key resource is exposed and third-party passkey signing is unsupported. |
+| HTTP(S) top-level MAIN-world `passkey-injected.js` | Public WebAuthn ceremony bridge; creation/signing requires unlocked vault and protected popup approval. No extension API or vault key is exposed. See [supported subset](VAULT_PASSKEYS.md). |
 
 Removed `tabs` and `activeTab`: HTTP(S) host grants already provide the tab URL
 properties used by this implementation. Removed `<all_urls>` and redundant
@@ -135,7 +135,7 @@ both ZIP and checksum; its contents still depend on the configured build origins
    store-required icons/screenshots, single-purpose description, privacy policy URL,
    support contact, data-use/permission declarations and reviewer test instructions.
    Explain client-side encryption, broad HTTP(S) access, API traffic, transient drafts
-   and unsupported third-party passkey signing honestly. Check current dashboard
+   and the supported passkey subset/UV limitations honestly. Check current dashboard
    requirements; store assets/legal URLs, operator account and review are external
    publication prerequisites, not completed by this code change.
 7. For later store updates, upload only to the existing item, increase version,

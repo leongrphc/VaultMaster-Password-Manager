@@ -44,11 +44,13 @@ The verification uses the deployed code paths, with entirely synthetic data:
    Injection exists only in the drill process, with no production fault endpoint.
 6. Commit the same staged transfer again, including concurrent and sequential
    duplicate retries. Require exactly one receipt and one set of restored data.
-   Decrypt every restored content type with the destination key; check history,
+   Decrypt every restored content type with the destination key; verify a restored
+   synthetic vault passkey signature; check history,
    trash, timestamps, mapped folder references and unchanged existing data.
 7. Delete staging. Create a custom-format `pg_dump` and restore it into the second
    empty database using `pg_restore --exit-on-error`. Compare every public table's
-   rows, including migration history, and decrypt a recovered item.
+   rows, including migration history, decrypt a recovered item and verify its
+   synthetic vault passkey signature.
 8. Delete synthetic accounts in both databases and require empty application
    tables. Stop the cluster and remove its files, dump, personal archive and logs.
 

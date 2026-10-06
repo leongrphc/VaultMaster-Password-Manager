@@ -35,17 +35,18 @@
       ],
       "run_at": "document_start",
       "all_frames": true
-    }
-  ],
-  "web_accessible_resources": [
+    },
     {
-      "resources": [
-        "passkey-injected.js"
-      ],
       "matches": [
         "http://*/*",
         "https://*/*"
-      ]
+      ],
+      "js": [
+        "passkey-injected.js"
+      ],
+      "run_at": "document_start",
+      "all_frames": false,
+      "world": "MAIN"
     }
   ],
   "commands": {

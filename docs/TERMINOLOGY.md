@@ -9,7 +9,7 @@ verification records are not renamed. VaultMaster Autofill remains the product n
 | English | Turkish UI | Meaning and usage |
 | --- | --- | --- |
 | vault | kasa | Encrypted collection of items. Use **Kasa Kilitli** / **Kasa Kilidi Açık** for state; do not mix `Vault` into Turkish state text. |
-| item | öğe | Any saved login, card, identity, note or passkey metadata. Use **Yeni Öğe**, not “record/kayıt” as a competing generic item label. “Kayıt ol” still means account registration. |
+| item | öğe | Any saved login, card, identity, note or passkey (legacy metadata or an encrypted software credential). Use **Yeni Öğe**, not “record/kayıt” as a competing generic item label. “Kayıt ol” still means account registration. |
 | login | giriş bilgisi | A saved username/password item. **Giriş Yap** means sign in to an account; it does not name the saved item. |
 | autofill | otomatik doldurma | The feature that discovers supported forms and offers approved filling. It does not promise unattended filling or submission. |
 | fill | doldur | Put approved values into the selected form. **Doldur** does not save an item or submit the site form. |

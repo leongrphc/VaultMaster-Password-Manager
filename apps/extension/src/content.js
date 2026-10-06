@@ -227,11 +227,6 @@ function installPasskeyBridge() {
 		return;
 	}
 
-	const script = document.createElement("script");
-	script.src = chrome.runtime.getURL("passkey-injected.js");
-	script.async = false;
-	script.onload = () => script.remove();
-	(document.documentElement || document.head).appendChild(script);
 
 	window.addEventListener("message", (event) => {
 		if (event.source !== window || event.origin !== window.location.origin) {
@@ -239,6 +234,13 @@ function installPasskeyBridge() {
 		}
 
 		const data = event.data;
+    if (data?.source === PASSKEY_INJECTED_SOURCE && data.type === 'VM_PASSKEY_CANCEL') {
+      cancelledPasskeys.add(data.requestId);
+      void sendRuntimeMessage({ type: 'PASSKEY_CANCEL', requestId: data.requestId }); return;
+    }
+    if (data?.source === PASSKEY_INJECTED_SOURCE && data.type === 'VM_PASSKEY_REQUEST') {
+      void handleStoredPasskeyRequest(data); return;
+    }
 		if (data?.source !== PASSKEY_INJECTED_SOURCE || data.type !== "VM_PASSKEY_INTERCEPTED") {
 			return;
 		}
@@ -1519,4 +1521,30 @@ function generatePasswordForContext(message, sendResponse) {
 		setNativeValue(input, password);
 	}
 	sendResponse({ ok: true, message: 'Yeni şifre üretildi. Siteye gönderin, sonra kaydetmeyi onaylayın.' });
+}
+
+const cancelledPasskeys = new Set();
+async function handleStoredPasskeyRequest(data) {
+  if (typeof data.requestId !== 'string' || data.requestId.length > 100) return;
+  const panel = document.createElement('div');
+  panel.id = 'vaultmaster-passkey-pending';
+  panel.textContent = 'VaultMaster: passkey işlemini onaylamak için eklenti simgesini açın. İptal etmek için tıklayın.';
+  Object.assign(panel.style, { position: 'fixed', bottom: '20px', right: '20px', zIndex: '2147483647', background: '#121a31', color: '#fff', padding: '18px', maxWidth: '320px' });
+  panel.addEventListener('click', event => { if (event.isTrusted) { cancelledPasskeys.add(data.requestId); void sendRuntimeMessage({ type: 'PASSKEY_CANCEL', requestId: data.requestId }); } });
+  document.documentElement.appendChild(panel);
+  let result;
+  try {
+    result = await sendRuntimeMessage({ type: 'PASSKEY_BEGIN', operation: data.operation, requestId: data.requestId, request: data.request });
+    const deadline = Date.now() + 60000;
+    while (result?.ok && Date.now() < deadline && !cancelledPasskeys.has(data.requestId)) {
+      result = await sendRuntimeMessage({ type: 'PASSKEY_POLL', requestId: data.requestId });
+      if (!result?.pending) break;
+      await new Promise(resolve => setTimeout(resolve, 300));
+    }
+  } catch { result = null; }
+  const cancelled = cancelledPasskeys.delete(data.requestId);
+  panel.remove();
+  window.postMessage({ source: PASSKEY_CONTENT_SOURCE, type: 'VM_PASSKEY_RESULT', requestId: data.requestId,
+    response: !cancelled && result?.ok ? result.response : undefined }, location.origin);
+  if (!result?.response) await sendRuntimeMessage({ type: 'PASSKEY_CANCEL', requestId: data.requestId }).catch(() => null);
 }

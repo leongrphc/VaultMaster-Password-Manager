@@ -1,10 +1,10 @@
 // Invoked by the isolated cluster harness, never against a supplied database.
 import assert from 'node:assert/strict';
-import { randomUUID, createHash } from 'node:crypto';
+import { randomUUID, createHash, randomBytes } from 'node:crypto';
 import { readFile, writeFile } from 'node:fs/promises';
 import { execFileSync } from 'node:child_process';
 import { createRequire } from 'node:module';
-import { createVaultKey, exportMasterKeyBase64, encryptJSON, encryptBinary, decryptJSON, decryptBinary } from '../packages/crypto/dist/index.js';
+import { createStoredPasskey, signStoredPasskey, createVaultKey, exportMasterKeyBase64, encryptJSON, encryptBinary, decryptJSON, decryptBinary } from '../packages/crypto/dist/index.js';
 import { build } from 'esbuild';
 
 const work = process.env.VM_DRILL_WORK;
@@ -50,7 +50,20 @@ try {
   const sourceHeaders = { authorization: `Bearer ${source.accessToken}` };
   const targetHeaders = { authorization: `Bearer ${target.accessToken}` };
   // More than one HTTP/file chunk, plus every recoverable personal data type.
-  const payload = { title: 'Synthetic drill', password: 'synthetic-only', padding: 'x'.repeat(1024 * 1024) };
+  const passkeyRequest = { origin: 'https://recovery.example.test', rpId: 'recovery.example.test', challenge: randomBytes(32).toString('base64url'),
+    user: { id: Buffer.from('synthetic-recovery-user').toString('base64url'), name: 'Synthetic recovery' } };
+  const generated = await createStoredPasskey(passkeyRequest, []);
+  const { verifyRegistrationResponse, verifyAuthenticationResponse } = require('@simplewebauthn/server');
+  const verified = await verifyRegistrationResponse({ response: generated.response, expectedChallenge: passkeyRequest.challenge,
+    expectedOrigin: passkeyRequest.origin, expectedRPID: passkeyRequest.rpId, requireUserVerification: false });
+  assert.equal(verified.verified, true);
+  const verifyRecoveredPasskey = async stored => {
+    const request = { ...passkeyRequest, user: undefined, challenge: randomBytes(32).toString('base64url'), allowCredentials: [generated.stored.credentialId] };
+    const response = await signStoredPasskey(request, stored);
+    assert.equal((await verifyAuthenticationResponse({ response, credential: verified.registrationInfo.credential, expectedChallenge: request.challenge,
+      expectedOrigin: request.origin, expectedRPID: request.rpId, requireUserVerification: false })).verified, true);
+  };
+  const payload = { type: 'passkey', ...generated.stored, title: 'Synthetic drill', padding: 'x'.repeat(1024 * 1024) };
   const encrypted = await encryptJSON(payload, sourceKey);
   const metadata = { name: 'synthetic.bin', type: 'application/octet-stream' };
   const encryptedMetadata = await encryptJSON(metadata, sourceKey);
@@ -153,8 +166,11 @@ try {
     const query = `SELECT COALESCE(jsonb_agg(to_jsonb(t) ORDER BY to_jsonb(t)::text), '[]'::jsonb) AS rows FROM "${tablename}" t`;
     assert.deepEqual(await recoveredDb.$queryRawUnsafe(query), await prisma.$queryRawUnsafe(query));
   }
+  await verifyRecoveredPasskey(await decryptJSON(restored[0].encryptedData, restored[0].iv, targetKey));
   const recoveredItem = await recoveredDb.vaultItem.findUniqueOrThrow({ where: { id: restored[0].id } });
   assert.deepEqual(await decryptJSON(recoveredItem.encryptedData, recoveredItem.iv, targetKey), payload);
+  await verifyRecoveredPasskey(await decryptJSON(recoveredItem.encryptedData, recoveredItem.iv, targetKey));
+  evidence.checks.vaultPasskeyRecovery = { personalFile: true, databaseDump: true, verifiedAssertions: 2 };
   evidence.checks.postgresqlRecovery = { format: 'pg_dump custom / pg_restore --exit-on-error', tablesCompared: tables.length, everyRowEqual: true, destinationDecryption: 'passed', dumpSha256: createHash('sha256').update(await readFile(`${work}/server.dump`)).digest('hex') };
   // The recovered database includes synthetic auth/session state; remove it too.
   await recoveredDb.user.deleteMany();

@@ -61,6 +61,9 @@ export interface VaultItemPasskeyData {
   userHandle: string;
   username?: string;
   publicKey?: string;
+  // Opaque encrypted-item field. Generated signing keys use vm-passkey-v1:
+  // followed by a client-only JSON envelope with PKCS#8 and immutable bindings.
+  // Arbitrary legacy strings remain importable but are never used for signing.
   privateKey: string;
   signCount?: number;
   transports?: string[];

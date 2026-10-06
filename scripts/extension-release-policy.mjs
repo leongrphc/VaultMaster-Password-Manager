@@ -1,7 +1,7 @@
 import { createHash, createPublicKey } from 'node:crypto';
 export const releaseFiles = ['background.js', 'config.js', 'content.js', 'form-detector.js',
   'manifest.json', 'observability.js', 'passkey-injected.js', 'popup.css', 'popup.html', 'popup.js', 'vault-session.js',
-  ...['key-derivation', 'password-hash', 'vault-key', 'encryption', 'utils', 'totp'].map(name => `crypto/${name}.js`)].sort();
+  ...['key-derivation', 'password-hash', 'vault-key', 'encryption', 'utils', 'totp', 'passkey'].map(name => `crypto/${name}.js`)].sort();
 export const sha256 = bytes => createHash('sha256').update(bytes).digest('hex');
 export function extensionId(key) {
   createPublicKey({ key: Buffer.from(key, 'base64'), format: 'der', type: 'spki' });
@@ -13,8 +13,8 @@ export function validateManifest(manifest) {
       !/^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)$/.test(manifest.version) || manifest.version.split('.').some(n => Number(n) > 65535) || manifest.update_url ||
       JSON.stringify(manifest.permissions) !== JSON.stringify(['storage', 'contextMenus', 'alarms', 'idle', 'webNavigation']) ||
       JSON.stringify(manifest.host_permissions) !== JSON.stringify(['http://*/*', 'https://*/*']) ||
-      JSON.stringify(manifest.content_scripts) !== JSON.stringify([{ matches: ['http://*/*', 'https://*/*'], js: ['form-detector.js', 'content.js'], run_at: 'document_start', all_frames: true }]) ||
-      JSON.stringify(manifest.web_accessible_resources) !== JSON.stringify([{ resources: ['passkey-injected.js'], matches: ['http://*/*', 'https://*/*'] }]) ||
+      JSON.stringify(manifest.content_scripts) !== JSON.stringify([{ matches: ['http://*/*', 'https://*/*'], js: ['form-detector.js', 'content.js'], run_at: 'document_start', all_frames: true }, { matches: ['http://*/*', 'https://*/*'], js: ['passkey-injected.js'], run_at: 'document_start', all_frames: false, world: 'MAIN' }]) ||
+      manifest.web_accessible_resources !== undefined ||
       manifest.background?.service_worker !== 'background.js' || manifest.background?.type !== 'module' ||
       manifest.action?.default_popup !== 'popup.html' ||
       manifest.externally_connectable || manifest.optional_permissions || manifest.optional_host_permissions) {

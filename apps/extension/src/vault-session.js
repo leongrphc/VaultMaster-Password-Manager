@@ -4,6 +4,7 @@ import { deriveMasterKey, exportMasterKeyBase64, importMasterKey } from './crypt
 import { generateAuthHash } from './crypto/password-hash.js';
 import { unwrapVaultKey } from './crypto/vault-key.js';
 import { encryptJSON, decryptJSON } from './crypto/encryption.js';
+import { createStoredPasskey, signStoredPasskey, isStoredPasskey, validatePasskeyRequest } from './crypto/passkey.js';
 import { generateTotpCode } from './crypto/totp.js';
 
 const SESSION = 'vaultmasterNativeSession';
@@ -39,6 +40,7 @@ export class VaultSession {
   }
   async initialize() {
     await this.storage.session.setAccessLevel({ accessLevel: 'TRUSTED_CONTEXTS' });
+    await this.storage.session.remove('vaultmasterPendingPasskeys');
     const stored = (await this.storage.session.get(SESSION))[SESSION];
     if (stored?.apiUrl === this.apiUrl && stored.user?.id && stored.tokens?.refreshToken) {
       this.session = { user: stored.user, tokens: stored.tokens, deviceId: stored.deviceId, id: stored.id };
@@ -65,7 +67,7 @@ export class VaultSession {
   async lock() {
     ++this.epoch; this.key = null; this.keyBase64 = null; this.items = []; this.deadline = 0;
     await this.persist();
-    await this.storage.session.remove(['vaultmasterPendingSaves', 'vaultmasterPendingAutofill']);
+    await this.storage.session.remove(['vaultmasterPendingSaves', 'vaultmasterPendingAutofill', 'vaultmasterPendingPasskeys']);
   }
   async status() {
     await this.ready;
@@ -209,6 +211,42 @@ export class VaultSession {
         reason: error?.status === 0 ? 'network' : reason, requestId })));
       throw error;
     }
+  }
+  async passkeyCandidates(request) {
+    validatePasskeyRequest(request);
+    const epoch = this.epoch, key = this.key;
+    this.guard(epoch, key);
+    await this.sync(); this.guard(epoch, key);
+    return this.items.filter(item => item.data.type === 'passkey' && isStoredPasskey(item.data) &&
+      item.data.rpId === request.rpId && (!request.allowCredentials?.length || request.allowCredentials.includes(item.data.credentialId)))
+      .slice(0, 16).map(item => ({ itemId: item.id, title: item.data.title, username: item.data.username || '' }));
+  }
+  async performPasskey(operation, request, itemId, assertCurrent) {
+    const epoch = this.epoch, key = this.key;
+    const guard = () => { this.guard(epoch, key); assertCurrent(); };
+    guard(); validatePasskeyRequest(request);
+    await this.sync(); guard();
+    if (operation === 'get') {
+      const matches = this.items.filter(item => item.id === itemId && item.data.type === 'passkey');
+      if (matches.length !== 1) throw new Error('Passkey kullanılamıyor.');
+      const selected = matches[0].data;
+      if (this.items.some(item => item.data.type === 'passkey' && item.data.credentialId === selected.credentialId &&
+        (item.data.privateKey !== selected.privateKey || item.data.rpId !== selected.rpId || item.data.userHandle !== selected.userHandle || item.data.publicKey !== selected.publicKey))) {
+        throw new Error('Passkey kullanılamıyor.');
+      }
+      const response = await signStoredPasskey(request, matches[0].data); guard();
+      // Check the device again after signing; never return a signature after a
+      // remote revocation or lock race. No signature is persisted or logged.
+      await this.api('/auth/me'); guard(); return response;
+    }
+    if (operation !== 'create') throw new Error('Geçersiz passkey işlemi.');
+    const { stored, response } = await createStoredPasskey(request, this.items.filter(item => item.data.type === 'passkey').map(item => item.data));
+    guard();
+    const encrypted = await encryptJSON({ type: 'passkey', title: request.rpId, username: request.user.name,
+      ...stored, signCount: 0, transports: [] }, key);
+    guard();
+    await this.api('/vault', { method: 'POST', body: { encryptedData: encrypted.ciphertext, iv: encrypted.iv, folderId: null } });
+    guard(); await this.sync(); guard(); return response;
   }
   async request(type, payload = {}) {
     await this.ready;

@@ -110,6 +110,7 @@ async function loadState() {
 		return;
 	}
 
+	if (await renderPasskeyRequests(activeTab.id)) return;
 	const result = await sendRuntimeMessage({ type: 'LIST_AUTOFILL_TARGETS', tabId: activeTab.id }).catch(() => null);
 	const targets = result?.payload?.targets || [];
 	itemsNode.innerHTML = '';
@@ -318,4 +319,32 @@ function escapeHtml(value) {
 		.replaceAll(">", "&gt;")
 		.replaceAll('"', "&quot;")
 		.replaceAll("'", "&#39;");
+}
+
+async function renderPasskeyRequests(tabId) {
+  const response = await sendRuntimeMessage({ type: 'PASSKEY_LIST', tabId }).catch(() => null);
+  if (!response?.payload?.length) return false;
+  itemsNode.innerHTML = '';
+  setStatus('Adresi ve hesabı kontrol edin. Passkey işlemi yalnızca bu penceredeki onayla yapılır.');
+  for (const request of response.payload) {
+    const label = document.createElement('p');
+    label.textContent = `${request.origin} • RP: ${request.rpId} • ${request.userName}`; itemsNode.appendChild(label);
+    const approve = (title, itemId) => {
+      const button = document.createElement('button'); button.type = 'button'; button.dataset.action = 'approve-passkey'; button.textContent = title;
+      button.addEventListener('click', async event => {
+        if (!event.isTrusted) return;
+        for (const node of itemsNode.querySelectorAll('button')) node.disabled = true;
+        const result = await sendRuntimeMessage({ type: 'PASSKEY_APPROVE', approvalId: request.approvalId, itemId }).catch(() => null);
+        setStatus(result?.ok ? 'Passkey işlemi tamamlandı.' : 'Passkey işlemi iptal edildi veya tamamlanamadı.');
+      }); itemsNode.appendChild(button);
+    };
+    if (request.operation === 'create') approve('Passkey Oluştur ve Şifreli Kasaya Kaydet');
+    else for (const candidate of request.candidates) approve(`İmzala: ${candidate.title} • ${candidate.username}`, candidate.itemId);
+    const cancel = document.createElement('button'); cancel.type = 'button'; cancel.dataset.action = 'cancel-passkey'; cancel.textContent = 'Passkey İşlemini İptal Et';
+    cancel.addEventListener('click', async event => {
+      if (!event.isTrusted) return;
+      await sendRuntimeMessage({ type: 'PASSKEY_DISMISS', approvalId: request.approvalId }); setStatus('Passkey işlemi iptal edildi.');
+    }); itemsNode.appendChild(cancel);
+  }
+  return true;
 }

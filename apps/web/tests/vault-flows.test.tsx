@@ -539,3 +539,17 @@ describe("health report breach check", () => {
     expect(screen.getByRole("button", { name: /Kontrol Et/i })).toBeEnabled();
   });
 });
+
+test('editing a generated passkey preserves immutable signing bindings while allowing display changes', async () => {
+  const data = { type: 'passkey' as const, title: 'Original', rpId: 'example.test', credentialId: 'credential', userHandle: 'user',
+    privateKey: 'vm-passkey-v1:{"synthetic":"key-material"}', publicKey: 'public', signCount: 0, transports: [] };
+  const item = { id: 'passkey-fixture', folderId: null, favorite: false, createdAt: '2026-10-06T00:00:00Z', updatedAt: '2026-10-06T00:00:00Z', data };
+  render(<EditItemModal item={item} onClose={vi.fn()} />);
+  for (const label of ['RP ID', 'Credential ID', 'User Handle', 'Public Key', 'Private Key', 'Sign Count', 'Transports']) {
+    expect(screen.getByLabelText(label)).toBeDisabled();
+  }
+  const user = userEvent.setup();
+  await user.clear(screen.getByLabelText('Başlık')); await user.type(screen.getByLabelText('Başlık'), 'Renamed');
+  await user.click(screen.getByRole('button', { name: 'Güncelle' }));
+  await waitFor(() => expect(updateVaultItemFull).toHaveBeenCalledWith(item.id, expect.objectContaining({ ...data, title: 'Renamed' }), null));
+});

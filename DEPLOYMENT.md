@@ -114,8 +114,11 @@ five-minute deadline; a Chrome alarm, every-request checks and device-lock event
 enforce lock. Lock removes the key, plaintext items and pending draft/fill state.
 Login, unlock and secret fills require a reachable API. Device revocation and
 password changes from the web are checked on the next request. This version does
-not provide offline unlock/fill or Firefox support. WebAuthn is account login;
-stored vault passkeys still do not implement signing on third-party websites.
+not provide offline unlock/fill or Firefox support. Native WebAuthn remains account login/local unlock. Vault-stored ES256 passkeys
+now support explicit extension-popup registration/signing for the subset in
+[the passkey policy](docs/VAULT_PASSKEYS.md); required UV and unsupported requests
+retain the native browser path. Deploy the challenge-binding API hardening first,
+then rebuild both clients. No migration is needed.
 
 References: [Chrome session storage](https://developer.chrome.com/docs/extensions/reference/api/storage),
 [alarms](https://developer.chrome.com/docs/extensions/reference/api/alarms), and

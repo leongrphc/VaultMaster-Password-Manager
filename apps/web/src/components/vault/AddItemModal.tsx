@@ -533,7 +533,7 @@ export default function AddItemModal({ onClose }: AddItemModalProps) {
           {type === "passkey" && (
             <>
               <div className="rounded-xl border border-accent/20 bg-accent/5 p-3 text-xs text-text-secondary">
-                Passkey kaydı yalnızca şifreli kasa öğesi olarak saklanır. Bu ekranda tarayıcı WebAuthn veya navigator.credentials çağrıları kullanılmaz.
+                Bu form yalnızca eski passkey verilerini saklar; imzalama desteği sağlamaz. Gerçek passkey oluşturmak için site isteğini VaultMaster eklenti penceresinde onaylayın.
               </div>
               <div className="grid gap-3 sm:grid-cols-2">
                 <div>

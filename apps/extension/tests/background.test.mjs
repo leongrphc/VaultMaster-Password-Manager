@@ -35,6 +35,7 @@ async function loadBackground({ frames: fixtureFrames, onVaultRequest, vaultTab 
     },
     tabs: {
       query: async () => (vaultTab ? [vaultTab] : []),
+      get: async id => ({ id, active: true }),
       update: async () => undefined,
       create: async () => undefined,
       sendMessage: (_tabId, payload, callback) => {
@@ -53,7 +54,9 @@ async function loadBackground({ frames: fixtureFrames, onVaultRequest, vaultTab 
     },
   };
 
-  globalThis.__vaultFixture = { ready: Promise.resolve(), status: async () => ({ isAuthenticated: true, isLocked: false }),
+  globalThis.__vaultFixture = { guard: () => {}, key: {}, session: { id: 'session-fixture' }, epoch: 0,
+    passkeyCandidates: async () => [{ itemId: 'stored', title: 'Synthetic', username: 'user' }],
+    performPasskey: async (_operation, _request, _item, guard) => { guard(); return { id: 'public-response' }; }, ready: Promise.resolve(), status: async () => ({ isAuthenticated: true, isLocked: false }),
     request: async (type, payload) => { await onVaultRequest?.(); if (type === "VM_PREVIEW_LOGIN_SAVE_REQUEST") return { ok: true, payload: { operation: "create", itemId: null, encryptedData: null } }; tabMessages.push({ type, ...payload }); return tabResponse; } };
   const source = (await readFile(resolve("src/background.js"), "utf8"))
     .replace("import { nativeVault } from './vault-session.js';", 'const nativeVault = globalThis.__vaultFixture;');
@@ -190,22 +193,11 @@ test("accepts passkey intercepts only when page origin and rpId match", async ()
   );
 
   assert.equal(response.ok, true);
-  assert.equal(response.payload.status, "candidates_available");
+  assert.equal(response.payload.status, "consent_required");
   assert.equal(response.payload.rpId, "example.com");
   assert.equal(response.payload.sourceTabId, 99);
-  assert.deepEqual(response.payload.candidates, [{ itemId: "passkey-1", title: "Example", rpId: "example.com" }]);
-  assert.deepEqual(background.tabMessages[0], {
-    type: "VM_PASSKEY_BRIDGE_REQUEST",
-    operation: "get",
-    rpId: "example.com",
-    rpName: "",
-    userName: "",
-    userDisplayName: "",
-    allowCredentialIds: ["Y3JlZC0xMjM"],
-    origin: "https://login.example.com",
-    pageUrl: "https://login.example.com/account",
-    sourceTabId: 99,
-  });
+  assert.deepEqual(response.payload.candidates, []);
+  assert.equal(background.tabMessages.length, 0);
 });
 
 test("rejects passkey intercepts with mismatched sender tab URL", async () => {
@@ -412,4 +404,34 @@ test('locked vault submissions do not retain a password draft', async () => {
   globalThis.__vaultFixture.status = async () => ({ isAuthenticated: true, isLocked: true });
   assert.equal((await background.send({ type: 'CAPTURE_LOGIN', credential: capturedCredential })).payload.status, 'locked');
   assert.equal(background.sessionStorage.has('vaultmasterPendingSaves'), false);
+});
+
+test('stored passkey approval is protected, single-use and document/session-bound; page sees no candidates or approval ID', async () => {
+  const background = await loadBackground({ frames: [{ frameId: 0, documentId: 'main', documentLifecycle: 'active', url: 'https://example.com/login' }] });
+  const sender = { id: 'fixture-extension', tab: { id: 42 }, url: 'https://example.com/login', origin: 'https://example.com', frameId: 0, documentId: 'main' };
+  const popup = { id: 'fixture-extension', url: 'chrome-extension://fixture-extension/popup.html' };
+  const begin = { type: 'PASSKEY_BEGIN', requestId: 'ceremony-1', operation: 'get', request: { origin: 'https://example.com', rpId: 'example.com', challenge: 'synthetic' } };
+  assert.deepEqual(await background.send(begin, sender), { ok: true });
+  assert.equal((await background.send({ type: 'PASSKEY_LIST', tabId: 42 }, sender)).ok, false);
+  const list = await background.send({ type: 'PASSKEY_LIST', tabId: 42 }, popup);
+  const approvalId = list.payload[0].approvalId;
+  assert.equal((await background.send({ type: 'PASSKEY_APPROVE', approvalId, itemId: 'stored' }, sender)).ok, false);
+  assert.deepEqual(await background.send({ type: 'PASSKEY_POLL', requestId: 'ceremony-1' }, sender), { ok: true, pending: true });
+  assert.equal((await background.send({ type: 'PASSKEY_APPROVE', approvalId, itemId: 'stored' }, popup)).ok, true);
+  assert.equal((await background.send({ type: 'PASSKEY_APPROVE', approvalId, itemId: 'stored' }, popup)).ok, false);
+  assert.equal((await background.send({ type: 'PASSKEY_POLL', requestId: 'ceremony-1' }, sender)).response.id, 'public-response');
+  assert.equal((await background.send({ type: 'PASSKEY_POLL', requestId: 'ceremony-1' }, sender)).ok, false);
+  assert.equal((await background.send({ ...begin, requestId: 'ceremony-2' }, sender)).ok, true);
+  globalThis.__vaultFixture.epoch++;
+  assert.equal((await background.send({ type: 'PASSKEY_POLL', requestId: 'ceremony-2' }, sender)).ok, false);
+});
+test('stored passkey cancel, foreign origins, frames and expired pending requests fail closed', async () => {
+  const background = await loadBackground({ frames: [{ frameId: 0, documentId: 'main', documentLifecycle: 'active', url: 'https://example.com/login' }] });
+  const sender = { id: 'fixture-extension', tab: { id: 42 }, url: 'https://example.com/login', frameId: 0, documentId: 'main' };
+  const begin = { type: 'PASSKEY_BEGIN', requestId: 'cancel', operation: 'create', request: { origin: 'https://example.com', rpId: 'example.com', challenge: 'synthetic' } };
+  assert.equal((await background.send({ ...begin, request: { ...begin.request, origin: 'https://evil.test' } }, sender)).ok, false);
+  assert.equal((await background.send(begin, { ...sender, frameId: 1, documentId: 'child' })).ok, false);
+  assert.equal((await background.send(begin, sender)).ok, true);
+  assert.equal((await background.send({ type: 'PASSKEY_CANCEL', requestId: 'cancel' }, sender)).ok, true);
+  assert.equal((await background.send({ type: 'PASSKEY_POLL', requestId: 'cancel' }, sender)).ok, false);
 });

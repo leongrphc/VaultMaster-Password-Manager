@@ -78,7 +78,7 @@ router.post("/registration/options", asyncRoute(async (req: Request, res: Respon
     success: true,
     data: {
       options,
-      challengeToken: createRegistrationChallengeToken(user.id, options.challenge),
+      challengeToken: createRegistrationChallengeToken(`${user.id}:${req.user!.deviceId}`, options.challenge),
     },
   });
 }));
@@ -91,7 +91,7 @@ router.post("/registration/verify", asyncRoute(async (req: Request, res: Respons
   }
 
   const { name } = webAuthnCredentialNameSchema.parse(req.body);
-  const expectedChallenge = consumeRegistrationChallengeToken(req.body?.challengeToken, user.id);
+  const expectedChallenge = consumeRegistrationChallengeToken(req.body?.challengeToken, `${user.id}:${req.user!.deviceId}`);
   if (!expectedChallenge) {
     res.status(400).json({ success: false, error: "WebAuthn challenge süresi doldu" });
     return;
@@ -126,26 +126,31 @@ router.post("/registration/verify", asyncRoute(async (req: Request, res: Respons
 
   const { credential, credentialDeviceType, credentialBackedUp } = verification.registrationInfo;
 
-  const created = await securityChange(req, "security.webauthn.register", tx => tx.webAuthnCredential.create({
-    data: {
-      userId: user.id,
-      credentialId: credential.id,
-      publicKey: Buffer.from(credential.publicKey).toString("base64url"),
-      counter: credential.counter,
-      deviceType: credentialDeviceType,
-      backedUp: credentialBackedUp,
-      transports: req.body?.response?.response?.transports ?? credential.transports ?? [],
-      name: name ?? "Security key",
-    },
-  }));
+  let created;
+  try {
+    created = await securityChange(req, "security.webauthn.register", tx => tx.webAuthnCredential.create({
+      data: {
+        userId: user.id,
+        credentialId: credential.id,
+        publicKey: Buffer.from(credential.publicKey).toString("base64url"),
+        counter: credential.counter,
+        deviceType: credentialDeviceType,
+        backedUp: credentialBackedUp,
+        transports: req.body?.response?.response?.transports ?? credential.transports ?? [],
+        name: name ?? "Security key",
+      },
+    }));
 
+  } catch (error) {
+    if ((error as { code?: string }).code !== 'P2002') throw error;
+    res.status(400).json({ success: false, error: "WebAuthn kaydı doğrulanamadı" }); return;
+  }
   await logAuditEvent({
     userId: user.id,
     action: "security.webauthn.register",
     status: "success",
     ipAddress: getRequestIp(req),
     userAgent: getRequestUserAgent(req),
-    metadata: { credentialId: created.id },
   });
 
   res.status(201).json({
@@ -206,7 +211,6 @@ router.delete("/credentials/:id", asyncRoute(async (req: Request, res: Response)
     status: "success",
     ipAddress: getRequestIp(req),
     userAgent: getRequestUserAgent(req),
-    metadata: { credentialId: credential.id },
   });
 
   res.json({ success: true, data: { message: "WebAuthn kimlik doğrulayıcı kaldırıldı" } });
@@ -215,9 +219,10 @@ router.delete("/credentials/:id", asyncRoute(async (req: Request, res: Response)
 export async function verifyWebAuthnLogin(
   userId: string,
   response: unknown,
-  challengeToken: unknown
+  challengeToken: unknown,
+  ceremony = "login"
 ) {
-  const expectedChallenge = consumeAuthenticationChallengeToken(challengeToken, userId);
+  const expectedChallenge = consumeAuthenticationChallengeToken(challengeToken, `${userId}:${ceremony}`);
   if (!expectedChallenge) {
     return false;
   }
@@ -230,6 +235,8 @@ export async function verifyWebAuthnLogin(
     return false;
   }
 
+  const userHandle = (response as AuthenticationResponseJSON)?.response?.userHandle;
+  if (userHandle != null && userHandle !== Buffer.from(userId).toString('base64url')) return false;
   const verification = await verifyAuthenticationResponse({
     response: response as AuthenticationResponseJSON,
     expectedChallenge,
@@ -248,8 +255,10 @@ export async function verifyWebAuthnLogin(
     return false;
   }
 
-  await prisma.webAuthnCredential.update({
-    where: { id: dbCredential.id },
+  // Compare-and-set prevents a slower native assertion from moving the
+  // counter backwards. Zero-counter portable credentials remain supported.
+  const updated = await prisma.webAuthnCredential.updateMany({
+    where: { id: dbCredential.id, userId, counter: dbCredential.counter },
     data: {
       counter: verification.authenticationInfo.newCounter,
       lastUsedAt: new Date(),
@@ -258,10 +267,10 @@ export async function verifyWebAuthnLogin(
     },
   });
 
-  return true;
+  return updated.count === 1;
 }
 
-export async function createWebAuthnLoginOptions(userId: string) {
+export async function createWebAuthnLoginOptions(userId: string, ceremony = "login") {
   const credentials = await prisma.webAuthnCredential.findMany({ where: { userId } });
   const options = await generateAuthenticationOptions({
     rpID: getWebAuthnRpId(),
@@ -275,7 +284,7 @@ export async function createWebAuthnLoginOptions(userId: string) {
 
   return {
     options,
-    challengeToken: createAuthenticationChallengeToken(userId, options.challenge),
+    challengeToken: createAuthenticationChallengeToken(`${userId}:${ceremony}`, options.challenge),
   };
 }
 

@@ -31,7 +31,7 @@ router.post('/reauthenticate', authMiddleware, durableLimit('reauth-ip', 50), du
     const requiresFactor = user.twoFactorEnabled || user.webAuthnCredentials.length > 0;
     if (requiresFactor && !body.code && !body.recoveryCode && !body.webAuthnResponse) {
       res.json({ success: true, data: { requires2FA: true,
-        ...(user.webAuthnCredentials.length ? { webAuthnOptions: await createWebAuthnLoginOptions(user.id) } : {}) } }); return;
+        ...(user.webAuthnCredentials.length ? { webAuthnOptions: await createWebAuthnLoginOptions(user.id, `reauth:${req.user!.deviceId}:${body.method} ${body.path}`) } : {}) } }); return;
     }
     let remaining: string[] | null = null;
     let factor = !requiresFactor;
@@ -43,7 +43,7 @@ router.post('/reauthenticate', authMiddleware, durableLimit('reauth-ip', 50), du
       const totp = new OTPAuth.TOTP({ secret: OTPAuth.Secret.fromBase32(readStoredSecret(user.twoFactorSecret)), algorithm: 'SHA1', digits: 6, period: 30 });
       factor ||= totp.validate({ token: body.code, window: 1 }) !== null;
     }
-    if (body.webAuthnResponse && user.webAuthnCredentials.length) factor ||= await verifyWebAuthnLogin(user.id, body.webAuthnResponse, body.webAuthnChallengeToken).catch(() => false);
+    if (body.webAuthnResponse && user.webAuthnCredentials.length) factor ||= await verifyWebAuthnLogin(user.id, body.webAuthnResponse, body.webAuthnChallengeToken, `reauth:${req.user!.deviceId}:${body.method} ${body.path}`).catch(() => false);
     if (!factor) { fail(); return; }
     const token = randomBytes(32).toString('base64url');
     const created = await prisma.$transaction(async tx => {

@@ -67,7 +67,7 @@ settings do not change the extension's fixed five-minute deadline.
 | `webNavigation` | Verify active documents, exact frame/ancestor origins and invalidate stale SPA selections. |
 | `http://*/*`, `https://*/*` host access | Detect forms/capture trusted submissions on user-chosen sites and reach the configured API. Broad access may trigger browser warnings. |
 | `all_frames` HTTP(S) content scripts | Discover forms per document; injection does not grant permission to fill a foreign frame. |
-| `passkey-injected.js` web-accessible resource | Consent-only WebAuthn metadata notice; no vault keys or third-party passkey signing. |
+| Top-level MAIN-world `passkey-injected.js` | Relays public WebAuthn ceremonies; only unlocked vault plus protected popup approval can create/sign. No vault keys or extension APIs reach the page. |
 
 Site-access controls can withhold access, preventing detection/fill; reload the
 target after changing them. This release does not require file/incognito access.
@@ -232,3 +232,17 @@ API/form fixtures with real encryption; they require no live account/database.
 Extension JavaScript has no dedicated lint/typecheck task; syntax checks and its
 unit/browser suites cover it. [P1-6 verification](../../docs/EXTENSION_DOCUMENTATION.md)
 records actual results and limits; no hosted CI or live provider/store test is implied.
+
+
+## Vault passkeys
+
+Unlock the extension first, start a supported site's passkey action, then open
+its icon. Check the origin/RP/account and explicitly create or sign in the
+protected popup. Cancel in the popup/page notice, or through the site's
+AbortSignal. Lock cancels pending operations; worker restart requires a new
+site request. Private keys stay in encrypted vault items. Native account MFA
+and local unlock remain separate; no OS sync or biometric/hardware protection
+is claimed. The initial subset requires a top-level secure page, an exact-host
+RP ID, ES256 and none attestation; required UV, parent-domain RPs and other
+unsupported capabilities retain native WebAuthn. See the
+[passkey policy and recovery/deployment limits](../../docs/VAULT_PASSKEYS.md).

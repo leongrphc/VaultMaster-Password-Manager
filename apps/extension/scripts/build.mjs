@@ -31,7 +31,7 @@ for (const file of ['manifest.json', 'background.js', 'config.js', 'content.js',
 }
 const cryptoDir = resolve(distDir, 'crypto');
 mkdirSync(cryptoDir, { recursive: true });
-for (const file of ['key-derivation.js', 'password-hash.js', 'vault-key.js', 'encryption.js', 'utils.js', 'totp.js']) {
+for (const file of ['key-derivation.js', 'password-hash.js', 'vault-key.js', 'encryption.js', 'utils.js', 'totp.js', 'passkey.js']) {
   const compiled = readFileSync(resolve(root, '../../packages/crypto/dist', file), 'utf8');
   writeFileSync(resolve(cryptoDir, file), compiled.replace(/^\/\/# sourceMappingURL=.*(?:\r?\n|$)/gm, ''));
 }
@@ -52,6 +52,9 @@ if (process.env.VAULTMASTER_APP_URL) {
     .replace('["http://localhost:3000/*", "http://127.0.0.1:3000/*"]', JSON.stringify([`${appUrl.origin}/*`])));
   const contentPath = resolve(distDir, "content.js");
   writeFileSync(contentPath, readFileSync(contentPath, "utf8")
+    .replace('["http://localhost:3000", "http://127.0.0.1:3000"]', origins));
+  const passkeyPath = resolve(distDir, "passkey-injected.js");
+  writeFileSync(passkeyPath, readFileSync(passkeyPath, "utf8")
     .replace('["http://localhost:3000", "http://127.0.0.1:3000"]', origins));
   const manifestPath = resolve(distDir, "manifest.json");
   const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));

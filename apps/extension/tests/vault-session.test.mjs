@@ -46,10 +46,10 @@ async function fixture() {
     assert.ok(options.headers.Authorization?.startsWith('Bearer '));
     if (state.revoked || state.expired) return reply(null, 401);
     if (path.endsWith('/auth/unlock')) return body.authHash === authHash ? reply({ vaultKeyEnvelope: state.legacy ? null : envelope }) : reply(null, 403);
-    if (path.endsWith('/auth/me')) return reply({ id: 'user-1', email });
+    if (path.endsWith('/auth/me')) { if (state.meGate) await state.meGate; return reply({ id: 'user-1', email }); }
     if (path.endsWith('/vault') && options.method === 'GET') { if (state.gate) await state.gate; return reply(state.items); }
     if (path.includes('/vault') && ['POST', 'PUT'].includes(options.method)) {
-      state.saved = body; state.savedPath = path; return reply({ id: 'saved-item' });
+      state.saved = body; state.savedPath = path; if (state.persistSaved) state.items.push({ id: 'saved-item', ...body }); return reply({ id: 'saved-item' });
     }
     throw new Error(`Unexpected path ${path}`);
   };
@@ -186,4 +186,45 @@ test('sync logs successful, decrypt and transport outcomes without vault data or
     const text = lines.join('');
     for (const secret of [email, password, record.password, encrypted.ciphertext, encryptedItem.id, keyBase64]) assert.ok(!text.includes(secret), 'secret boundary failed');
   } finally { console.info = original; }
+});
+
+test('passkeys require unlock/action guards, encrypted storage, re-sync, explicit item selection and exclusion handling', async () => {
+  const { session, state } = await fixture();
+  const request = { origin: 'https://example.test', rpId: 'example.test', challenge: btoa('synthetic-challenge-32-bytes-long'), user: { id: btoa('user-id').replace(/=+$/, ''), name: 'Synthetic' } };
+  request.challenge = request.challenge.replace(/=+$/, '');
+  await assert.rejects(session.performPasskey('create', request, null, () => {}));
+  await login(session); state.persistSaved = true;
+  let approvals = 0;
+  const registered = await session.performPasskey('create', request, null, () => { ++approvals; });
+  assert.ok(approvals > 1);
+  const stored = await decryptJSON(state.saved.encryptedData, state.saved.iv, key);
+  assert.equal(stored.type, 'passkey'); assert.ok(stored.privateKey.startsWith('vm-passkey-v1:'));
+  assert.ok(!JSON.stringify(state.saved).includes(stored.privateKey));
+  const get = { ...request, user: undefined, allowCredentials: [registered.id] };
+  assert.deepEqual(await session.passkeyCandidates(get), [{ itemId: 'saved-item', title: 'example.test', username: 'Synthetic' }]);
+  assert.equal((await session.performPasskey('get', get, 'saved-item', () => {})).id, registered.id);
+  const conflicting = await encryptJSON({ ...stored, privateKey: stored.privateKey + ' ' }, key);
+  state.items.push({ id: 'conflicting-copy', encryptedData: conflicting.ciphertext, iv: conflicting.iv });
+  await assert.rejects(session.performPasskey('get', get, 'saved-item', () => {}));
+  state.items.pop();
+
+  await assert.rejects(session.performPasskey('create', { ...request, excludeCredentials: [registered.id] }, null, () => {}));
+  await assert.rejects(session.performPasskey('get', get, 'unknown', () => {}));
+  await assert.rejects(session.performPasskey('get', get, 'saved-item', () => { throw new Error('cancelled'); }));
+  await session.lock();
+  await assert.rejects(session.performPasskey('get', get, 'saved-item', () => {}));
+  await session.unlock(password);
+  assert.equal((await session.performPasskey('get', get, 'saved-item', () => {})).id, registered.id);
+  state.revoked = true;
+  await assert.rejects(session.performPasskey('get', get, 'saved-item', () => {}));
+  assert.equal(session.key, null);
+});
+test('lock while passkey post-sign session check is pending suppresses assertion output', async () => {
+  const { session, state } = await fixture(); await login(session); state.persistSaved = true;
+  const request = { origin: 'https://example.test', rpId: 'example.test', challenge: Buffer.alloc(32, 8).toString('base64url'), user: { id: Buffer.from('user').toString('base64url'), name: 'Synthetic' } };
+  await session.performPasskey('create', request, null, () => {});
+  let release; state.meGate = new Promise(resolve => { release = resolve; });
+  const operation = session.performPasskey('get', { ...request, user: undefined }, 'saved-item', () => {});
+  await new Promise(resolve => setTimeout(resolve, 30)); await session.lock(); release();
+  await assert.rejects(operation);
 });

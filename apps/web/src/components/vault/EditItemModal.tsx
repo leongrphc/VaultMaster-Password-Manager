@@ -5,7 +5,7 @@ import { observe } from "@/lib/observability";
 import { useState, useEffect } from "react";
 import { X, Globe, FileText, CreditCard, User, Eye, EyeOff, Wand2, KeyRound, Paperclip, Download, Trash2 } from "lucide-react";
 import { useStore, type DecryptedVaultItem } from "@/lib/store";
-import { generatePassword } from "@vaultmaster/crypto";
+import { generatePassword, isStoredPasskey } from "@vaultmaster/crypto";
 import type { VaultItemCustomField, VaultItemData } from "@vaultmaster/shared";
 import TagInput from "./TagInput";
 import CustomFieldsEditor from "./CustomFieldsEditor";
@@ -41,6 +41,7 @@ export default function EditItemModal({ item, onClose }: EditItemModalProps) {
     }))
   );
 
+  const generatedPasskey = item.data.type === "passkey" && isStoredPasskey(item.data);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
@@ -231,6 +232,7 @@ export default function EditItemModal({ item, onClose }: EditItemModalProps) {
         };
       } else {
         data = {
+          ...(generatedPasskey && item.data.type === "passkey" ? item.data : {}),
           type: "passkey",
           title,
           rpId: rpId.trim(),
@@ -253,6 +255,11 @@ export default function EditItemModal({ item, onClose }: EditItemModalProps) {
         };
       }
 
+      if (generatedPasskey && item.data.type === "passkey") {
+        data = { ...item.data, title, username: passkeyUsername.trim() || undefined,
+          notes: passkeyNotes || undefined, tags: tags.length > 0 ? tags : undefined,
+          customFields: sanitizedCustomFields.length > 0 ? sanitizedCustomFields : undefined };
+      }
       await updateVaultItemFull(item.id, data, folderId);
       onClose();
     } catch (err) {
@@ -529,12 +536,13 @@ export default function EditItemModal({ item, onClose }: EditItemModalProps) {
           {type === "passkey" && (
             <>
               <div className="rounded-xl border border-accent/20 bg-accent/5 p-3 text-xs text-text-secondary">
-                Passkey kaydı yalnızca şifreli kasa öğesi olarak saklanır. Bu ekranda tarayıcı WebAuthn veya navigator.credentials çağrıları kullanılmaz.
+                Passkey anahtarları şifreli kasada saklanır. Oluşturma ve imzalama, site isteği sırasında eklenti penceresinde açık onay gerektirir. Elle eklenen eski kayıtlar imzalama için kullanılamaz.
               </div>
               <div className="grid gap-3 sm:grid-cols-2">
                 <div>
                   <label htmlFor={fieldId("passkey-rp-id")} className="block text-sm text-text-secondary mb-2">RP ID</label>
-                  <input id={fieldId("passkey-rp-id")} required value={rpId} onChange={(e) => setRpId(e.target.value)} className="w-full bg-abyss border border-border rounded-xl py-2.5 px-4 text-sm text-text-primary focus:outline-none focus:border-accent/50 transition-colors font-[family-name:var(--font-mono)]" />
+                  <input disabled={generatedPasskey}
+                    id={fieldId("passkey-rp-id")} required value={rpId} onChange={(e) => setRpId(e.target.value)} className="w-full bg-abyss border border-border rounded-xl py-2.5 px-4 text-sm text-text-primary focus:outline-none focus:border-accent/50 transition-colors font-[family-name:var(--font-mono)]" />
                 </div>
                 <div>
                   <label htmlFor={fieldId("passkey-username")} className="block text-sm text-text-secondary mb-2">Kullanıcı Adı</label>
@@ -543,28 +551,34 @@ export default function EditItemModal({ item, onClose }: EditItemModalProps) {
               </div>
               <div>
                 <label htmlFor={fieldId("passkey-credential-id")} className="block text-sm text-text-secondary mb-2">Credential ID</label>
-                <input id={fieldId("passkey-credential-id")} required value={credentialId} onChange={(e) => setCredentialId(e.target.value)} className="w-full bg-abyss border border-border rounded-xl py-2.5 px-4 text-sm text-text-primary focus:outline-none focus:border-accent/50 transition-colors font-[family-name:var(--font-mono)]" />
+                <input disabled={generatedPasskey}
+                    id={fieldId("passkey-credential-id")} required value={credentialId} onChange={(e) => setCredentialId(e.target.value)} className="w-full bg-abyss border border-border rounded-xl py-2.5 px-4 text-sm text-text-primary focus:outline-none focus:border-accent/50 transition-colors font-[family-name:var(--font-mono)]" />
               </div>
               <div>
                 <label htmlFor={fieldId("passkey-user-handle")} className="block text-sm text-text-secondary mb-2">User Handle</label>
-                <input id={fieldId("passkey-user-handle")} required value={userHandle} onChange={(e) => setUserHandle(e.target.value)} className="w-full bg-abyss border border-border rounded-xl py-2.5 px-4 text-sm text-text-primary focus:outline-none focus:border-accent/50 transition-colors font-[family-name:var(--font-mono)]" />
+                <input disabled={generatedPasskey}
+                    id={fieldId("passkey-user-handle")} required value={userHandle} onChange={(e) => setUserHandle(e.target.value)} className="w-full bg-abyss border border-border rounded-xl py-2.5 px-4 text-sm text-text-primary focus:outline-none focus:border-accent/50 transition-colors font-[family-name:var(--font-mono)]" />
               </div>
               <div>
                 <label htmlFor={fieldId("passkey-public-key")} className="block text-sm text-text-secondary mb-2">Public Key</label>
-                <textarea id={fieldId("passkey-public-key")} value={publicKey} onChange={(e) => setPublicKey(e.target.value)} rows={3} className="w-full bg-abyss border border-border rounded-xl py-2.5 px-4 text-sm text-text-primary focus:outline-none focus:border-accent/50 transition-colors resize-none font-[family-name:var(--font-mono)]" />
+                <textarea disabled={generatedPasskey}
+                    id={fieldId("passkey-public-key")} value={publicKey} onChange={(e) => setPublicKey(e.target.value)} rows={3} className="w-full bg-abyss border border-border rounded-xl py-2.5 px-4 text-sm text-text-primary focus:outline-none focus:border-accent/50 transition-colors resize-none font-[family-name:var(--font-mono)]" />
               </div>
               <div>
                 <label htmlFor={fieldId("passkey-private-key")} className="block text-sm text-text-secondary mb-2">Private Key</label>
-                <textarea id={fieldId("passkey-private-key")} required value={privateKey} onChange={(e) => setPrivateKey(e.target.value)} rows={4} className="w-full bg-abyss border border-border rounded-xl py-2.5 px-4 text-sm text-text-primary focus:outline-none focus:border-accent/50 transition-colors resize-none font-[family-name:var(--font-mono)]" />
+                <textarea disabled={generatedPasskey}
+                    id={fieldId("passkey-private-key")} required value={privateKey} onChange={(e) => setPrivateKey(e.target.value)} rows={4} className="w-full bg-abyss border border-border rounded-xl py-2.5 px-4 text-sm text-text-primary focus:outline-none focus:border-accent/50 transition-colors resize-none font-[family-name:var(--font-mono)]" />
               </div>
               <div className="grid gap-3 sm:grid-cols-2">
                 <div>
                   <label htmlFor={fieldId("passkey-sign-count")} className="block text-sm text-text-secondary mb-2">Sign Count</label>
-                  <input id={fieldId("passkey-sign-count")} type="number" min="0" value={signCount} onChange={(e) => setSignCount(e.target.value)} className="w-full bg-abyss border border-border rounded-xl py-2.5 px-4 text-sm text-text-primary focus:outline-none focus:border-accent/50 transition-colors" />
+                  <input disabled={generatedPasskey}
+                    id={fieldId("passkey-sign-count")} type="number" min="0" value={signCount} onChange={(e) => setSignCount(e.target.value)} className="w-full bg-abyss border border-border rounded-xl py-2.5 px-4 text-sm text-text-primary focus:outline-none focus:border-accent/50 transition-colors" />
                 </div>
                 <div>
                   <label htmlFor={fieldId("passkey-transports")} className="block text-sm text-text-secondary mb-2">Transports</label>
-                  <input id={fieldId("passkey-transports")} value={transports} onChange={(e) => setTransports(e.target.value)} className="w-full bg-abyss border border-border rounded-xl py-2.5 px-4 text-sm text-text-primary focus:outline-none focus:border-accent/50 transition-colors" placeholder="internal, hybrid, usb" />
+                  <input disabled={generatedPasskey}
+                    id={fieldId("passkey-transports")} value={transports} onChange={(e) => setTransports(e.target.value)} className="w-full bg-abyss border border-border rounded-xl py-2.5 px-4 text-sm text-text-primary focus:outline-none focus:border-accent/50 transition-colors" placeholder="internal, hybrid, usb" />
                 </div>
               </div>
               <div>

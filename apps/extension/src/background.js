@@ -170,6 +170,11 @@ function rejectInvalidPayload(sendResponse) {
 }
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (['PASSKEY_BEGIN', 'PASSKEY_POLL', 'PASSKEY_CANCEL', 'PASSKEY_LIST', 'PASSKEY_APPROVE', 'PASSKEY_DISMISS'].includes(message?.type)) {
+    passkeyTasks = passkeyTasks.then(() => handleStoredPasskey(message, sender, sendResponse))
+      .catch(() => sendResponse({ ok: false, error: 'Passkey işlemi tamamlanamadı.' }));
+    return true;
+  }
 	if (['LIST_AUTOFILL_TARGETS', 'FILL_AUTOFILL_TARGET', 'GENERATE_AUTOFILL_PASSWORD'].includes(message?.type)) {
 		void popupAutofill(message, sender, sendResponse); return true;
 	}
@@ -426,31 +431,10 @@ async function handlePasskeyIntercept(message, sender, sendResponse) {
 		return;
 	}
 
-	const vaultResponse = await requestVaultTab("VM_PASSKEY_BRIDGE_REQUEST", {
-		operation: message.operation,
-		rpId: effectiveRpId,
-		rpName: message.rpName || "",
-		userName: message.userName || "",
-		userDisplayName: message.userDisplayName || "",
-		allowCredentialIds: message.allowCredentialIds || [],
-		origin: message.origin,
-		pageUrl: message.pageUrl,
-		sourceTabId: sender.tab?.id ?? null,
-	});
-
-	sendResponse({
-		ok: true,
-		payload: {
-			status: vaultResponse?.payload?.status || "consent_required",
-			operation: message.operation,
-			rpId: effectiveRpId,
-			origin: message.origin,
-			pageUrl: message.pageUrl,
-			sourceTabId: sender.tab?.id ?? null,
-			candidates: vaultResponse?.payload?.candidates || [],
-			message: vaultResponse?.payload?.message || "VaultMaster detected a passkey request. Credential creation/signing is not automatic and requires an explicit user action in VaultMaster.",
-		},
-	});
+  // Legacy clients receive a uniform notice, never credential metadata.
+  sendResponse({ ok: true, payload: { status: 'consent_required', operation: message.operation,
+    rpId: effectiveRpId, origin: message.origin, sourceTabId: sender.tab?.id ?? null, candidates: [],
+    message: 'Passkey işlemi için güncel VaultMaster eklenti penceresini kullanın.' } });
 }
 
 async function lookupPasswordSuggestion(message, sender, sendResponse) {
@@ -891,4 +875,77 @@ async function decryptSaveDraft(draft) {
 	const key = await crypto.subtle.importKey("raw", decodeBytes(draft.key), "AES-GCM", false, ["decrypt"]);
 	const plaintext = await crypto.subtle.decrypt({ name: "AES-GCM", iv: decodeBytes(draft.iv) }, key, decodeBytes(draft.ciphertext));
 	return JSON.parse(new TextDecoder().decode(plaintext));
+}
+
+// Requests are inert until approved in the protected extension popup. Session
+// storage is trusted-only and volatile; no private key or response reaches local
+// storage. Approval IDs are never exposed to the requesting page.
+const PASSKEY_PENDING = 'vaultmasterPendingPasskeys';
+let passkeyTasks = Promise.resolve();
+async function handleStoredPasskey(message, sender, respond) {
+  await nativeVault.ready;
+  const popup = ['PASSKEY_LIST', 'PASSKEY_APPROVE', 'PASSKEY_DISMISS'].includes(message.type);
+  if (popup && !isTrustedPopup(sender)) { rejectInvalidPayload(respond); return; }
+  let pageUrl;
+  if (!popup) {
+    pageUrl = await getContentPageUrl(sender);
+    if (!pageUrl || sender.frameId !== 0 || typeof message.requestId !== 'string' || message.requestId.length > 100) {
+      rejectInvalidPayload(respond); return;
+    }
+  }
+  const all = (await chrome.storage.session.get(PASSKEY_PENDING))[PASSKEY_PENDING] || [];
+  const pending = all.filter(entry => entry.expiresAt > Date.now() && entry.sessionId === nativeVault.session?.id && entry.epoch === nativeVault.epoch);
+  const save = () => chrome.storage.session.set({ [PASSKEY_PENDING]: pending });
+  const sameDocument = entry => entry.tabId === sender.tab?.id && entry.documentId === sender.documentId && entry.requestId === message.requestId;
+  if (message.type === 'PASSKEY_BEGIN') {
+    if (!nativeVault.key || !['create', 'get'].includes(message.operation) || pending.some(entry => entry.tabId === sender.tab.id && entry.documentId === sender.documentId) || pending.length >= 8) throw new Error('Unavailable');
+    const request = message.request;
+    if (!request || JSON.stringify(request).length > 16000 || request.origin !== new URL(pageUrl).origin || request.rpId !== new URL(pageUrl).hostname ||
+      (request.origin.startsWith('http:') && !['localhost', '127.0.0.1'].includes(new URL(pageUrl).hostname))) throw new Error('Scope');
+    // Uses the crypto validator without offering credential existence to pages.
+    await nativeVault.passkeyCandidates(request);
+    pending.push({ approvalId: crypto.randomUUID(), requestId: message.requestId, operation: message.operation, request,
+      tabId: sender.tab.id, documentId: sender.documentId, sender: { id: sender.id, tab: { id: sender.tab.id }, url: sender.url,
+        origin: sender.origin, documentId: sender.documentId, frameId: 0 }, expiresAt: Date.now() + 60000,
+      sessionId: nativeVault.session.id, epoch: nativeVault.epoch, state: 'pending' });
+    await save(); respond({ ok: true }); return;
+  }
+  if (message.type === 'PASSKEY_CANCEL') {
+    const index = pending.findIndex(sameDocument); if (index >= 0) pending.splice(index, 1);
+    await save(); respond({ ok: true }); return;
+  }
+  if (message.type === 'PASSKEY_POLL') {
+    const index = pending.findIndex(sameDocument), entry = pending[index];
+    if (!entry) { respond({ ok: false }); return; }
+    if (entry.state === 'pending') { respond({ ok: true, pending: true }); return; }
+    pending.splice(index, 1); await save();
+    if (!(await getContentPageUrl(sender)) || entry.sessionId !== nativeVault.session?.id || entry.epoch !== nativeVault.epoch || entry.expiresAt <= Date.now()) throw new Error('Changed');
+    nativeVault.guard(entry.epoch);
+    respond({ ok: entry.state === 'complete', response: entry.response }); return;
+  }
+  if (message.type === 'PASSKEY_LIST') {
+    const list = [];
+    for (const entry of pending.filter(entry => entry.state === 'pending' && entry.tabId === message.tabId)) {
+      if (!(await getContentPageUrl(entry.sender))) continue;
+      list.push({ approvalId: entry.approvalId, origin: entry.request.origin, rpId: entry.request.rpId, operation: entry.operation,
+        userName: entry.request.user?.name || '', candidates: entry.operation === 'get' ? await nativeVault.passkeyCandidates(entry.request) : [] });
+    }
+    respond({ ok: true, payload: list }); return;
+  }
+  const entry = pending.find(value => value.approvalId === message.approvalId && value.state === 'pending');
+  if (!entry) throw new Error('Expired');
+  entry.state = 'cancelled'; await save(); // consume approval before any signing
+  if (message.type === 'PASSKEY_DISMISS') { respond({ ok: true }); return; }
+  const check = async () => {
+    const tab = await chrome.tabs.get(entry.tabId);
+    if (!tab.active || !(await getContentPageUrl(entry.sender))) throw new Error('Document changed');
+  };
+  await check();
+  const guard = () => {
+    if (entry.expiresAt <= Date.now() || entry.sessionId !== nativeVault.session?.id || entry.epoch !== nativeVault.epoch) throw new Error('Session changed');
+  };
+  guard();
+  const response = await nativeVault.performPasskey(entry.operation, entry.request, message.itemId, guard);
+  await check(); guard();
+  entry.state = 'complete'; entry.response = response; await save(); respond({ ok: true });
 }
