@@ -1,5 +1,7 @@
 "use client";
 
+import { observe } from "@/lib/observability";
+
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { usePathname } from "next/navigation";
@@ -82,7 +84,7 @@ export default function Sidebar({ isOpen, isMobileOpen, onToggle, onMobileClose 
       setShowNewFolder(false);
       notify.success("Klasör oluşturuldu");
     } catch (e) {
-      console.error("Klasör oluşturma hatası:", e);
+      observe("client_error", { operation: "client", outcome: "failure", reason: "internal" });
       notify.error(getErrorMessage(e, "Klasör oluşturulamadı"));
     }
   };

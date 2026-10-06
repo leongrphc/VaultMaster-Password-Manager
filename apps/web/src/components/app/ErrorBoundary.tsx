@@ -1,5 +1,7 @@
 "use client";
 
+import { observe } from "@/lib/observability";
+
 import React from "react";
 import { AlertTriangle, RefreshCw } from "lucide-react";
 import { notify } from "@/lib/notify";
@@ -28,9 +30,9 @@ export class ErrorBoundary extends React.Component<
     return { hasError: true, error };
   }
 
-  componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
-    console.error("ErrorBoundary yakaladı:", error, errorInfo);
-    captureWebException(error, { componentStack: errorInfo.componentStack });
+  componentDidCatch(error: Error) {
+    observe("client_error", { operation: "client", outcome: "failure", reason: "internal" });
+    captureWebException(error);
     notify.error(error.message || "Bu bölüm yüklenirken beklenmeyen bir hata oluştu.");
   }
 

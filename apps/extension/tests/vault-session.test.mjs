@@ -166,3 +166,24 @@ test('create preview cannot silently become an update and duplicate accounts are
   assert.equal((await session.request('VM_SAVE_LOGIN_REQUEST', { credential })).payload.status, 'ambiguous_accounts');
   assert.equal(state.saved, undefined);
 });
+
+test('sync logs successful, decrypt and transport outcomes without vault data or session identifiers', async () => {
+  const lines = [], original = console.info;
+  console.info = line => lines.push(line);
+  try {
+    const { session: vault, state } = await fixture();
+    await vault.login({ email, password });
+    await vault.sync();
+    state.items = [{ ...encryptedItem, encryptedData: 'synthetic-invalid-ciphertext' }];
+    await assert.rejects(() => vault.sync());
+    const saved = vault.fetcher;
+    vault.fetcher = async () => { throw new Error(password); };
+    await assert.rejects(() => vault.sync()); vault.fetcher = saved;
+    const events = lines.map(line => JSON.parse(line));
+    assert.ok(events.some(event => event.outcome === 'success'));
+    assert.ok(events.some(event => event.reason === 'decrypt'));
+    assert.ok(events.some(event => event.reason === 'network'));
+    const text = lines.join('');
+    for (const secret of [email, password, record.password, encrypted.ciphertext, encryptedItem.id, keyBase64]) assert.ok(!text.includes(secret), 'secret boundary failed');
+  } finally { console.info = original; }
+});

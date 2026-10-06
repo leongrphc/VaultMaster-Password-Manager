@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { newCorrelationId } from "@vaultmaster/shared";
 import type { Request } from "express";
 
 declare global {
@@ -11,14 +11,8 @@ declare global {
 }
 
 export function resolveRequestId(value: string | string[] | undefined): string {
-  const candidate = Array.isArray(value) ? value[0] : value;
-  const normalized = candidate?.trim();
-
-  if (normalized) {
-    return normalized.slice(0, 128);
-  }
-
-  return randomUUID();
+  void value; // Never trust even UUID-shaped client values: they can encode secrets.
+  return newCorrelationId();
 }
 
 export function getRequestId(req: Request): string | null {
@@ -55,9 +49,6 @@ export function buildRequestLogContext(req: Request) {
   return {
     requestId: getRequestId(req),
     method: req.method,
-    path: req.originalUrl,
-    userId: req.user?.userId ?? null,
-    ipAddress: getRequestIp(req),
-    userAgent: getRequestUserAgent(req),
+
   };
 }

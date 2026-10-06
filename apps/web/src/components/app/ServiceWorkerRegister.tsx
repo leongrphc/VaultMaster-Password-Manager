@@ -1,5 +1,7 @@
 "use client";
 
+import { observe } from "@/lib/observability";
+
 import { useEffect } from "react";
 
 export default function ServiceWorkerRegister() {
@@ -26,8 +28,8 @@ export default function ServiceWorkerRegister() {
       return;
     }
 
-    void navigator.serviceWorker.register("/sw.js", { scope: "/" }).catch((error) => {
-      console.error("Service worker kaydı başarısız:", error);
+    void navigator.serviceWorker.register("/sw.js", { scope: "/" }).catch(() => {
+      observe("client_error", { operation: "client", outcome: "failure", reason: "internal" });
     });
   }, []);
 

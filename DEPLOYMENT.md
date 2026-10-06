@@ -440,3 +440,15 @@ Use the [extension guide](apps/extension/README.md), [shared glossary](docs/TERM
 and [installation/update checklist](docs/EXTENSION_STORE_PREPARATION.md) for current
 candidate behavior. The earlier deployed-version record is historical evidence,
 not a claim that the current candidate has been deployed or published.
+
+## Production observability and deployment rollback (P0-5)
+
+Use the [observability contract, thresholds, activation prerequisites and tested
+rollback runbook](docs/OBSERVABILITY_ROLLBACK.md) before promoting this branch.
+P0-5 adds no migration; retain all six existing migrations and P0-4 authorization.
+Readiness now bypasses the DB-backed limiter and has a bounded database check.
+Production monitoring is opt-in and requires an operator recipient/log routing
+and a trusted verified-backup heartbeat. The pinned local compatibility target
+predates log privacy hardening and is **not** approved for production rollback.
+The isolated drill verifies candidate/prior/forward API switching with synthetic
+data; no provider deployment or traffic rollback is claimed.

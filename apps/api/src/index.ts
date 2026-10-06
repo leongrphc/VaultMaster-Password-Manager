@@ -110,6 +110,8 @@ export function createApp(): Express {
     },
   });
 
+  // Probes bypass database-backed abuse budgets; readiness owns its DB timeout.
+  app.use("/api/health", healthRoutes);
   app.use("/api", limiter);
   app.use("/api/auth/login", durableLimit("auth-ip", 50));
   app.use("/api/auth/register", durableLimit("auth-ip", 50));
@@ -120,7 +122,6 @@ export function createApp(): Express {
 
   app.use("/api", sensitiveSecurityMiddleware);
   app.use("/api/auth", securityRoutes);
-  app.use("/api/health", healthRoutes);
   app.use("/api/auth", authRoutes);
   app.use("/api/auth/2fa", twoFactorRoutes);
   app.use("/api/auth/webauthn", webAuthnRoutes);
@@ -143,7 +144,7 @@ export function startServer() {
     logInfo("server_started", {
       port: env.API_PORT,
       environment: env.NODE_ENV,
-      corsOrigins: env.CORS_ORIGIN,
+
     });
   });
 }

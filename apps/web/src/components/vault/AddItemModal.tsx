@@ -1,5 +1,7 @@
 "use client";
 
+import { observe } from "@/lib/observability";
+
 import { useState } from "react";
 import {
   X,
@@ -188,7 +190,7 @@ export default function AddItemModal({ onClose }: AddItemModalProps) {
       notify.saved();
       onClose();
     } catch (err) {
-      console.error("Kaydetme hatası:", err);
+      observe("client_error", { operation: "client", outcome: "failure", reason: "internal" });
       notify.error(getErrorMessage(err, "Öğe kaydedilemedi"));
     } finally {
       setSaving(false);

@@ -1,0 +1,8 @@
+{
+  "schemaVersion": 1,
+  "gitSha": "a74eb3152ee76230e25c4142360bc0ab48c52ce2",
+  "scope": "local-compatible-candidate-only",
+  "lastMigration": "20261006020000_sensitive_action_security",
+  "personalBackupVersions": [3, 4],
+  "extensionVersion": "1.3.0"
+}

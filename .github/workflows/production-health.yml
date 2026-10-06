@@ -1,0 +1,25 @@
+name: Production health alerts
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '*/15 * * * *'
+permissions:
+  contents: read
+concurrency:
+  group: production-health
+  cancel-in-progress: false
+jobs:
+  health:
+    # Enable only after a backup heartbeat source and Actions failure recipient exist.
+    if: vars.VM_ENABLE_PRODUCTION_MONITOR == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Probe API, database, same-origin proxy and daily backup heartbeat
+        env:
+          VM_BACKUP_LAST_SUCCESS_EPOCH_MS: ${{ vars.VM_BACKUP_LAST_SUCCESS_EPOCH_MS }}
+        run: node scripts/production-health-monitor.mjs --production

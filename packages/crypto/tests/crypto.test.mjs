@@ -125,3 +125,16 @@ test("import content uses fresh randomized ciphertext and retains credentials, t
   assert.ok(!JSON.stringify(second).includes(await exportMasterKeyBase64(key)));
   await assert.rejects(decryptJSON(first.ciphertext, second.iv, key));
 });
+
+test('failed synthetic vault decryption emits no plaintext, ciphertext or key diagnostics', async () => {
+  const output = [];
+  const original = { log: console.log, error: console.error, info: console.info, warn: console.warn };
+  for (const method of Object.keys(original)) console[method] = (...args) => output.push(args);
+  try {
+    const { createVaultKey, encryptJSON, decryptJSON } = await import('../dist/index.js');
+    const one = await createVaultKey(), other = await createVaultKey();
+    const encrypted = await encryptJSON({ password: 'synthetic-private' }, one);
+    await assert.rejects(() => decryptJSON(encrypted.ciphertext, encrypted.iv, other));
+    assert.equal(output.length, 0);
+  } finally { Object.assign(console, original); }
+});

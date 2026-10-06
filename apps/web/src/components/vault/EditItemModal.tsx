@@ -1,5 +1,7 @@
 "use client";
 
+import { observe } from "@/lib/observability";
+
 import { useState, useEffect } from "react";
 import { X, Globe, FileText, CreditCard, User, Eye, EyeOff, Wand2, KeyRound, Paperclip, Download, Trash2 } from "lucide-react";
 import { useStore, type DecryptedVaultItem } from "@/lib/store";
@@ -79,8 +81,8 @@ export default function EditItemModal({ item, onClose }: EditItemModalProps) {
   ).sort();
 
   useEffect(() => {
-    void loadAttachments(item.id).catch((error) => {
-      console.error("Ekler yüklenemedi:", error);
+    void loadAttachments(item.id).catch(() => {
+      observe("client_error", { operation: "client", outcome: "failure", reason: "internal" });
     });
   }, [item.id, loadAttachments]);
 
@@ -137,7 +139,7 @@ export default function EditItemModal({ item, onClose }: EditItemModalProps) {
       await uploadAttachment(item.id, file);
       notify.success("Ek şifrelendi ve yüklendi");
     } catch (err) {
-      console.error("Ek yükleme hatası:", err);
+      observe("client_error", { operation: "client", outcome: "failure", reason: "internal" });
       notify.error(getErrorMessage(err, "Ek yüklenemedi"));
     } finally {
       setUploading(false);
@@ -148,7 +150,7 @@ export default function EditItemModal({ item, onClose }: EditItemModalProps) {
     try {
       await deleteAttachment(item.id, attachmentId);
     } catch (err) {
-      console.error("Ek silme hatası:", err);
+      observe("client_error", { operation: "client", outcome: "failure", reason: "internal" });
       notify.error(getErrorMessage(err, "Ek silinemedi"));
     }
   };
@@ -157,7 +159,7 @@ export default function EditItemModal({ item, onClose }: EditItemModalProps) {
     try {
       await downloadAttachment(item.id, attachmentId);
     } catch (err) {
-      console.error("Ek indirme hatası:", err);
+      observe("client_error", { operation: "client", outcome: "failure", reason: "internal" });
       notify.error(getErrorMessage(err, "Ek indirilemedi"));
     }
   };
@@ -254,7 +256,7 @@ export default function EditItemModal({ item, onClose }: EditItemModalProps) {
       await updateVaultItemFull(item.id, data, folderId);
       onClose();
     } catch (err) {
-      console.error("Güncelleme hatası:", err);
+      observe("client_error", { operation: "client", outcome: "failure", reason: "internal" });
       notify.error(getErrorMessage(err, "Öğe güncellenemedi"));
     } finally {
       setSaving(false);

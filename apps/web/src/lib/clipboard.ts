@@ -1,3 +1,5 @@
+
+import { observe } from "@/lib/observability";
 import { notify } from "@/lib/notify";
 
 const CLIPBOARD_CLEAR_DELAY_MS = 30_000;
@@ -28,8 +30,8 @@ async function clearClipboardIfUnchanged(expectedValue: string) {
     }
 
     await navigator.clipboard.writeText("");
-  } catch (error) {
-    console.error("Pano otomatik temizlenemedi:", error);
+  } catch {
+    observe("client_error", { operation: "client", outcome: "failure", reason: "internal" });
     notify.clipboardAutoClearFailed();
   } finally {
     pendingClipboardClear = null;

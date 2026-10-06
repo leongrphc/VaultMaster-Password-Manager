@@ -22,7 +22,6 @@ export function errorHandler(
     logWarn("validation_error", {
       ...buildRequestLogContext(req),
       statusCode: 400,
-      details: messages,
     });
     res.status(400).json({
       success: false,
@@ -43,9 +42,7 @@ export function errorHandler(
 
   res.status(500).json({
     success: false,
-    error: process.env.NODE_ENV === "production"
-      ? "Sunucu hatası"
-      : err.message,
+    error: "Sunucu hatası",
     requestId: getRequestId(req),
   });
 }

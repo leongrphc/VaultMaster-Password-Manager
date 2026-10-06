@@ -38,8 +38,11 @@ test("inferDeviceType distinguishes mobile and web clients", () => {
   assert.equal(inferDeviceType(null), "unknown");
 });
 
-test("resolveRequestId reuses incoming ids when present", () => {
-  assert.equal(resolveRequestId("req-123"), "req-123");
+test("resolveRequestId never reuses incoming identifiers, including UUIDs", () => {
+  for (const value of ["req-123", "synthetic@email.test", "9d151da8-2bfe-4b26-80df-94a90f56bbe0", ["secret"]]) {
+    assert.notEqual(resolveRequestId(value), value);
+    assert.match(resolveRequestId(value), /^[0-9a-f-]{36}$/);
+  }
 });
 
 test("resolveRequestId generates ids when header is missing", () => {

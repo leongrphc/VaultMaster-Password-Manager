@@ -1,5 +1,7 @@
 "use client";
 
+import { observe } from "@/lib/observability";
+
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
 import type {
@@ -610,8 +612,8 @@ export const useStore = create<AppStore>()(
           if (savedAt && isCurrentVaultSession(get(), epoch, masterKeyBase64)) {
             set({ lastSyncedAt: savedAt });
           }
-        } catch (error) {
-          console.error("Offline snapshot kaydedilemedi:", error);
+        } catch {
+          observe("sync_result", { operation: "offline", outcome: "failure", reason: "storage" });
         }
       },
 
@@ -639,6 +641,7 @@ export const useStore = create<AppStore>()(
 
           if (!isCurrentVaultSession(get(), epoch, masterKeyBase64)) return;
           const decryptedItems: DecryptedVaultItem[] = [];
+          let degraded = false;
           for (const item of vaultResponse.data) {
             try {
               const data = await decryptJSON<VaultItemData>(
@@ -654,12 +657,13 @@ export const useStore = create<AppStore>()(
                 createdAt: item.createdAt,
                 updatedAt: item.updatedAt,
               });
-            } catch (error) {
-              console.error("Vault çözme hatası:", item.id, error);
+            } catch {
+              degraded = true;
             }
           }
 
           if (!isCurrentVaultSession(get(), epoch, masterKeyBase64)) return;
+          observe("sync_result", { operation: "sync", outcome: degraded ? "degraded" : "success", ...(degraded ? { reason: "decrypt" } : {}) });
           set({
             items: decryptedItems,
             folders: sortFoldersByName(foldersResponse.data),
@@ -679,7 +683,7 @@ export const useStore = create<AppStore>()(
           }
         } catch (error) {
           if (!isCurrentVaultSession(get(), epoch, masterKeyBase64)) return;
-          console.error("Vault yükleme hatası:", error);
+          observe("sync_result", { operation: "sync", outcome: "failure", reason: "internal" });
 
           try {
             const snapshot = await readOfflineVaultSnapshot(masterKeyBase64);
@@ -694,8 +698,8 @@ export const useStore = create<AppStore>()(
               notify.offlineMode();
               return;
             }
-          } catch (offlineError) {
-            console.error("Offline snapshot okunamadı:", offlineError);
+          } catch {
+            observe("sync_result", { operation: "offline", outcome: "failure", reason: "storage" });
           }
 
           if (!isCurrentVaultSession(get(), epoch, masterKeyBase64)) return;
@@ -780,8 +784,8 @@ export const useStore = create<AppStore>()(
         for (const attachment of response.data) {
           try {
             attachments.push(await decryptAttachmentMetadata(attachment, masterKey));
-          } catch (error) {
-            console.error("Ek metadata çözme hatası:", attachment.id, error);
+          } catch {
+            observe("client_error", { operation: "client", outcome: "failure", reason: "internal" });
           }
         }
 

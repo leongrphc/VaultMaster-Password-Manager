@@ -87,6 +87,8 @@ jobs:
         run: pnpm install --frozen-lockfile
       - name: Verify recovery drill isolation guards
         run: pnpm test:backup-drill-safety
+      - name: Test health alert thresholds, rollback abort policy and privacy boundaries
+        run: pnpm --filter @vaultmaster/shared build && pnpm test:observability
       - name: Check extension documentation, links and terminology
         run: pnpm test:docs
       - name: Generate Prisma client
@@ -103,6 +105,11 @@ jobs:
           pnpm package:extension test-results/extension-second.zip
           cmp test-results/extension-first.zip test-results/extension-second.zip
           pnpm verify:extension test-results/extension-first.zip
+      - name: Run isolated rollback and observability drill
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql postgresql-client
+          pnpm drill:observability-rollback
       - name: Run unit and database integration tests
         run: pnpm test
       - name: Install Chromium

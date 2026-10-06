@@ -1,5 +1,7 @@
 "use client";
 
+import { observe } from "@/lib/observability";
+
 import OfflineSnapshotCleanup from "@/components/vault/OfflineSnapshotCleanup";
 
 import { useEffect, useRef, useState } from "react";
@@ -233,8 +235,8 @@ export default function SettingsPage() {
 
       setExportStatus("success");
       setTimeout(() => setExportStatus(null), 3000);
-    } catch (e) {
-      console.error("Export hatası:", e);
+    } catch {
+      observe("client_error", { operation: "client", outcome: "failure", reason: "internal" });
       setExportStatus("error");
       setTimeout(() => setExportStatus(null), 3000);
     }
@@ -394,7 +396,7 @@ export default function SettingsPage() {
           return;
         }
 
-        console.error("Güvenlik verileri yüklenemedi:", error);
+        observe("client_error", { operation: "client", outcome: "failure", reason: "internal" });
         setSecurityError(
           error instanceof Error ? error.message : "Güvenlik verileri yüklenemedi"
         );
@@ -421,13 +423,13 @@ export default function SettingsPage() {
     setSharingError(null);
     loadSharedVaults()
       .catch((error) => {
-        console.error("Paylaşımlı kasalar yüklenemedi:", error);
+        observe("client_error", { operation: "client", outcome: "failure", reason: "internal" });
         setSharingError(error instanceof Error ? error.message : "Paylaşımlı kasalar yüklenemedi");
       })
       .finally(() => setSharingLoading(false));
 
     loadEmergencyAccessGrants().catch((error) => {
-      console.error("Acil durum erişimleri yüklenemedi:", error);
+      observe("client_error", { operation: "client", outcome: "failure", reason: "internal" });
       setEmergencyError(error instanceof Error ? error.message : "Acil durum erişimleri yüklenemedi");
     });
   }, [activeTab, tokens, loadSharedVaults, loadEmergencyAccessGrants]);
@@ -467,7 +469,7 @@ export default function SettingsPage() {
       setSharedVaultForm({ encryptedMetadata: "", metadataIv: "", encryptedVaultKey: "", encryptedVaultKeyIv: "" });
       setSharingStatus("Paylaşımlı kasa kaydı oluşturuldu");
     } catch (error) {
-      console.error("Paylaşımlı kasa oluşturulamadı:", error);
+      observe("client_error", { operation: "client", outcome: "failure", reason: "internal" });
       setSharingError(error instanceof Error ? error.message : "Paylaşımlı kasa oluşturulamadı");
     } finally {
       setSharingLoading(false);
@@ -483,7 +485,7 @@ export default function SettingsPage() {
         loadSharedVaultItems(sharedVaultId),
       ]);
     } catch (error) {
-      console.error("Üyeler yüklenemedi:", error);
+      observe("client_error", { operation: "client", outcome: "failure", reason: "internal" });
       setSharingError(error instanceof Error ? error.message : "Üyeler yüklenemedi");
     }
   };
@@ -516,7 +518,7 @@ export default function SettingsPage() {
       setInviteForm({ email: "", role: "viewer", encryptedVaultKey: "", encryptedVaultKeyIv: "" });
       setSharingStatus("Üye şifreli anahtar materyaliyle davet edildi");
     } catch (error) {
-      console.error("Üye davet edilemedi:", error);
+      observe("client_error", { operation: "client", outcome: "failure", reason: "internal" });
       setSharingError(error instanceof Error ? error.message : "Üye davet edilemedi");
     } finally {
       setSharingLoading(false);
@@ -540,7 +542,7 @@ export default function SettingsPage() {
       await removeSharedVaultMember(selectedSharedVaultId, member.id);
       setSharingStatus("Üye kaldırıldı");
     } catch (error) {
-      console.error("Üye kaldırılamadı:", error);
+      observe("client_error", { operation: "client", outcome: "failure", reason: "internal" });
       setSharingError(error instanceof Error ? error.message : "Üye kaldırılamadı");
     } finally {
       setRemovingMemberId(null);
@@ -579,7 +581,7 @@ export default function SettingsPage() {
       setSharedVaultItemForm({ encryptedData: "", iv: "", favorite: false });
       setEditingSharedVaultItemId(null);
     } catch (error) {
-      console.error("Paylaşımlı kasa öğesi kaydedilemedi:", error);
+      observe("client_error", { operation: "client", outcome: "failure", reason: "internal" });
       setSharingError(error instanceof Error ? error.message : "Paylaşımlı kasa öğesi kaydedilemedi");
     } finally {
       setSharingLoading(false);
@@ -607,7 +609,7 @@ export default function SettingsPage() {
       await deleteSharedVaultItem(selectedSharedVaultId, itemId);
       setSharingStatus("Paylaşımlı kasa öğesi silindi");
     } catch (error) {
-      console.error("Paylaşımlı kasa öğesi silinemedi:", error);
+      observe("client_error", { operation: "client", outcome: "failure", reason: "internal" });
       setSharingError(error instanceof Error ? error.message : "Paylaşımlı kasa öğesi silinemedi");
     }
   };
@@ -621,7 +623,7 @@ export default function SettingsPage() {
       await action();
       setEmergencyStatus(successMessage);
     } catch (error) {
-      console.error("Acil durum erişimi işlemi başarısız:", error);
+      observe("client_error", { operation: "client", outcome: "failure", reason: "internal" });
       setEmergencyError(error instanceof Error ? error.message : "Acil durum erişimi işlemi başarısız");
     } finally {
       setEmergencyLoading(false);
@@ -678,7 +680,7 @@ export default function SettingsPage() {
       setSecuritySuccess("Seçilen oturum sonlandırıldı");
       setSecurityReloadKey((value) => value + 1);
     } catch (error) {
-      console.error("Oturum sonlandırılamadı:", error);
+      observe("client_error", { operation: "client", outcome: "failure", reason: "internal" });
       setSecurityError(
         error instanceof Error ? error.message : "Oturum sonlandırılamadı"
       );
@@ -709,7 +711,7 @@ export default function SettingsPage() {
       setSecuritySuccess("Cihaz adı güncellendi");
       setSecurityReloadKey((value) => value + 1);
     } catch (error) {
-      console.error("Cihaz adı güncellenemedi:", error);
+      observe("client_error", { operation: "client", outcome: "failure", reason: "internal" });
       setSecurityError(
         error instanceof Error ? error.message : "Cihaz adı güncellenemedi"
       );
@@ -748,7 +750,7 @@ export default function SettingsPage() {
       );
       setSecurityReloadKey((value) => value + 1);
     } catch (error) {
-      console.error("Diğer oturumlar kapatılamadı:", error);
+      observe("client_error", { operation: "client", outcome: "failure", reason: "internal" });
       setSecurityError(
         error instanceof Error ? error.message : "Diğer oturumlar kapatılamadı"
       );

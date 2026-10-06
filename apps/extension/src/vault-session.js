@@ -1,3 +1,4 @@
+import { structuredEvent, newCorrelationId } from './observability.js';
 import { API_URL } from './config.js';
 import { deriveMasterKey, exportMasterKeyBase64, importMasterKey } from './crypto/key-derivation.js';
 import { generateAuthHash } from './crypto/password-hash.js';
@@ -179,11 +180,17 @@ export class VaultSession {
     return this.status();
   }
   async sync() {
+    const requestId = newCorrelationId();
+    let reason = 'internal';
+    try {
     await this.ready;
     const epoch = this.epoch, key = this.key;
     this.guard(epoch, key);
+    reason = 'http';
     const { data } = await this.api('/vault');
+    reason = 'invalid_response';
     if (!Array.isArray(data)) throw new Error('Geçersiz kasa yanıtı.');
+    reason = 'decrypt';
     const items = await Promise.all(data.filter(item => !item.deletedAt).map(async item => ({ ...item,
       data: await decryptJSON(item.encryptedData, item.iv, key) })));
     this.guard(epoch, key);
@@ -192,9 +199,16 @@ export class VaultSession {
     this.writes = this.writes.catch(() => undefined).then(() => {
       this.guard(epoch, key); return this.storage.local.set({ [CACHE]: cache });
     });
+    reason = 'storage';
     await this.writes;
     this.guard(epoch, key);
+    console.info(JSON.stringify(structuredEvent('sync_result', { component: 'extension', operation: 'sync', outcome: 'success', requestId })));
     return this.status();
+    } catch (error) {
+      console.info(JSON.stringify(structuredEvent('sync_result', { component: 'extension', operation: 'sync', outcome: 'failure',
+        reason: error?.status === 0 ? 'network' : reason, requestId })));
+      throw error;
+    }
   }
   async request(type, payload = {}) {
     await this.ready;

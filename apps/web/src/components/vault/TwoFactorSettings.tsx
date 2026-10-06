@@ -1,5 +1,7 @@
 "use client";
 
+import { observe } from "@/lib/observability";
+
 import { useCallback, useEffect, useState } from "react";
 import Image from "next/image";
 import { Shield, Check, Loader2, RefreshCcw, Copy, Download, AlertTriangle } from "lucide-react";
@@ -64,8 +66,8 @@ export default function TwoFactorSettings() {
 
       setIsEnabled(response.data.enabled);
       setRecoveryCodesRemaining(response.data.recoveryCodesRemaining);
-    } catch (error) {
-      console.error("2FA Durum hatası:", error);
+    } catch {
+      observe("client_error", { operation: "client", outcome: "failure", reason: "internal" });
     } finally {
       setLoading(false);
     }

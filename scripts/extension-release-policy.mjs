@@ -1,6 +1,6 @@
 import { createHash, createPublicKey } from 'node:crypto';
 export const releaseFiles = ['background.js', 'config.js', 'content.js', 'form-detector.js',
-  'manifest.json', 'passkey-injected.js', 'popup.css', 'popup.html', 'popup.js', 'vault-session.js',
+  'manifest.json', 'observability.js', 'passkey-injected.js', 'popup.css', 'popup.html', 'popup.js', 'vault-session.js',
   ...['key-derivation', 'password-hash', 'vault-key', 'encryption', 'utils', 'totp'].map(name => `crypto/${name}.js`)].sort();
 export const sha256 = bytes => createHash('sha256').update(bytes).digest('hex');
 export function extensionId(key) {

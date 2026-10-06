@@ -130,3 +130,9 @@ remain; no new exception is added. Deployment is a normal API-compatible web and
 crypto-package rebuild, with no data migration. Rollback is a web rebuild/redeploy;
 no vault content, import receipt or encryption format is rewritten. No production
 deployment or independent security audit is claimed.
+
+P0-5 strengthens optional telemetry: all breadcrumbs and automatic/unmarked
+SDK events are discarded, and explicit application events are rebuilt from a
+strict allowlist. Exception text/stacks, request URLs, identifiers and vault data
+are excluded. This supersedes the earlier provider-URL-only breadcrumb filter;
+see the [observability privacy contract](OBSERVABILITY_ROLLBACK.md).

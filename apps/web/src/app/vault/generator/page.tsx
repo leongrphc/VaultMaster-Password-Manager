@@ -1,5 +1,7 @@
 "use client";
 
+import { observe } from "@/lib/observability";
+
 import { useState } from "react";
 import { RefreshCw, Copy, Check, Sliders } from "lucide-react";
 import {
@@ -58,8 +60,8 @@ export default function GeneratorPage() {
       const pw = buildSecret(mode, passwordOptions, passphraseOptions);
       setPassword(pw);
       setCopied(false);
-    } catch (e) {
-      console.error(e);
+    } catch {
+      observe("client_error", { operation: "client", outcome: "failure", reason: "internal" });
     }
   };
 

@@ -1,3 +1,4 @@
+import { observe } from "./observability";
 import { sensitiveAction } from "@vaultmaster/shared";
 import { requestReauthentication } from "./reauthentication";
 import { encodeBackupTransfer, decodeBackupTransfer, retryBackupTransfer } from "./backup-transfer";
@@ -72,6 +73,9 @@ async function request<T>(
     guard();
   }
 
+  const operation = endpoint.startsWith("/backups") ? "backup" :
+    endpoint.startsWith("/vault") || endpoint.startsWith("/folders") ? "sync" : "api";
+  const event = operation === "backup" ? "backup_result" : operation === "sync" ? "sync_result" : "http_request";
   let res: Response;
   try {
     res = await fetch(`${API_BASE}${endpoint}`, {
@@ -81,19 +85,21 @@ async function request<T>(
       body: body ? JSON.stringify(body) : undefined,
     });
   } catch {
+    observe(event, { operation, outcome: "failure", reason: "network" });
     throw new ApiError(
       "API sunucusuna ulaşılamıyor. Backend servisinin çalıştığından emin olun.",
       0
     );
   }
 
-  const data = await res
-    .json()
-    .catch(() => ({ error: "Sunucudan geçersiz yanıt alındı" }));
+  const data = await res.json().catch(() => {
+    observe(event, { operation, outcome: "failure", reason: "invalid_response" });
+    throw new ApiError("Sunucudan geçersiz yanıt alındı", res.status);
+  });
+  observe(event, { operation, outcome: res.ok ? "success" : "failure", statusCode: res.status, ...(!res.ok ? { reason: "http" } : {}) });
 
   if (!res.ok) {
     throw new ApiError(data.error || "Bir hata oluştu", res.status, {
-      requestId: typeof data.requestId === "string" ? data.requestId : undefined,
       details: Array.isArray(data.details)
         ? data.details.filter((detail: unknown): detail is string => typeof detail === "string")
         : undefined,

@@ -1,3 +1,4 @@
+import { healthAlerts } from "../utils/health-alerts.js";
 import type { NextFunction, Request, Response } from "express";
 import { logInfo } from "../utils/logger.js";
 import { buildRequestLogContext, resolveRequestId } from "../utils/request-context.js";
@@ -21,7 +22,11 @@ export function requestLoggingMiddleware(
   next: NextFunction
 ): void {
   res.on("finish", () => {
-    logInfo("http_request", {
+    const operation = req.path.startsWith("/api/backups") ? "backup" :
+      req.path.startsWith("/api/vault") || req.path.startsWith("/api/folders") ? "sync" : "api";
+    if (!req.path.startsWith("/api/health")) healthAlerts.record(operation, res.statusCode);
+    logInfo(operation === "backup" ? "backup_result" : operation === "sync" ? "sync_result" : "http_request", {
+      operation, outcome: res.statusCode < 400 ? "success" : "failure",
       ...buildRequestLogContext(req),
       statusCode: res.statusCode,
       durationMs: req.requestStartedAt

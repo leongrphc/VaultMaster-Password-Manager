@@ -1,60 +1,35 @@
-import { Router, type Request, type Response } from "express";
-import { prisma } from "../config/prisma.js";
-import { env } from "../config/env.js";
-import { getRequestId } from "../utils/request-context.js";
-
+import { Router, type Request } from 'express';
+import { prisma } from '../config/prisma.js';
+import { getRequestId } from '../utils/request-context.js';
+import { logInfo } from '../utils/logger.js';
 const router: Router = Router();
-const startedAt = Date.now();
-
-function createBaseHealthPayload(req: Request, mode: "live" | "ready") {
-  return {
-    status: "ok" as const,
-    service: "api",
-    mode,
-    environment: env.NODE_ENV,
-    uptimeSeconds: Math.round(process.uptime()),
-    process: {
-      pid: process.pid,
-      memoryRssMb: Math.round(process.memoryUsage().rss / 1024 / 1024),
-      startedAt: new Date(startedAt).toISOString(),
-    },
-    timestamp: new Date().toISOString(),
-    requestId: getRequestId(req),
-  };
-}
-
-router.get("/", async (req: Request, res: Response) => {
-  res.json({
-    ...createBaseHealthPayload(req, "live"),
+const base = (req: Request, mode: string) => ({ status: 'ok', service: 'api', mode,
+  requestId: getRequestId(req) });
+router.use((_req, res, next) => { res.setHeader('Cache-Control', 'no-store'); next(); });
+router.get('/', (req, res) => { res.json(base(req, 'live')); });
+// One bounded DB transaction, shared across overlapping probes. Timeout is also
+// enforced by PostgreSQL, so hung work does not accumulate behind a Promise race.
+let pending: Promise<void> | null = null;
+export function databaseProbe() {
+  if (!pending) pending = prisma.$transaction(async tx => {
+    await tx.$executeRaw`SET LOCAL statement_timeout = '2000ms'`;
+    await tx.$queryRaw`SELECT 1`;
+  }, { maxWait: 2000, timeout: 3000 }).finally(() => { pending = null; });
+  const check = pending;
+  return new Promise<void>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error("Readiness timeout")), 5000);
+    check.then(() => { clearTimeout(timer); resolve(); }, () => { clearTimeout(timer); reject(new Error("Readiness failed")); });
   });
-});
-
-router.get("/ready", async (req: Request, res: Response) => {
-  const dbCheckStartedAt = Date.now();
-
+}
+router.get('/ready', async (req, res) => {
+  const started = Date.now();
   try {
-    await prisma.$queryRaw`SELECT 1`;
-    res.json({
-      ...createBaseHealthPayload(req, "ready"),
-      checks: {
-        database: {
-          status: "ok",
-          latencyMs: Date.now() - dbCheckStartedAt,
-        },
-      },
-    });
+    await databaseProbe();
+    res.json({ ...base(req, 'ready'), checks: { database: { status: 'ok' } } });
   } catch {
-    res.status(503).json({
-      ...createBaseHealthPayload(req, "ready"),
-      status: "error",
-      checks: {
-        database: {
-          status: "error",
-          latencyMs: Date.now() - dbCheckStartedAt,
-        },
-      },
-    });
+    logInfo('database_probe', { operation: 'database', outcome: 'failure', reason: 'timeout',
+      requestId: getRequestId(req), durationMs: Date.now() - started });
+    res.status(503).json({ ...base(req, 'ready'), status: 'error', checks: { database: { status: 'error' } } });
   }
 });
-
 export default router;

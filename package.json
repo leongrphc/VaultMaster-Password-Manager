@@ -25,7 +25,9 @@
     "test:dependency-audit": "node --test scripts/tests/dependency-audit.test.mjs",
     "package:extension": "node scripts/package-extension.mjs",
     "verify:extension": "node scripts/verify-extension.mjs",
-    "test:docs": "node --test scripts/tests/extension-docs.test.mjs"
+    "test:docs": "node --test scripts/tests/extension-docs.test.mjs",
+    "drill:observability-rollback": "bash scripts/observability-rollback-drill.sh",
+    "test:observability": "node --test scripts/tests/observability.test.mjs"
   },
   "devDependencies": {
     "@playwright/test": "^1.60.0",

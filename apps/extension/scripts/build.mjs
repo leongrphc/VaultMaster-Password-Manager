@@ -1,3 +1,4 @@
+import { transformSync } from "esbuild";
 import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 
@@ -59,3 +60,5 @@ if (process.env.VAULTMASTER_APP_URL) {
 }
 
 console.log("Extension build complete:", distDir, "App origin:", appUrl.origin);
+
+writeFileSync(resolve(distDir, "observability.js"), transformSync(readFileSync(resolve(root, "../../packages/shared/src/observability.ts"), "utf8"), { loader: "ts", format: "esm", target: "chrome127" }).code);
