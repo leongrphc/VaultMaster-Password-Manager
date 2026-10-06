@@ -1,3 +1,5 @@
+import { sensitiveAction } from "../../../packages/shared/dist/index.js";
+const testCredentials = new Map();
 const TEST_EMAIL_DOMAIN = "example.integration.test";
 const DEFAULT_AUTH_HASH = "integration-auth-hash";
 
@@ -56,7 +58,8 @@ export async function disconnectPrisma() {
   await prisma.$disconnect();
 }
 
-export async function startTestServer() {
+export async function startTestServer({ resetLimits = true } = {}) {
+  if (resetLimits) { const { prisma } = await loadPrismaModule(); await prisma.abuseBucket.deleteMany(); }
   const { createApp } = await loadAppModule();
   const server = createApp().listen(0, '127.0.0.1');
   await new Promise((resolve) => server.once("listening", resolve));
@@ -131,6 +134,7 @@ export async function registerUser(baseUrl, overrides = {}) {
     body: payload,
   });
 
+  if (response.body?.data?.tokens?.accessToken) testCredentials.set(response.body.data.tokens.accessToken, payload.authHash);
   return {
     payload,
     response,
@@ -151,6 +155,7 @@ export async function loginUser(baseUrl, payload, overrides = {}) {
     },
   });
 
+  if (response.body?.data?.tokens?.accessToken) testCredentials.set(response.body.data.tokens.accessToken, overrides.authHash ?? payload.authHash);
   return {
     response,
     data: response.body?.data,
@@ -216,4 +221,22 @@ export function emergencyAccessPayload(overrides = {}) {
     waitTimeDays: 7,
     ...overrides,
   };
+}
+
+// Explicit adapter for legacy regression suites: each protected request obtains
+// a real proof through the public endpoint. Security tests use raw request().
+export async function authorizedRequest(baseUrl, path, options = {}) {
+  const method = options.method ?? 'GET';
+  const target = path.replace(/^\/api/, '').split('?')[0];
+  const headers = new Headers(options.headers);
+  const accessToken = headers.get('authorization')?.replace(/^Bearer /, '');
+  if (accessToken && sensitiveAction(method, target) && !headers.has('x-vaultmaster-reauth')) {
+    const body = options.body ?? {};
+    const proof = await request(baseUrl, '/api/auth/reauthenticate', { method: 'POST', headers,
+      body: { method, path: target, authHash: body.currentAuthHash ?? body.authHash ?? testCredentials.get(accessToken),
+        code: body.code, recoveryCode: body.recoveryCode } });
+    if (proof.status !== 200 || !proof.body.data.proof) return proof.status === 200 ? { ...proof, status: 403 } : proof;
+    headers.set('x-vaultmaster-reauth', proof.body.data.proof);
+  }
+  return request(baseUrl, path, { ...options, headers });
 }

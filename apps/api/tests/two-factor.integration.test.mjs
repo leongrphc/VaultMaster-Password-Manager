@@ -7,7 +7,7 @@ import {
   disconnectPrisma,
   loginUser,
   registerUser,
-  request,
+  authorizedRequest as request,
   startTestServer,
   stopTestServer,
 } from "./integration-helpers.mjs";
@@ -100,7 +100,7 @@ test("2FA setup, verify, login challenge, TOTP login, and disable flow works", a
     headers: authHeaders(totpLogin.accessToken),
     body: {},
   });
-  assert.equal(disableWithoutCode.status, 400);
+  assert.equal(disableWithoutCode.status, 403);
 
   const disable = await request(baseUrl, "/api/auth/2fa/disable", {
     method: "POST",

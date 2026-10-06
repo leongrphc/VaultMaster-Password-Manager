@@ -17,7 +17,7 @@ import VaultSkeleton from "@/components/vault/VaultSkeleton";
 import { generateTotpCode } from "@/lib/totp";
 import { searchVaultItems } from "@/lib/search";
 import { useShallow } from "zustand/shallow";
-import { getErrorMessage } from "@/lib/api";
+import { api, getErrorMessage } from "@/lib/api";
 import { copyWithAutoClear } from "@/lib/clipboard";
 import { notify } from "@/lib/notify";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
@@ -251,7 +251,10 @@ export default function VaultPage() {
     setShowPlaintextBulkExportConfirm(true);
   };
 
-  const performBulkExport = () => {
+  const performBulkExport = async () => {
+    const guard = useStore.getState().getVaultOperationGuard();
+    try { await useStore.getState().runWithValidAccessToken(token => api.auth.authorizeExport(token)); guard(); }
+    catch (error) { setShowPlaintextBulkExportConfirm(false); notify.error(getErrorMessage(error)); return; }
     const blob = new Blob([JSON.stringify(selectedItems.map((item) => item.data), null, 2)], {
       type: "application/json",
     });

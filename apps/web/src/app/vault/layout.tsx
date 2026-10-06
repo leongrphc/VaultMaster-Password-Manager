@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useStore } from "@/lib/store";
+import ReauthenticationDialog from "@/components/vault/ReauthenticationDialog";
 import Sidebar from "@/components/layout/Sidebar";
 import VaultHeader from "@/components/vault/VaultHeader";
 import LockScreen from "@/components/vault/LockScreen";
@@ -169,6 +170,7 @@ export default function DashboardLayout({
 
   return (
     <div className="min-h-screen bg-midnight flex">
+      <ReauthenticationDialog />
       <BrowserExtensionBridge />
       <CommandPalette isOpen={commandPaletteOpen} onClose={() => setCommandPaletteOpen(false)} />
       <Sidebar

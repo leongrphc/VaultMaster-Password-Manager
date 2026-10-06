@@ -1,10 +1,11 @@
 import test from 'node:test';
+import { sensitiveAction } from '../../packages/shared/dist/index.js';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { readFile, stat } from 'node:fs/promises';
 import { resolve, join, extname, sep } from 'node:path';
 import { chromium, expect } from '@playwright/test';
-import { deriveMasterKey, encryptJSON, exportMasterKeyBase64, unwrapVaultKey } from '../../packages/crypto/dist/index.js';
+import { deriveMasterKey, generateAuthHash, encryptJSON, exportMasterKeyBase64, unwrapVaultKey } from '../../packages/crypto/dist/index.js';
 
 // Uses the built static export and intercepts every API request. No live account
 // or production database is accessed. Run a static web build before this test.
@@ -42,6 +43,9 @@ test('web preserves its random data key through password change, reload and unlo
     const restoreChunks = [];
     let sessionExpired = false;
     let refreshCalls = 0;
+    const proofs = new Map();
+    let reauthCalls = 0;
+    const notifications = [];
     const timestamp = '2026-10-05T00:00:00.000Z';
     browser = await chromium.launch({ channel: 'chromium', headless: true });
     const context = await browser.newContext();
@@ -55,6 +59,12 @@ test('web preserves its random data key through password change, reload and unlo
       if (sessionExpired && !pathname.endsWith('/auth/refresh')) {
         return route.fulfill({ status: 401, contentType: 'application/json', body: JSON.stringify({ success: false, error: 'Expired fixture session' }) });
       }
+      const action = sensitiveAction(route.request().method(), pathname.replace(/^\/api/, ''));
+      if (action) {
+        const proof = route.request().headers()['x-vaultmaster-reauth'];
+        assert.equal(proofs.get(proof), `${route.request().method()} ${pathname.replace(/^\/api/, '')}`);
+        proofs.delete(proof);
+      }
       let data;
       if (pathname.endsWith('/auth/register')) {
         vaultKeyEnvelope = { ...route.request().postDataJSON().vaultKeyEnvelope, version: 1 };
@@ -63,6 +73,14 @@ test('web preserves its random data key through password change, reload and unlo
         encrypted = await encryptJSON({ type: 'login', title: 'Encrypted browser fixture', username: 'octo', password: 'fixture-secret', url: 'https://example.test' }, key);
         data = { user: { id: 'user-1', email, createdAt: timestamp }, session: true, deviceId: 'device-1', kdfSalt: email, kdfIterations: 600000, vaultKeyEnvelope };
       }
+      else if (pathname.endsWith('/auth/reauthenticate')) {
+        const body = route.request().postDataJSON();
+        const currentPassword = vaultKeyEnvelope.version === 1 ? password : 'New-fixture-master-password-2026!';
+        assert.equal(body.authHash, await generateAuthHash(await deriveMasterKey(currentPassword, email), currentPassword));
+        const proof = crypto.randomUUID(); proofs.set(proof, `${body.method} ${body.path}`); reauthCalls++;
+        data = { proof, expiresIn: 300 };
+      }
+      else if (pathname.endsWith('/auth/security-notifications')) data = notifications;
       else if (pathname.endsWith('/backups/snapshot')) {
         const snapshot = { backupId, exportedAt: timestamp, sourceEmail: email, snapshot: { folders: [], items: [{
           id: crypto.randomUUID(), folderId: null, favorite: false, deletedAt: null,
@@ -97,6 +115,7 @@ test('web preserves its random data key through password change, reload and unlo
         assert.ok(!('items' in body));
         const nextPasswordKey = await deriveMasterKey('New-fixture-master-password-2026!', email);
         assert.equal(await exportMasterKeyBase64(await unwrapVaultKey(body.vaultKeyEnvelope, nextPasswordKey)), keyBase64);
+        notifications.push({ id: 'password-notification', action: 'security.password.change', message: 'Ana şifre değiştirildi. Diğer cihazların oturumları kapatıldı; mevcut oturum açık kaldı.', createdAt: timestamp, readAt: timestamp });
         vaultKeyEnvelope = { ...body.vaultKeyEnvelope, version: 2 };
         data = { message: 'Ana şifre güncellendi', vaultKeyEnvelope };
       }
@@ -154,7 +173,10 @@ test('web preserves its random data key through password change, reload and unlo
     await page.getByPlaceholder('Yeni ana şifre', { exact: true }).fill('New-fixture-master-password-2026!');
     await page.getByPlaceholder('Yeni ana şifre (tekrar)', { exact: true }).fill('New-fixture-master-password-2026!');
     await page.getByRole('button', { name: 'Ana Şifreyi Güncelle', exact: true }).click();
-    await expect(page.getByText('Ana şifre güncellendi', { exact: true })).toBeVisible();
+    await page.getByRole('button', { name: 'Doğrula ve devam et' }).click();
+    await expect(page.getByText('Ana şifre güncellendi. Diğer cihazların oturumları kapatıldı; mevcut oturum açık kaldı.', { exact: true })).toBeVisible();
+    await page.getByRole('region', { name: 'Güvenlik bildirimleri' }).getByRole('button', { name: 'Yenile' }).click();
+    await expect(page.getByText(notifications[0].message, { exact: true })).toBeVisible();
     const storedAfterChange = await page.evaluate(() => localStorage.getItem('vaultmaster-auth'));
     assert.equal(JSON.parse(storedAfterChange).state.vaultKeyEnvelope.version, 2);
     assert.ok(!storedAfterChange.includes(keyBase64));
@@ -174,7 +196,10 @@ test('web preserves its random data key through password change, reload and unlo
     await page.getByLabel('Yedek şifresi tekrar', { exact: true }).fill('Independent-backup-password-2026!');
     const downloadReady = page.waitForEvent('download');
     await page.getByRole('button', { name: 'Tam Yedeği İndir', exact: true }).click();
+    await page.getByLabel('Ana şifre', { exact: true }).fill('New-fixture-master-password-2026!');
+    await page.getByRole('button', { name: 'Doğrula ve devam et' }).click();
     const download = await downloadReady;
+    assert.equal(reauthCalls, 2);
     const backupText = await readFile(await download.path(), 'utf8');
     assert.equal(JSON.parse(backupText).version, 4);
     assert.ok(!backupText.includes(keyBase64));

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { registerUser, loginUser, request, startTestServer, stopTestServer } from './integration-helpers.mjs';
+import { registerUser, loginUser, authorizedRequest as request, startTestServer, stopTestServer } from './integration-helpers.mjs';
 import { deriveMasterKey, createVaultKey, generateAuthHash, wrapVaultKey, unwrapVaultKey,
   encryptJSON, decryptJSON, encryptBinary, decryptBinary } from '../../../packages/crypto/dist/index.js';
 
@@ -33,7 +33,7 @@ test('legacy password changes preserve history, trash and attachment ciphertext 
     // Reject the old destructive item-replacement protocol before any mutation.
     assert.equal((await request(baseUrl, '/api/auth/change-password', { method: 'POST', headers,
       body: { currentAuthHash: user.payload.authHash, newAuthHash: authHash, kdfIterations: 600000, items: [] } })).status, 400);
-    assert.equal((await request(baseUrl, '/api/auth/change-password', { method: 'POST', headers, body: { ...change, currentAuthHash: 'wrong' } })).status, 401);
+    assert.equal((await request(baseUrl, '/api/auth/change-password', { method: 'POST', headers, body: { ...change, currentAuthHash: 'wrong' } })).status, 403);
     assert.deepEqual(await snapshot(), before);
     const changed = await request(baseUrl, '/api/auth/change-password', { method: 'POST', headers, body: change });
     assert.equal(changed.status, 200);
@@ -87,7 +87,7 @@ test('new account envelopes round-trip and simultaneous password changes have ex
         expectedVaultKeyVersion: 1, vaultKeyEnvelope: envelope },
     })));
     assert.equal(responses.filter(response => response.status === 200).length, 1);
-    assert.ok(responses.some(response => [401, 409].includes(response.status)));
+    assert.ok(responses.some(response => [401, 403, 409].includes(response.status)));
     assert.equal((await prisma.user.findUnique({ where: { id: user.data.user.id } })).vaultKeyVersion, 2);
   } finally {
     if (user?.data?.user) await prisma.user.delete({ where: { id: user.data.user.id } });

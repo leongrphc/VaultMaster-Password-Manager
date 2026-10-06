@@ -1,3 +1,5 @@
+import { asyncRoute } from "../utils/async-route.js";
+import { securityChange } from "../utils/security-notifications.js";
 import { Router, type Request, type Response } from "express";
 import { Prisma } from "@prisma/client";
 import * as OTPAuth from "otpauth";
@@ -10,7 +12,6 @@ import {
   readStoredSecret,
 } from "../utils/secret-crypto.js";
 import {
-  consumeRecoveryCode,
   createRecoveryCodes,
 } from "../utils/recovery-codes.js";
 import { logAuditEvent } from "../utils/audit-log.js";
@@ -29,7 +30,7 @@ function readRecoveryCodeHashes(value: unknown): string[] {
 }
 
 // POST /api/auth/2fa/setup — QR kodu ve secret üretir
-router.post("/setup", async (req: Request, res: Response) => {
+router.post("/setup", asyncRoute(async (req: Request, res: Response) => {
   const user = await prisma.user.findUnique({
     where: { id: req.user!.userId },
   });
@@ -56,10 +57,10 @@ router.post("/setup", async (req: Request, res: Response) => {
   });
 
   // Secret'ı veritabanına kaydet (henüz aktifleştirme)
-  await prisma.user.update({
+  await securityChange(req, "security.2fa.setup", tx => tx.user.update({
     where: { id: user.id },
     data: { twoFactorSecret: encryptSensitiveValue(secret.base32) },
-  });
+  }));
 
   await logAuditEvent({
     userId: user.id,
@@ -84,10 +85,10 @@ router.post("/setup", async (req: Request, res: Response) => {
       otpauthUrl,
     },
   });
-});
+}));
 
 // POST /api/auth/2fa/verify — Kodu doğrulayıp 2FA'yı aktifleştir
-router.post("/verify", async (req: Request, res: Response) => {
+router.post("/verify", asyncRoute(async (req: Request, res: Response) => {
   const { code } = twoFactorCodeSchema.parse(req.body);
 
   if (!code) {
@@ -99,7 +100,7 @@ router.post("/verify", async (req: Request, res: Response) => {
     where: { id: req.user!.userId },
   });
 
-  if (!user || !user.twoFactorSecret) {
+  if (!user || !user.twoFactorSecret || user.twoFactorEnabled) {
     res.status(400).json({ success: false, error: "Önce 2FA kurulumu yapın" });
     return;
   }
@@ -122,13 +123,13 @@ router.post("/verify", async (req: Request, res: Response) => {
 
   const { plaintextCodes, hashedCodes } = await createRecoveryCodes();
 
-  await prisma.user.update({
+  await securityChange(req, "security.2fa.enable", tx => tx.user.update({
     where: { id: user.id },
     data: {
       twoFactorEnabled: true,
       twoFactorRecoveryCodes: hashedCodes,
     },
-  });
+  }));
 
   await logAuditEvent({
     userId: user.id,
@@ -145,17 +146,10 @@ router.post("/verify", async (req: Request, res: Response) => {
       recoveryCodes: plaintextCodes,
     },
   });
-});
+}));
 
 // POST /api/auth/2fa/disable — 2FA'yı devre dışı bırak
-router.post("/disable", async (req: Request, res: Response) => {
-  const { code, recoveryCode } = twoFactorCodeSchema.parse(req.body);
-
-  if (!code && !recoveryCode) {
-    res.status(400).json({ success: false, error: "Doğrulama kodu veya recovery code gerekli" });
-    return;
-  }
-
+router.post("/disable", asyncRoute(async (req: Request, res: Response) => {
   const user = await prisma.user.findUnique({
     where: { id: req.user!.userId },
   });
@@ -165,34 +159,14 @@ router.post("/disable", async (req: Request, res: Response) => {
     return;
   }
 
-  const totp = new OTPAuth.TOTP({
-    issuer: "VaultMaster",
-    label: user.email,
-    algorithm: "SHA1",
-    digits: 6,
-    period: 30,
-    secret: OTPAuth.Secret.fromBase32(readStoredSecret(user.twoFactorSecret)),
-  });
-
-  const recoveryCodeHashes = readRecoveryCodeHashes(user.twoFactorRecoveryCodes);
-  const recoveryCodesAfterUse = recoveryCode
-    ? await consumeRecoveryCode(recoveryCodeHashes, recoveryCode)
-    : null;
-  const delta = code ? totp.validate({ token: code, window: 1 }) : null;
-
-  if (delta === null && recoveryCodesAfterUse === null) {
-    res.status(400).json({ success: false, error: "Geçersiz doğrulama kodu" });
-    return;
-  }
-
-  await prisma.user.update({
+  await securityChange(req, "security.2fa.disable", tx => tx.user.update({
     where: { id: user.id },
     data: {
       twoFactorEnabled: false,
       twoFactorSecret: null,
       twoFactorRecoveryCodes: Prisma.JsonNull,
     },
-  });
+  }));
 
   await logAuditEvent({
     userId: user.id,
@@ -206,16 +180,9 @@ router.post("/disable", async (req: Request, res: Response) => {
     success: true,
     data: { message: "2FA devre dışı bırakıldı" },
   });
-});
+}));
 
-router.post("/recovery-codes/regenerate", async (req: Request, res: Response) => {
-  const { code, recoveryCode } = twoFactorCodeSchema.parse(req.body);
-
-  if (!code && !recoveryCode) {
-    res.status(400).json({ success: false, error: "Doğrulama kodu veya recovery code gerekli" });
-    return;
-  }
-
+router.post("/recovery-codes/regenerate", asyncRoute(async (req: Request, res: Response) => {
   const user = await prisma.user.findUnique({
     where: { id: req.user!.userId },
   });
@@ -225,34 +192,14 @@ router.post("/recovery-codes/regenerate", async (req: Request, res: Response) =>
     return;
   }
 
-  const recoveryCodeHashes = readRecoveryCodeHashes(user.twoFactorRecoveryCodes);
-  const recoveryCodesAfterUse = recoveryCode
-    ? await consumeRecoveryCode(recoveryCodeHashes, recoveryCode)
-    : null;
-
-  const totp = new OTPAuth.TOTP({
-    issuer: "VaultMaster",
-    label: user.email,
-    algorithm: "SHA1",
-    digits: 6,
-    period: 30,
-    secret: OTPAuth.Secret.fromBase32(readStoredSecret(user.twoFactorSecret)),
-  });
-
-  const delta = code ? totp.validate({ token: code, window: 1 }) : null;
-  if (delta === null && recoveryCodesAfterUse === null) {
-    res.status(400).json({ success: false, error: "Geçersiz doğrulama kodu" });
-    return;
-  }
-
   const { plaintextCodes, hashedCodes } = await createRecoveryCodes();
 
-  await prisma.user.update({
+  await securityChange(req, "security.2fa.recovery_codes.regenerate", tx => tx.user.update({
     where: { id: user.id },
     data: {
       twoFactorRecoveryCodes: hashedCodes,
     },
-  });
+  }));
 
   await logAuditEvent({
     userId: user.id,
@@ -268,10 +215,10 @@ router.post("/recovery-codes/regenerate", async (req: Request, res: Response) =>
       recoveryCodes: plaintextCodes,
     },
   });
-});
+}));
 
 // GET /api/auth/2fa/status — 2FA durumunu sorgula
-router.get("/status", async (req: Request, res: Response) => {
+router.get("/status", asyncRoute(async (req: Request, res: Response) => {
   const user = await prisma.user.findUnique({
     where: { id: req.user!.userId },
     select: { twoFactorEnabled: true, twoFactorRecoveryCodes: true },
@@ -284,6 +231,6 @@ router.get("/status", async (req: Request, res: Response) => {
       recoveryCodesRemaining: readRecoveryCodeHashes(user?.twoFactorRecoveryCodes).length,
     },
   });
-});
+}));
 
 export default router;

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { registerUser, request, startTestServer, stopTestServer } from './integration-helpers.mjs';
+import { registerUser, authorizedRequest as request, startTestServer, stopTestServer } from './integration-helpers.mjs';
 import { createVaultKey, exportMasterKeyBase64, encryptJSON, encryptBinary, decryptJSON, decryptBinary,
   encryptBackup, decryptBackup } from '../../../packages/crypto/dist/index.js';
 

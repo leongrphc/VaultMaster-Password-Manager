@@ -1,3 +1,5 @@
+import { asyncRoute } from "../utils/async-route.js";
+import { securityChange } from "../utils/security-notifications.js";
 import { Router, type Request, type Response } from "express";
 import {
   deviceIdSchema,
@@ -13,7 +15,7 @@ const router: Router = Router();
 
 router.use(authMiddleware);
 
-router.get("/", async (req: Request, res: Response) => {
+router.get("/", asyncRoute(async (req: Request, res: Response) => {
   const devices = await prisma.device.findMany({
     where: { userId: req.user!.userId },
     orderBy: [{ lastActive: "desc" }, { createdAt: "desc" }],
@@ -38,9 +40,9 @@ router.get("/", async (req: Request, res: Response) => {
       lastActive: device.lastActive.toISOString(),
     })),
   });
-});
+}));
 
-router.patch("/:id", async (req: Request, res: Response) => {
+router.patch("/:id", asyncRoute(async (req: Request, res: Response) => {
   const { id } = deviceIdSchema.parse({ id: req.params.id });
   const { deviceName } = updateDeviceSchema.parse(req.body);
 
@@ -53,10 +55,10 @@ router.patch("/:id", async (req: Request, res: Response) => {
     return;
   }
 
-  const updatedDevice = await prisma.device.update({
+  const updatedDevice = await securityChange(req, "security.session.rename", tx => tx.device.update({
     where: { id: device.id },
     data: { deviceName },
-  });
+  }));
 
   await logAuditEvent({
     userId: req.user!.userId,
@@ -82,9 +84,9 @@ router.patch("/:id", async (req: Request, res: Response) => {
       lastActive: updatedDevice.lastActive.toISOString(),
     },
   });
-});
+}));
 
-router.post("/revoke-others", async (req: Request, res: Response) => {
+router.post("/revoke-others", asyncRoute(async (req: Request, res: Response) => {
   const { currentDeviceId } = revokeOtherDevicesSchema.parse(req.body);
   if (currentDeviceId !== req.user!.deviceId) {
     res.status(403).json({ success: false, error: "Mevcut oturum kimliği eşleşmiyor" });
@@ -115,12 +117,12 @@ router.post("/revoke-others", async (req: Request, res: Response) => {
     },
   });
 
-  await prisma.device.deleteMany({
+  await securityChange(req, "security.session.revoke_others", tx => tx.device.deleteMany({
     where: {
       userId: req.user!.userId,
       id: { not: currentDeviceId },
     },
-  });
+  }));
 
   await logAuditEvent({
     userId: req.user!.userId,
@@ -141,9 +143,9 @@ router.post("/revoke-others", async (req: Request, res: Response) => {
       revokedCount: devicesToRevoke.length,
     },
   });
-});
+}));
 
-router.delete("/:id", async (req: Request, res: Response) => {
+router.delete("/:id", asyncRoute(async (req: Request, res: Response) => {
   const { id } = deviceIdSchema.parse({ id: req.params.id });
 
   const device = await prisma.device.findFirst({
@@ -155,9 +157,9 @@ router.delete("/:id", async (req: Request, res: Response) => {
     return;
   }
 
-  await prisma.device.delete({
+  await securityChange(req, "security.session.revoke", tx => tx.device.delete({
     where: { id: device.id },
-  });
+  }));
 
   await logAuditEvent({
     userId: req.user!.userId,
@@ -176,6 +178,6 @@ router.delete("/:id", async (req: Request, res: Response) => {
     success: true,
     data: { message: "Oturum sonlandırıldı" },
   });
-});
+}));
 
 export default router;

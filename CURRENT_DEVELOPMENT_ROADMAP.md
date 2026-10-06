@@ -14,7 +14,7 @@ The active branch already includes client-side AES-256-GCM vault encryption, PBK
 - [x] P0-1: Extend encrypted personal backups beyond the current 16 MiB snapshot / 24 MiB file limit with a versioned chunked or streaming format.
 - [x] P0-2: Add a repeatable production backup and restore drill with documented rollback evidence, without using real user data.
 - [x] P0-3: Complete dependency vulnerability review; separate actionable production/runtime findings from development-only findings and document decisions. [Review and follow-ups](docs/DEPENDENCY_VULNERABILITY_REVIEW.md), [secret-free evidence](docs/evidence/p0-3-dependency-audit.json): 82 baseline advisory records reduced to 2 upstream CLI/lint constraints, with weekly review and exceptions expiring 5 November 2026. Repeatable all/prod/dev CI gates added; 185 unit/integration tests, 3 audit-policy tests, typecheck/lint/static build and Chromium web/extension checks passed. P0-4 remains untouched.
-- [ ] P0-4: Finish sensitive-action reauthentication, durable abuse/rate limiting, and clear security-change notifications.
+- [x] P0-4: Finish sensitive-action reauthentication, durable abuse/rate limiting, and clear security-change notifications. [Policy, deployment and limitations](docs/SENSITIVE_ACTION_SECURITY.md): five-minute single-use account/device/operation proofs with configured MFA; PostgreSQL-backed account/IP limits and secret-free security inbox. Encryption and session effects preserved; verification below.
 - [ ] P0-5: Add production health alerts, sync-failure observability, secret-free structured logs, and a tested deployment rollback runbook.
 
 ## P1 — first-release product completeness
@@ -48,11 +48,40 @@ The active branch already includes client-side AES-256-GCM vault encryption, PBK
 
 ## Latest completed feature
 
-**P0-3: dependency vulnerability review** is complete on
-`feature/p0-3-dependency-review`. [Review](docs/DEPENDENCY_VULNERABILITY_REVIEW.md)
-and [secret-free evidence](docs/evidence/p0-3-dependency-audit.json) record the
-baseline, production/development separation, two bounded upstream CLI/lint
-follow-ups, expiring exceptions, and repeatable CI audit gates. P0-2 remains
-complete on `feature/p0-2-backup-restore-drill`; its runbook and evidence cover
-synthetic v4 backup creation, second-account recovery, duplicate retries,
-transaction rollback, PostgreSQL dump recovery, and cleanup. P0-4 has not started.
+**P0-4: sensitive-action security** is complete on
+`feature/p0-4-sensitive-action-security`. The
+[security record](docs/SENSITIVE_ACTION_SECURITY.md) defines the shared API/web
+policy, native-client upgrade contract, rate budgets, notification delivery,
+privacy boundaries, maintenance SQL and rollback effects. Apply migration
+`20261006020000_sensitive_action_security` before the API, then update the web.
+No production deployment or independent security audit is claimed.
+
+Verification on 6 October 2026, using synthetic data only:
+
+- 56 API tests passed, including 9 focused P0-4 tests, real signed WebAuthn login
+  and reauthentication, concurrent proof/recovery replay, expiry/scope binding,
+  fresh-process durable budgets, storage failure, notification rollback,
+  ownership, session revocation and web deletion/CSRF/cookie effects.
+- 82 web tests, 14 crypto tests and 50 extension tests passed. Eight focused web
+  tests cover approval, MFA/failure, cancellation/lock races, HTTP rejection
+  without replay/logout, cookie-only requests and notification acknowledgement.
+- Three Chromium web/proxy checks and one real MV3 extension check passed.
+  Password-change/backup reauthentication preserves the stable data key,
+  reload/unlock, cross-tab locking and cookie-refresh coordination.
+- The isolated backup/restore drill passed with all 19 public tables matching
+  after recovery and verified cleanup. All six migrations applied to a second
+  empty local PostgreSQL database; Prisma schema comparison reported no drift.
+- Typecheck, lint and static production build passed. Lint retains two existing
+  navigation warnings. Five audit-policy/drill-isolation guard tests passed.
+
+Documented limitations: notifications are in-app (latest 50, refreshed every
+30 seconds), not email/push; exports record approval/preparation rather than OS
+file-save completion; expired-row cleanup must be scheduled by the operator.
+Existing immediate signup can still reveal duplicate-registration availability;
+email-verification/enrollment redesign is not included. Existing WebAuthn
+challenges restart on process loss, while accepted proofs and limits are durable.
+Already-unlocked client plaintext and ordinary ciphertext sync cannot be protected
+by an explicit export confirmation. Full scope, client compatibility and rollback
+risks are in the security record. No required local check remains blocked.
+
+P0-5 and all P1/P2 work remain unstarted by this feature.

@@ -1,6 +1,8 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { notify } from "@/lib/notify";
 import { AlertTriangle, KeyRound, Loader2, Shield } from "lucide-react";
 import {
   deriveMasterKey,
@@ -12,6 +14,7 @@ import { useShallow } from "zustand/shallow";
 import PasswordStrengthMeter from "@/components/ui/PasswordStrengthMeter";
 
 export default function AccountSecurityPanel() {
+  const router = useRouter();
   const {
     userEmail,
     masterKeyBase64,
@@ -30,8 +33,6 @@ export default function AccountSecurityPanel() {
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
-  const [twoFactorCode, setTwoFactorCode] = useState("");
-  const [recoveryCode, setRecoveryCode] = useState("");
   const [capsLockOn, setCapsLockOn] = useState(false);
   const [changeLoading, setChangeLoading] = useState(false);
   const [deleteLoading, setDeleteLoading] = useState(false);
@@ -68,7 +69,7 @@ export default function AccountSecurityPanel() {
       setCurrentPassword("");
       setNewPassword("");
       setConfirmPassword("");
-      setChangeSuccess("Ana şifre güncellendi");
+      setChangeSuccess("Ana şifre güncellendi. Diğer cihazların oturumları kapatıldı; mevcut oturum açık kaldı.");
     } catch (error) {
       setChangeError(
         error instanceof Error ? error.message : "Ana şifre güncellenemedi"
@@ -100,15 +101,14 @@ export default function AccountSecurityPanel() {
         api.auth.deleteAccount(
           {
             authHash,
-            code: twoFactorCode || undefined,
-            recoveryCode: recoveryCode || undefined,
           },
           accessToken
         )
       );
 
       logout();
-      window.location.assign("/");
+      notify.success("Hesap kalıcı olarak silindi. Tüm oturumlar kapatıldı.");
+      router.replace("/");
     } catch (error) {
       setDeleteError(
         error instanceof Error ? error.message : "Hesap silinemedi"
@@ -222,26 +222,6 @@ export default function AccountSecurityPanel() {
             className="w-full bg-abyss border border-border rounded-xl py-3 px-4 text-sm"
             placeholder="Ana şifre"
           />
-          <div className="grid gap-3 sm:grid-cols-2">
-            <input
-              type="text"
-              maxLength={6}
-              value={twoFactorCode}
-              onChange={(event) =>
-                setTwoFactorCode(event.target.value.replace(/\D/g, ""))
-              }
-              className="w-full bg-abyss border border-border rounded-xl py-3 px-4 text-sm"
-              placeholder="2FA kodu"
-            />
-            <input
-              type="text"
-              value={recoveryCode}
-              onChange={(event) => setRecoveryCode(event.target.value.toUpperCase())}
-              className="w-full bg-abyss border border-border rounded-xl py-3 px-4 text-sm font-[family-name:var(--font-mono)]"
-              placeholder="Recovery code"
-            />
-          </div>
-
           <div className="rounded-xl border border-warning/20 bg-warning/5 p-3 text-xs text-warning">
             <div className="flex items-start gap-2">
               <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />

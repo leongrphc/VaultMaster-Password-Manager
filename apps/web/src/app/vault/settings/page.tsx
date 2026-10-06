@@ -35,6 +35,7 @@ import type { AuditEventResponse, DeviceResponse, EmergencyAccessGrantResponse, 
 import TwoFactorSettings from "@/components/vault/TwoFactorSettings";
 import WebAuthnSettings from "@/components/vault/WebAuthnSettings";
 import AccountSecurityPanel from "@/components/vault/AccountSecurityPanel";
+import SecurityNotifications from "@/components/vault/SecurityNotifications";
 import FullBackupPanel from "@/components/vault/FullBackupPanel";
 import PlaintextExportConfirmModal from "@/components/vault/PlaintextExportConfirmModal";
 import { useShallow } from "zustand/shallow";
@@ -200,7 +201,10 @@ export default function SettingsPage() {
   const handleExportJSON = async () => {
     if (!masterKeyBase64) return;
 
+    const guard = useStore.getState().getVaultOperationGuard();
     try {
+      await runWithValidAccessToken(token => api.auth.authorizeExport(token));
+      guard();
       const exportData = {
         version: "2.0",
         exportDate: new Date().toISOString(),
@@ -222,6 +226,7 @@ export default function SettingsPage() {
       const masterKey = await importMasterKey(masterKeyBase64);
       const encrypted = await encryptJSON(exportData, masterKey);
 
+      guard();
       const blob = new Blob(
         [JSON.stringify({ encrypted: true, ...encrypted }, null, 2)],
         { type: "application/json" }
@@ -254,7 +259,10 @@ export default function SettingsPage() {
     setShowPlaintextCsvConfirm(true);
   };
 
-  const performExportCSV = () => {
+  const performExportCSV = async () => {
+    const guard = useStore.getState().getVaultOperationGuard();
+    try { await runWithValidAccessToken(token => api.auth.authorizeExport(token)); guard(); }
+    catch { setShowPlaintextCsvConfirm(false); setExportStatus("error"); return; }
     const header = "title,url,username,password,notes";
     const rows = loginItems.map((item) => {
       const d = item.data as Extract<VaultItemData, { type: "login" }>;
@@ -1070,6 +1078,7 @@ export default function SettingsPage() {
 
           <TwoFactorSettings />
           <WebAuthnSettings />
+          <SecurityNotifications />
           <AccountSecurityPanel />
 
           <div className="glass rounded-2xl p-6">

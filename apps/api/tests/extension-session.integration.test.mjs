@@ -41,17 +41,23 @@ test('WebAuthn accepts a signed assertion only from an explicitly allowed extens
     const cose = Buffer.concat([Buffer.from('a5010203262001215820', 'hex'), Buffer.from(jwk.x, 'base64url'), Buffer.from('225820', 'hex'), Buffer.from(jwk.y, 'base64url')]);
     const credentialId = randomBytes(32).toString('base64url');
     await prisma.webAuthnCredential.create({ data: { userId: user.data.user.id, credentialId, publicKey: cose.toString('base64url'), counter: 0, transports: ['internal'] } });
-    for (const origin of ['chrome-extension://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', allowedOrigin]) {
-      const challenge = await request(baseUrl, '/api/auth/login', { method: 'POST', body: { email: user.payload.email, authHash: user.payload.authHash, vaultKeyProtocol: 1 } });
-      assert.equal(challenge.body.data.requires2FA, true);
-      const { options, challengeToken } = challenge.body.data.webAuthnOptions;
-      const clientData = Buffer.from(JSON.stringify({ type: 'webauthn.get', challenge: options.challenge, origin, crossOrigin: false }));
-      const authenticatorData = Buffer.concat([createHash('sha256').update(options.rpId).digest(), Buffer.from([1, 0, 0, 0, 1])]);
-      const signature = sign('sha256', Buffer.concat([authenticatorData, createHash('sha256').update(clientData).digest()]), privateKey);
-      const response = await request(baseUrl, '/api/auth/login', { method: 'POST', body: { email: user.payload.email, authHash: user.payload.authHash, vaultKeyProtocol: 1,
-        webAuthnChallengeToken: challengeToken, webAuthnResponse: { id: credentialId, rawId: credentialId, type: 'public-key', clientExtensionResults: {},
-          response: { clientDataJSON: clientData.toString('base64url'), authenticatorData: authenticatorData.toString('base64url'), signature: signature.toString('base64url') } } } });
-      assert.equal(response.status, origin === allowedOrigin ? 200 : 401);
+    for (const purpose of ['login', 'reauthenticate']) {
+      for (const origin of ['chrome-extension://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', allowedOrigin]) {
+        const endpoint = `/api/auth/${purpose}`;
+        const fields = purpose === 'login' ? { email: user.payload.email, vaultKeyProtocol: 1 } : { method: 'POST', path: '/auth/export-authorize' };
+        const headers = purpose === 'login' ? {} : authHeaders(user.accessToken);
+        const challenge = await request(baseUrl, endpoint, { method: 'POST', headers, body: { ...fields, authHash: user.payload.authHash } });
+        assert.equal(challenge.body.data.requires2FA, true);
+        const { options, challengeToken } = challenge.body.data.webAuthnOptions;
+        const clientData = Buffer.from(JSON.stringify({ type: 'webauthn.get', challenge: options.challenge, origin, crossOrigin: false }));
+        const authenticatorData = Buffer.concat([createHash('sha256').update(options.rpId).digest(), Buffer.from([1, 0, 0, 0, purpose === 'login' ? 1 : 2])]);
+        const signature = sign('sha256', Buffer.concat([authenticatorData, createHash('sha256').update(clientData).digest()]), privateKey);
+        const response = await request(baseUrl, endpoint, { method: 'POST', headers, body: { ...fields, authHash: user.payload.authHash,
+          webAuthnChallengeToken: challengeToken, webAuthnResponse: { id: credentialId, rawId: credentialId, type: 'public-key', clientExtensionResults: {},
+            response: { clientDataJSON: clientData.toString('base64url'), authenticatorData: authenticatorData.toString('base64url'), signature: signature.toString('base64url') } } } });
+        assert.equal(response.status, origin === allowedOrigin ? 200 : purpose === 'login' ? 401 : 403);
+        if (purpose === 'reauthenticate' && origin === allowedOrigin) assert.ok(response.body.data.proof);
+      }
     }
   } finally { env.WEBAUTHN_EXTENSION_ORIGINS = previous; if (user?.data?.user) await prisma.user.delete({ where: { id: user.data.user.id } }); await stopTestServer(server); }
 });

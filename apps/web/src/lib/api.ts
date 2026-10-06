@@ -1,3 +1,5 @@
+import { sensitiveAction } from "@vaultmaster/shared";
+import { requestReauthentication } from "./reauthentication";
 import { encodeBackupTransfer, decodeBackupTransfer, retryBackupTransfer } from "./backup-transfer";
 import type { PasswordChangeInput, RegisterInput, VaultKeyEnvelope, RestoreBackupInput, PersonalSnapshot, BackupCounts } from "@vaultmaster/shared";
 const API_BASE = "/api";
@@ -57,6 +59,18 @@ async function request<T>(
     "Content-Type": "application/json",
     "X-VaultMaster-Client": "web",
   };
+
+  const path = endpoint.split("?")[0];
+  if (sensitiveAction(method, path)) {
+    // Capture the unlocking session before opening a dialog. No proof survives
+    // lock/logout/account changes and no rejected operation is automatically replayed.
+    const { useStore } = await import("./store");
+    const guard = useStore.getState().getVaultOperationGuard();
+    guard();
+    const input = body as { currentAuthHash?: string; authHash?: string } | undefined;
+    headers["X-VaultMaster-Reauth"] = await requestReauthentication({ method, path, authHash: input?.currentAuthHash ?? input?.authHash });
+    guard();
+  }
 
   let res: Response;
   try {
@@ -126,6 +140,11 @@ export const api = {
     },
   },
   auth: {
+    reauthenticate: (body: { method: string; path: string; authHash: string; code?: string; recoveryCode?: string; webAuthnResponse?: unknown; webAuthnChallengeToken?: string }, token: string) =>
+      request<{ data: { proof?: string; requires2FA?: boolean; webAuthnOptions?: { options: import("@simplewebauthn/browser").PublicKeyCredentialRequestOptionsJSON; challengeToken: string } } }>("/auth/reauthenticate", { method: "POST", body, token }),
+    authorizeExport: (token: string) => request("/auth/export-authorize", { method: "POST", token }),
+    securityNotifications: (token: string) => request<{ data: SecurityNotification[] }>("/auth/security-notifications", { token }),
+    readSecurityNotification: (id: string, token: string) => request(`/auth/security-notifications/${encodeURIComponent(id)}/read`, { method: "POST", token }),
     register: (body: RegisterInput) =>
       mutateSession(() => request("/auth/register", { method: "POST", body })),
 
@@ -364,3 +383,5 @@ export const api = {
       request(`/audit-events?limit=${limit}`, { token }),
   },
 };
+
+export interface SecurityNotification { id: string; action: string; message: string; createdAt: string; readAt: string | null }

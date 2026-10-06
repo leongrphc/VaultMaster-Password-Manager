@@ -5,7 +5,7 @@ import {
   cleanupIntegrationUsers,
   disconnectPrisma,
   registerUser,
-  request,
+  authorizedRequest as request,
   startTestServer,
   stopTestServer,
 } from "./integration-helpers.mjs";

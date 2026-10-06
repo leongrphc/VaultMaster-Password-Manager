@@ -23,6 +23,8 @@ model User {
   createdAt          DateTime     @default(now())
   updatedAt          DateTime     @updatedAt
 
+  reauthentications Reauthentication[]
+  securityNotifications SecurityNotification[]
   vaultItems               VaultItem[]
   backupRestores           BackupRestore[]
   backupTransfers          BackupTransfer[]
@@ -113,6 +115,7 @@ model Device {
   previousRefreshTokenHash String? @unique
   refreshTokenReusedAt     DateTime?
   auditEvents              AuditEvent[]
+  reauthentications Reauthentication[]
 
   @@index([userId])
   @@map("devices")
@@ -261,4 +264,36 @@ model BackupTransferChunk {
   data String
   @@id([transferId, index])
   @@map("backup_transfer_chunks")
+}
+
+model AbuseBucket {
+  key       String   @id
+  count     Int
+  expiresAt DateTime
+  @@index([expiresAt], map: "abuse_buckets_expiry")
+  @@map("abuse_buckets")
+}
+
+model Reauthentication {
+  tokenHash String @id
+  userId String
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  deviceId String
+  device Device @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  target String
+  stateHash String
+  expiresAt DateTime
+  @@index([expiresAt], map: "reauthentications_expiry")
+  @@map("reauthentications")
+}
+
+model SecurityNotification {
+  id String @id @default(uuid())
+  userId String
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  action String
+  createdAt DateTime @default(now())
+  readAt DateTime?
+  @@index([userId, createdAt], map: "security_notifications_user_created")
+  @@map("security_notifications")
 }

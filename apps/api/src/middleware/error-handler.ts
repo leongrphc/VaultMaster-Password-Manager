@@ -10,6 +10,9 @@ export function errorHandler(
   res: Response,
   _next: NextFunction
 ): void {
+  if ((err as Error & { code?: string }).code === "REAUTH_REQUIRED") {
+    res.status(403).json({ success: false, error: "Yeniden doğrulama gerekli.", code: "REAUTH_REQUIRED" }); return;
+  }
   if ((err as Error & { type?: string }).type === "entity.too.large") {
     res.status(413).json({ success: false, error: "Dosya veya istek boyut sınırını aşıyor.", requestId: getRequestId(req) });
     return;

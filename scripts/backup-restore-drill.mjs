@@ -15,7 +15,7 @@ assert.equal(process.env.SENTRY_DSN, undefined);
 await build({ entryPoints: [new URL('../apps/web/src/lib/full-backup.ts', import.meta.url).pathname, new URL('../apps/web/src/lib/backup-transfer.ts', import.meta.url).pathname], outdir: `${work}/client`, outExtension: { '.js': '.mjs' }, bundle: true, platform: 'node', format: 'esm' });
 const { createFullBackup, openFullBackup, prepareBackupRestore } = await import(`${work}/client/full-backup.mjs`);
 const { encodeBackupTransfer, decodeBackupTransfer } = await import(`${work}/client/backup-transfer.mjs`);
-const { registerUser, request, startTestServer, stopTestServer } = await import('../apps/api/tests/integration-helpers.mjs');
+const { registerUser, authorizedRequest: request, startTestServer, stopTestServer } = await import('../apps/api/tests/integration-helpers.mjs');
 const { prisma } = await import('../apps/api/dist/config/prisma.js');
 const require = createRequire(new URL('../apps/api/package.json', import.meta.url));
 const { PrismaClient } = require('@prisma/client');
@@ -160,6 +160,7 @@ try {
   await recoveredDb.user.deleteMany();
   await prisma.user.delete({ where: { id: target.data.user.id } }); target = null;
   for (const db of [prisma, recoveredDb]) {
+    await db.abuseBucket.deleteMany(); // Synthetic rate budgets have no account FK.
     for (const { tablename } of tables.filter(table => table.tablename !== '_prisma_migrations')) {
       const [result] = await db.$queryRawUnsafe(`SELECT COUNT(*)::integer AS count FROM "${tablename}"`);
       assert.equal(result.count, 0);

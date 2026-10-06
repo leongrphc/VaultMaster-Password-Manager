@@ -3,6 +3,9 @@ import cors from "cors";
 import helmet from "helmet";
 import cookieParser from "cookie-parser";
 import rateLimit from "express-rate-limit";
+import { DurableLimitStore, durableLimit } from "./middleware/durable-limit.js";
+import securityRoutes from "./routes/security.routes.js";
+import { sensitiveSecurityMiddleware } from "./middleware/reauthentication.js";
 import { env } from "./config/env.js";
 import { errorHandler } from "./middleware/error-handler.js";
 import {
@@ -60,6 +63,7 @@ export function createApp(): Express {
   app.use(express.json({ limit: "10mb" }));
 
   const limiter = rateLimit({
+    store: new DurableLimitStore("limiter"),
     windowMs: 15 * 60 * 1000,
     max: 100,
     // Chunk transfers have their own authenticated per-account budget.
@@ -70,6 +74,7 @@ export function createApp(): Express {
   });
 
   const authLimiter = rateLimit({
+    store: new DurableLimitStore("authLimiter"),
     windowMs: 15 * 60 * 1000,
     max: 10,
     standardHeaders: true,
@@ -81,19 +86,8 @@ export function createApp(): Express {
     },
   });
 
-  const twoFactorSensitiveLimiter = rateLimit({
-    windowMs: 15 * 60 * 1000,
-    max: 5,
-    standardHeaders: true,
-    legacyHeaders: false,
-    keyGenerator: getAuthThrottleKey,
-    message: {
-      success: false,
-      error: "Çok fazla 2FA doğrulama denemesi yapıldı. Lütfen bekleyin",
-    },
-  });
-
   const accountSensitiveLimiter = rateLimit({
+    store: new DurableLimitStore("accountSensitiveLimiter"),
     windowMs: 15 * 60 * 1000,
     max: 5,
     standardHeaders: true,
@@ -105,6 +99,7 @@ export function createApp(): Express {
   });
 
   const refreshLimiter = rateLimit({
+    store: new DurableLimitStore("refreshLimiter"),
     windowMs: 15 * 60 * 1000,
     max: 30,
     standardHeaders: true,
@@ -116,16 +111,15 @@ export function createApp(): Express {
   });
 
   app.use("/api", limiter);
+  app.use("/api/auth/login", durableLimit("auth-ip", 50));
+  app.use("/api/auth/register", durableLimit("auth-ip", 50));
   app.use("/api/auth/login", authLimiter);
   app.use("/api/auth/register", authLimiter);
   app.use("/api/auth/unlock", accountSensitiveLimiter);
-  app.use("/api/auth/2fa/verify", twoFactorSensitiveLimiter);
-  app.use("/api/auth/2fa/disable", accountSensitiveLimiter);
-  app.use("/api/auth/2fa/recovery-codes/regenerate", accountSensitiveLimiter);
-  app.use("/api/auth/change-password", accountSensitiveLimiter);
-  app.use("/api/auth/delete-account", accountSensitiveLimiter);
   app.use("/api/auth/refresh", refreshLimiter);
 
+  app.use("/api", sensitiveSecurityMiddleware);
+  app.use("/api/auth", securityRoutes);
   app.use("/api/health", healthRoutes);
   app.use("/api/auth", authRoutes);
   app.use("/api/auth/2fa", twoFactorRoutes);

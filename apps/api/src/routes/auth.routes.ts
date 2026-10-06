@@ -1,3 +1,6 @@
+import { durableLimit } from "../middleware/durable-limit.js";
+import { asyncRoute } from "../utils/async-route.js";
+import { securityNotification, securityChange, assertReauthenticated } from "../utils/security-notifications.js";
 import { randomUUID } from "node:crypto";
 import { Router, type Request, type Response, type NextFunction } from "express";
 import argon2 from "argon2";
@@ -27,7 +30,6 @@ import {
 } from "../utils/request-context.js";
 import {
   consumeRecoveryCode,
-  createRecoveryCodes,
 } from "../utils/recovery-codes.js";
 import {
   createWebAuthnLoginOptions,
@@ -40,7 +42,7 @@ const router: Router = Router();
 
 // Existing device authentication is required in addition to password proof.
 // This verifies even an empty legacy vault without creating a new device.
-router.post('/unlock', authMiddleware, async (req: Request, res: Response) => {
+router.post('/unlock', authMiddleware, durableLimit('unlock-account', 5, true), asyncRoute(async (req: Request, res: Response) => {
   const { authHash } = z.object({ authHash: z.string().min(1).max(1024) }).strict().parse(req.body);
   const user = await prisma.user.findUnique({ where: { id: req.user!.userId } });
   if (!user || !await argon2.verify(user.masterPasswordHash, authHash)) {
@@ -48,13 +50,15 @@ router.post('/unlock', authMiddleware, async (req: Request, res: Response) => {
   }
   res.setHeader('Cache-Control', 'no-store');
   res.json({ success: true, data: { vaultKeyEnvelope: vaultKeyEnvelope(user) } });
-});
+}));
 
 function vaultKeyEnvelope(user: { wrappedVaultKey: string | null; wrappedVaultKeyIv: string | null; vaultKeyVersion: number }) {
   return user.vaultKeyVersion === 0 ? null : {
     ciphertext: user.wrappedVaultKey!, iv: user.wrappedVaultKeyIv!, version: user.vaultKeyVersion,
   };
 }
+
+let dummyPasswordHash: Promise<string> | undefined;
 
 const passwordHashOptions =
   process.env.NODE_ENV === "test"
@@ -68,7 +72,7 @@ function readRecoveryCodeHashes(value: unknown): string[] {
 }
 
 // POST /api/auth/register
-router.post("/register", async (req: Request, res: Response) => {
+router.post("/register", asyncRoute(async (req: Request, res: Response) => {
   try {
     const body = registerSchema.parse(req.body);
     const normalizedEmail = body.email.toLowerCase().trim();
@@ -80,7 +84,7 @@ router.post("/register", async (req: Request, res: Response) => {
     });
 
     if (existing) {
-      res.status(409).json({ success: false, error: "Bu e-posta adresi zaten kayıtlı" });
+      res.status(409).json({ success: false, error: "Hesap oluşturulamadı. Bilgilerinizi kontrol edin." });
       return;
     }
 
@@ -146,10 +150,10 @@ router.post("/register", async (req: Request, res: Response) => {
     }
     throw error;
   }
-});
+}));
 
 // POST /api/auth/login
-router.post("/login", async (req: Request, res: Response) => {
+router.post("/login", asyncRoute(async (req: Request, res: Response) => {
   try {
     const body = loginSchema.parse(req.body);
     const normalizedEmail = body.email.toLowerCase().trim();
@@ -161,6 +165,8 @@ router.post("/login", async (req: Request, res: Response) => {
     });
 
     if (!user) {
+      dummyPasswordHash ??= argon2.hash("non-account-password-proof", passwordHashOptions);
+      await argon2.verify(await dummyPasswordHash, body.authHash);
       res.status(401).json({ success: false, error: "E-posta veya şifre hatalı" });
       return;
     }
@@ -265,12 +271,11 @@ router.post("/login", async (req: Request, res: Response) => {
       }
 
       if (recoveryCodesAfterUse) {
-        await prisma.user.update({
-          where: { id: user.id },
-          data: {
-            twoFactorRecoveryCodes: recoveryCodesAfterUse,
-          },
+        const consumed = await prisma.user.updateMany({
+          where: { id: user.id, twoFactorRecoveryCodes: { equals: user.twoFactorRecoveryCodes! } },
+          data: { twoFactorRecoveryCodes: recoveryCodesAfterUse },
         });
+        if (consumed.count !== 1) { res.status(401).json({ success: false, error: "Geçersiz veya süresi dolmuş 2FA doğrulaması" }); return; }
       }
     }
 
@@ -288,6 +293,7 @@ router.post("/login", async (req: Request, res: Response) => {
           AND "vaultKeyVersion" = ${user.vaultKeyVersion} FOR UPDATE
       `;
       if (matching.length !== 1) return null;
+      await securityNotification(tx, user.id, user.twoFactorEnabled || webAuthnCredentials.length ? "auth.login.2fa" : "auth.login");
       return tx.device.create({ data: {
         id: deviceId, userId: user.id, deviceName: userAgent?.slice(0, 100) ?? "Unknown",
         deviceType: inferDeviceType(userAgent), refreshTokenHash: hashRefreshToken(refreshToken),
@@ -330,18 +336,18 @@ router.post("/login", async (req: Request, res: Response) => {
     }
     throw error;
   }
-});
+}));
 
 // Password changes rewrap the stable data key, never rewrite vault ciphertext.
-router.get("/vault-key", authMiddleware, async (req: Request, res: Response, next: NextFunction) => {
+router.get("/vault-key", authMiddleware, asyncRoute(async (req: Request, res: Response, next: NextFunction) => {
   try {
     const user = await prisma.user.findUnique({ where: { id: req.user!.userId } });
     if (!user) { res.status(401).json({ success: false, error: "Oturum geçersiz" }); return; }
     res.json({ success: true, data: { vaultKeyEnvelope: vaultKeyEnvelope(user) } });
   } catch (error) { next(error); }
-});
+}));
 
-router.post("/change-password", authMiddleware, async (req: Request, res: Response, next: NextFunction) => {
+router.post("/change-password", authMiddleware, asyncRoute(async (req: Request, res: Response, next: NextFunction) => {
   try {
     const body = passwordChangeSchema.parse(req.body);
     const user = await prisma.user.findUnique({ where: { id: req.user!.userId } });
@@ -351,6 +357,7 @@ router.post("/change-password", authMiddleware, async (req: Request, res: Respon
     }
     const nextServerHash = await argon2.hash(body.newAuthHash, passwordHashOptions);
     const changed = await prisma.$transaction(async (tx) => {
+      await assertReauthenticated(tx, req);
       // CAS also checks the verified hash: two simultaneous changes cannot both
       // succeed or overwrite each other's envelope. A revoked caller cannot win.
       const device = await tx.device.findFirst({ where: {
@@ -367,6 +374,8 @@ router.post("/change-password", authMiddleware, async (req: Request, res: Respon
       });
       if (updated.count !== 1) return false;
       await tx.device.deleteMany({ where: { userId: user.id, id: { not: req.user!.deviceId } } });
+      await tx.reauthentication.deleteMany({ where: { userId: user.id } });
+      await securityNotification(tx, user.id, "security.password.change");
       return true;
     });
     if (!changed) {
@@ -379,10 +388,10 @@ router.post("/change-password", authMiddleware, async (req: Request, res: Respon
       ...body.vaultKeyEnvelope, version: body.expectedVaultKeyVersion + 1,
     } } });
   } catch (error) { next(error); }
-});
+}));
 
 // POST /api/auth/delete-account
-router.post("/delete-account", authMiddleware, async (req: Request, res: Response) => {
+router.post("/delete-account", authMiddleware, asyncRoute(async (req: Request, res: Response) => {
   const body = accountDeleteSchema.parse(req.body);
   const user = await prisma.user.findUnique({
     where: { id: req.user!.userId },
@@ -399,40 +408,6 @@ router.post("/delete-account", authMiddleware, async (req: Request, res: Respons
     return;
   }
 
-  if (user.twoFactorEnabled) {
-    if (!user.twoFactorSecret) {
-      res.status(500).json({ success: false, error: "2FA yapılandırma hatası" });
-      return;
-    }
-
-    const recoveryCodeHashes = readRecoveryCodeHashes(user.twoFactorRecoveryCodes);
-    const recoveryCodesAfterUse = body.recoveryCode
-      ? await consumeRecoveryCode(recoveryCodeHashes, body.recoveryCode)
-      : null;
-
-    const totp = new OTPAuth.TOTP({
-      issuer: "VaultMaster",
-      label: user.email,
-      algorithm: "SHA1",
-      digits: 6,
-      period: 30,
-      secret: OTPAuth.Secret.fromBase32(readStoredSecret(user.twoFactorSecret)),
-    });
-
-    const delta = body.code ? totp.validate({ token: body.code, window: 1 }) : null;
-    if (delta === null && recoveryCodesAfterUse === null) {
-      res.status(401).json({ success: false, error: "2FA doğrulaması başarısız" });
-      return;
-    }
-
-    if (recoveryCodesAfterUse) {
-      await prisma.user.update({
-        where: { id: user.id },
-        data: { twoFactorRecoveryCodes: recoveryCodesAfterUse },
-      });
-    }
-  }
-
   await logAuditEvent({
     userId: user.id,
     action: "security.account.delete",
@@ -441,23 +416,25 @@ router.post("/delete-account", authMiddleware, async (req: Request, res: Respons
     userAgent: getRequestUserAgent(req),
   });
 
-  await prisma.user.delete({
+  await securityChange(req, "security.account.delete", tx => tx.user.delete({
     where: { id: user.id },
-  });
+  }));
 
   if (isWebClient(req)) clearWebSession(res);
   res.json({
     success: true,
     data: { message: "Hesap kalıcı olarak silindi" },
   });
-});
+}));
 
 // POST /api/auth/refresh
-router.post("/refresh", async (req: Request, res: Response) => {
+router.post("/refresh", asyncRoute(async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { refreshToken } = refreshTokenSchema.parse(isWebClient(req) ? { refreshToken: req.cookies?.[REFRESH_COOKIE] } : req.body);
 
-    const payload = verifyRefreshToken(refreshToken);
+    let payload;
+    try { payload = verifyRefreshToken(refreshToken); }
+    catch { res.status(401).json({ success: false, error: "Geçersiz veya süresi dolmuş token" }); return; }
     const refreshTokenHash = hashRefreshToken(refreshToken);
 
     const device = await prisma.device.findUnique({
@@ -474,13 +451,17 @@ router.post("/refresh", async (req: Request, res: Response) => {
       });
 
       if (reusedDevice) {
-        await prisma.device.update({
-          where: { id: reusedDevice.id },
-          data: {
-            refreshTokenHash: null,
-            previousRefreshTokenHash: null,
-            refreshTokenReusedAt: new Date(),
-          },
+        await prisma.$transaction(async tx => {
+          await tx.$queryRaw`SELECT id FROM users WHERE id = ${payload.userId} FOR UPDATE`;
+          await tx.device.update({
+            where: { id: reusedDevice.id },
+            data: {
+              refreshTokenHash: null,
+              previousRefreshTokenHash: null,
+              refreshTokenReusedAt: new Date(),
+            },
+          });
+          await securityNotification(tx, payload.userId, "auth.refresh.reuse_detected");
         });
 
         await logAuditEvent({
@@ -541,13 +522,15 @@ router.post("/refresh", async (req: Request, res: Response) => {
         deviceId: device.id,
       },
     });
-  } catch {
-    res.status(401).json({ success: false, error: "Geçersiz veya süresi dolmuş token" });
+  } catch (error) {
+    if (error instanceof Error && ["JsonWebTokenError", "TokenExpiredError", "NotBeforeError", "ZodError"].includes(error.name)) {
+      res.status(401).json({ success: false, error: "Geçersiz veya süresi dolmuş token" });
+    } else { next(error); }
   }
-});
+}));
 
 // POST /api/auth/logout
-router.post("/logout", async (req: Request, res: Response, next: NextFunction) => {
+router.post("/logout", asyncRoute(async (req: Request, res: Response, next: NextFunction) => {
   if (!isWebClient(req)) { next(); return; }
   try {
     let payload;
@@ -561,7 +544,7 @@ router.post("/logout", async (req: Request, res: Response, next: NextFunction) =
     clearWebSession(res);
     res.json({ success: true, data: { message: "Çıkış yapıldı" } });
   } catch (error) { next(error); }
-}, authMiddleware, async (req: Request, res: Response) => {
+}), authMiddleware, asyncRoute(async (req: Request, res: Response) => {
   await logAuditEvent({
     userId: req.user!.userId, deviceId: req.user!.deviceId, action: "auth.logout", status: "success",
     ipAddress: getRequestIp(req), userAgent: getRequestUserAgent(req),
@@ -569,10 +552,10 @@ router.post("/logout", async (req: Request, res: Response, next: NextFunction) =
   await prisma.device.deleteMany({ where: { id: req.user!.deviceId, userId: req.user!.userId } });
   if (isWebClient(req)) clearWebSession(res);
   res.json({ success: true, data: { message: "Çıkış yapıldı" } });
-});
+}));
 
 // GET /api/auth/me
-router.get("/me", authMiddleware, async (req: Request, res: Response) => {
+router.get("/me", authMiddleware, asyncRoute(async (req: Request, res: Response) => {
   const user = await prisma.user.findUnique({
     where: { id: req.user!.userId },
     select: { id: true, email: true, createdAt: true },
@@ -587,6 +570,6 @@ router.get("/me", authMiddleware, async (req: Request, res: Response) => {
     success: true,
     data: { user: { ...user, createdAt: user.createdAt.toISOString() } },
   });
-});
+}));
 
 export default router;

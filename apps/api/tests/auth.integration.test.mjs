@@ -1,11 +1,12 @@
 import test from "node:test";
+import jwt from "jsonwebtoken";
 import assert from "node:assert/strict";
 import {
   cleanupIntegrationUsers,
   disconnectPrisma,
   loginUser,
   registerUser,
-  request,
+  authorizedRequest as request,
   startTestServer,
   stopTestServer,
   createRegisterPayload,
@@ -82,6 +83,9 @@ test("login returns tokens for valid credentials and rejects wrong auth hash", a
 });
 
 test("refresh token rotation rejects reused tokens and revokes the device", async () => {
+  const wrongPurpose = jwt.sign({ userId: "fixture", deviceId: "fixture", email: "fixture@example.test", tokenUse: "access" }, process.env.JWT_REFRESH_SECRET,
+    { algorithm: "HS256", issuer: "vaultmaster-api", audience: "vaultmaster", jwtid: "fixture", expiresIn: "1m" });
+  assert.equal((await request(baseUrl, "/api/auth/refresh", { method: "POST", body: { refreshToken: wrongPurpose } })).status, 401);
   const user = await registerUser(baseUrl);
   assert.equal(user.response.status, 201);
 

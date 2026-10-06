@@ -46,7 +46,6 @@ export default function TwoFactorSettings() {
   const [recoveryCodes, setRecoveryCodes] = useState<string[]>([]);
   const [recoveryCodesSaved, setRecoveryCodesSaved] = useState(false);
   const [code, setCode] = useState("");
-  const [recoveryCodeInput, setRecoveryCodeInput] = useState("");
   const [setupError, setSetupError] = useState("");
   const [setupLoading, setSetupLoading] = useState(false);
   const [disableError, setDisableError] = useState("");
@@ -105,7 +104,9 @@ export default function TwoFactorSettings() {
       setRecoveryCodesSaved(false);
       setShowRecoveryCodes(true);
       setShowSetup(false);
+      setSetupData(null);
       setCode("");
+      notify.success("İki adımlı doğrulama etkinleştirildi. Kurtarma kodlarını güvenli saklayın.");
       await loadStatus();
     } catch (error) {
       setSetupError(getErrorMessage(error, "Doğrulama başarısız"));
@@ -115,10 +116,6 @@ export default function TwoFactorSettings() {
   };
 
   const handleDisable = async () => {
-    if (code.length !== 6 && !recoveryCodeInput.trim()) {
-      return;
-    }
-
     setDisableLoading(true);
     setDisableError("");
     try {
@@ -126,14 +123,13 @@ export default function TwoFactorSettings() {
         api.auth.twoFactorDisable(
           {
             code: code || undefined,
-            recoveryCode: recoveryCodeInput.trim() || undefined,
           },
           accessToken
         )
       );
 
       setCode("");
-      setRecoveryCodeInput("");
+      notify.success("İki adımlı doğrulama kapatıldı.");
       await loadStatus();
     } catch (error) {
       setDisableError(getErrorMessage(error, "Devre dışı bırakılamadı"));
@@ -143,10 +139,6 @@ export default function TwoFactorSettings() {
   };
 
   const handleRegenerateCodes = async () => {
-    if (code.length !== 6 && !recoveryCodeInput.trim()) {
-      return;
-    }
-
     setRegenerateLoading(true);
     setDisableError("");
     try {
@@ -154,7 +146,6 @@ export default function TwoFactorSettings() {
         api.auth.regenerateRecoveryCodes(
           {
             code: code || undefined,
-            recoveryCode: recoveryCodeInput.trim() || undefined,
           },
           accessToken
         )
@@ -163,8 +154,8 @@ export default function TwoFactorSettings() {
       setRecoveryCodes(response.data.recoveryCodes);
       setRecoveryCodesSaved(false);
       setShowRecoveryCodes(true);
+      notify.success("Yeni kurtarma kodları oluşturuldu. Önceki kodlar artık geçersiz.");
       setCode("");
-      setRecoveryCodeInput("");
       await loadStatus();
     } catch (error) {
       setDisableError(getErrorMessage(error, "Recovery code yenilenemedi"));
@@ -279,25 +270,7 @@ export default function TwoFactorSettings() {
 
         {isEnabled && (
           <div className="mt-4 rounded-xl bg-surface p-4 space-y-3">
-            <div className="grid gap-3 sm:grid-cols-2">
-              <input
-                type="text"
-                maxLength={6}
-                value={code}
-                onChange={(event) => setCode(event.target.value.replace(/\D/g, ""))}
-                className="w-full bg-abyss border border-border rounded-xl py-3 px-4 text-sm text-center tracking-[0.3em]"
-                placeholder="2FA KODU"
-              />
-              <input
-                type="text"
-                value={recoveryCodeInput}
-                onChange={(event) =>
-                  setRecoveryCodeInput(event.target.value.toUpperCase())
-                }
-                className="w-full bg-abyss border border-border rounded-xl py-3 px-4 text-sm font-[family-name:var(--font-mono)]"
-                placeholder="Recovery code"
-              />
-            </div>
+            <p className="text-sm text-text-secondary">Değişiklikler ana şifre ve etkin giriş doğrulama yöntemiyle onaylanır.</p>
 
             {disableError && (
               <p className="text-sm text-danger">{disableError}</p>
@@ -331,7 +304,7 @@ export default function TwoFactorSettings() {
 
       {showSetup && setupData && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-midnight/80 backdrop-blur-sm" onClick={() => setShowSetup(false)} />
+          <div className="absolute inset-0 bg-midnight/80 backdrop-blur-sm" onClick={() => { setShowSetup(false); setSetupData(null); setCode(""); }} />
 
           <div className="relative glass rounded-2xl w-full max-w-md p-6">
             <h3 className="text-lg font-bold mb-4">2FA Kurulumu</h3>

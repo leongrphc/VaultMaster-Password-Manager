@@ -1,4 +1,5 @@
-import rateLimit from "express-rate-limit";
+import { securityNotification } from "../utils/security-notifications.js";
+import { durableLimit } from "../middleware/durable-limit.js";
 import { randomUUID } from "node:crypto";
 import { Router, type Request, type Response, type NextFunction } from "express";
 import { Prisma } from "@prisma/client";
@@ -10,9 +11,7 @@ import { logAuditEvent } from "../utils/audit-log.js";
 const router: Router = Router();
 router.use(authMiddleware);
 router.use((_req, res, next) => { res.setHeader("Cache-Control", "no-store"); next(); });
-const chunkLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 400,
-  keyGenerator: req => req.user!.userId, standardHeaders: true, legacyHeaders: false,
-  message: { success: false, error: "Too many backup chunk requests" } });
+const chunkLimiter = durableLimit("backup-chunks", 400, true);
 router.use("/transfers/:id/chunks", chunkLimiter);
 class BackupTooLarge extends Error {}
 
@@ -47,7 +46,7 @@ router.get("/snapshot", async (req: Request, res: Response, next: NextFunction) 
     await logAuditEvent({ userId, action: "vault.backup.export", status: "success" });
     res.setHeader("Cache-Control", "no-store");
     const data = { backupId: randomUUID(), exportedAt: new Date().toISOString(), sourceEmail: req.user!.email, snapshot };
-    if (!chunked) { res.json({ success: true, data }); return; }
+    if (!chunked) { await securityNotification(prisma, userId, "vault.backup.export"); res.json({ success: true, data }); return; }
     const bytes = Buffer.from(JSON.stringify(data));
     if (bytes.length > MAX_BACKUP_TRANSFER_BYTES) throw new BackupTooLarge();
     const chunks: Array<{ index: number; data: string }> = [];
@@ -57,6 +56,7 @@ router.get("/snapshot", async (req: Request, res: Response, next: NextFunction) 
     const transfer = await prisma.$transaction(async tx => {
       await tx.$queryRaw`SELECT id FROM users WHERE id = ${userId} FOR UPDATE`;
       await tx.backupTransfer.deleteMany({ where: { userId, OR: [{ expiresAt: { lt: new Date() } }, { direction: "export" }] } });
+      await securityNotification(tx, userId, "vault.backup.export");
       return tx.backupTransfer.create({ data: { userId, direction: "export", totalBytes: bytes.length, chunkCount: chunks.length,
         expiresAt: new Date(Date.now() + 3600000), chunks: { create: chunks } } });
     }, { timeout: 60000 });

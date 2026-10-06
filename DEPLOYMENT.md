@@ -395,3 +395,19 @@ build passed. Lint retains the 3 existing navigation warnings. The web suite use
 records before/inside/after counts, one receipt after retries, all 16 public tables
 matching after server recovery, and cleanup. Provider PITR, live recovery timing,
 production-scale performance and deployment rollback are not exercised here.
+
+## Sensitive-action security (P0-4)
+
+Apply `20261006020000_sensitive_action_security` before the new API/web release.
+Deploy API first, then the web assets. Sensitive operations now require a
+five-minute, single-use, account/device/method/path-bound proof from
+`POST /api/auth/reauthenticate`, with the existing master-password hash and a
+configured login factor. Older/native clients must implement that endpoint/header
+for sensitive operations; login, sync, refresh and logout keep their contracts.
+
+PostgreSQL now holds all rate-limit counters and the account-scoped security inbox.
+Keep the trusted one-hop ingress configuration and schedule expired-row cleanup.
+Policy, budgets, notification/privacy behavior, maintenance SQL, rollback effects
+and limitations are documented in
+[the P0-4 security record](docs/SENSITIVE_ACTION_SECURITY.md).
+This branch was tested locally with synthetic data; it has not been deployed.
