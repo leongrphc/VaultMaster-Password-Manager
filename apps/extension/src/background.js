@@ -64,8 +64,8 @@ async function getContentPageUrl(sender, claimedUrl) {
 	try {
 		const frames = await chrome.webNavigation.getAllFrames({ tabId: sender.tab.id }) || [];
 		const frame = frames.find(entry => entry.frameId === (sender.frameId ?? 0) && entry.documentId === sender.documentId);
-		if (!supportedFrame(frame, frames) || frame.url !== sender.url) return null;
-		return sender.url;
+		if (!supportedFrame(frame, frames) || new URL(frame.url).origin !== new URL(sender.url).origin) return null;
+		return frame.url;
 	} catch { return null; }
 }
 
@@ -91,16 +91,17 @@ async function popupAutofill(message, sender, sendResponse) {
 					{ documentId: frame.documentId }).catch(() => null);
 				return { frameId: frame.frameId, documentId: frame.documentId, url: frame.url,
 					origin: isHttpUrlString(frame.url) ? new URL(frame.url).origin : null,
-					supported, kind: state?.payload?.kind || 'login', formToken: state?.payload?.formToken,
+					supported, passwordMode: state?.payload?.passwordMode, canGenerate: state?.payload?.canGenerate === true,
+					kind: state?.payload?.kind || 'login', formToken: state?.payload?.formToken,
 					suggestions: state?.payload?.formToken ? state.payload.suggestions || [] : [] };
 			}));
 			sendResponse({ ok: true, payload: { targets } }); return;
 		}
 		const frame = frames.find(entry => entry.documentId === message.documentId);
-		if (!supportedFrame(frame, frames) || !isString(message.itemId) || !isString(message.formToken)) {
+		if (!supportedFrame(frame, frames) || (message.type !== 'GENERATE_AUTOFILL_PASSWORD' && !isString(message.itemId)) || !isString(message.formToken)) {
 			throw new Error('Hedef belge değişti veya desteklenmiyor. Eklentiyi yeniden açın.');
 		}
-		const response = await chrome.tabs.sendMessage(tab.id, { type: 'FILL_LOGIN_CREDENTIAL',
+		const response = await chrome.tabs.sendMessage(tab.id, { type: message.type === 'GENERATE_AUTOFILL_PASSWORD' ? 'GENERATE_PASSWORD' : 'FILL_LOGIN_CREDENTIAL',
 			itemId: message.itemId, formToken: message.formToken, forceFill: message.forceFill === true }, { documentId: frame.documentId });
 		sendResponse(response);
 	} catch (error) { sendResponse({ ok: false, message: error.message }); }
@@ -169,7 +170,7 @@ function rejectInvalidPayload(sendResponse) {
 }
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-	if (['LIST_AUTOFILL_TARGETS', 'FILL_AUTOFILL_TARGET'].includes(message?.type)) {
+	if (['LIST_AUTOFILL_TARGETS', 'FILL_AUTOFILL_TARGET', 'GENERATE_AUTOFILL_PASSWORD'].includes(message?.type)) {
 		void popupAutofill(message, sender, sendResponse); return true;
 	}
 	if (message?.type === 'OPEN_AUTOFILL_POPUP') {
@@ -798,10 +799,19 @@ async function handlePendingSave(message, sender, sendResponse) {
 			sendResponse({ ok: true, payload: { status: "ignored" } });
 			return;
 		}
+		const status = await nativeVault.status();
+		if (!status.isAuthenticated || status.isLocked) {
+			sendResponse({ ok: true, payload: { status: "locked" } }); return;
+		}
+		const captureEpoch = nativeVault.epoch;
 		const rawKey = crypto.getRandomValues(new Uint8Array(32));
 		const iv = crypto.getRandomValues(new Uint8Array(12));
 		const key = await crypto.subtle.importKey("raw", rawKey, "AES-GCM", false, ["encrypt"]);
 		const encrypted = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, new TextEncoder().encode(JSON.stringify(credential)));
+		const latestStatus = await nativeVault.status();
+		if (captureEpoch !== nativeVault.epoch || !latestStatus.isAuthenticated || latestStatus.isLocked) {
+			sendResponse({ ok: true, payload: { status: "locked" } }); return;
+		}
 		stored[slot] = {
 			id: crypto.randomUUID(), origin, url: credential.url, title: credential.title || "", username: credential.username,
 			expiresAt: Date.now() + PENDING_SAVE_TTL_MS,
@@ -819,8 +829,19 @@ async function handlePendingSave(message, sender, sendResponse) {
 		return;
 	}
 	if (message.type === "GET_PENDING_LOGIN_SAVE") {
+		const credential = await decryptSaveDraft(draft);
+		const response = await requestVaultTab("VM_PREVIEW_LOGIN_SAVE_REQUEST", { credential });
+		const preview = response?.payload;
+		if (!response?.ok || !["create", "update"].includes(preview?.operation)) {
+			sendResponse({ ok: false, payload: { status: preview?.status || "error", draft: null } }); return;
+		}
+		// Freeze the decision displayed to the user. A later vault change must fail.
+		if (!draft.preview) {
+			draft.preview = preview;
+			await chrome.storage.session.set({ [PENDING_SAVE_KEY]: stored });
+		}
 		const { id, title, username, url, expiresAt } = draft;
-		sendResponse({ ok: true, payload: { draft: { id, title, username, url, expiresAt } } });
+		sendResponse({ ok: true, payload: { draft: { id, title, username, url, expiresAt, operation: draft.preview.operation } } });
 		return;
 	}
 	if (message.draftId !== draft.id) {
@@ -833,10 +854,10 @@ async function handlePendingSave(message, sender, sendResponse) {
 		sendResponse({ ok: true });
 		return;
 	}
-	const key = await crypto.subtle.importKey("raw", decodeBytes(draft.key), "AES-GCM", false, ["decrypt"]);
-	const plaintext = await crypto.subtle.decrypt({ name: "AES-GCM", iv: decodeBytes(draft.iv) }, key, decodeBytes(draft.ciphertext));
-	const credential = JSON.parse(new TextDecoder().decode(plaintext));
-	const response = await requestVaultTab("VM_SAVE_LOGIN_REQUEST", { credential, sourceTabId: sender.tab.id });
+	if (!draft.preview) { rejectInvalidPayload(sendResponse); return; }
+	const credential = await decryptSaveDraft(draft);
+	if (!(await getContentPageUrl(sender))) { rejectInvalidPayload(sendResponse); return; }
+	const response = await requestVaultTab("VM_SAVE_LOGIN_REQUEST", { credential, expectedSave: draft.preview, sourceTabId: sender.tab.id });
 	if (response?.ok && ["created", "updated"].includes(response.payload?.status)) {
 		delete stored[slot];
 		await chrome.storage.session.set({ [PENDING_SAVE_KEY]: stored });
@@ -857,3 +878,17 @@ chrome.tabs.onRemoved?.addListener(tabId => {
 		}
 	}).catch(() => undefined);
 });
+
+// Browser events cover pushState/replaceState without page-world History hooks.
+for (const navigation of [chrome.webNavigation.onHistoryStateUpdated, chrome.webNavigation.onReferenceFragmentUpdated]) {
+	navigation?.addListener(details => {
+		if (details.documentId) void chrome.tabs.sendMessage(details.tabId, { type: 'PAGE_ROUTE_CHANGED' },
+			{ documentId: details.documentId }).catch(() => undefined);
+	});
+}
+
+async function decryptSaveDraft(draft) {
+	const key = await crypto.subtle.importKey("raw", decodeBytes(draft.key), "AES-GCM", false, ["decrypt"]);
+	const plaintext = await crypto.subtle.decrypt({ name: "AES-GCM", iv: decodeBytes(draft.iv) }, key, decodeBytes(draft.ciphertext));
+	return JSON.parse(new TextDecoder().decode(plaintext));
+}

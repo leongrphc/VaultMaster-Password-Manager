@@ -54,6 +54,13 @@ test('real independent extension logs in, fills, locks, restarts and saves witho
     if (path.endsWith('/auth/me')) return reply({ id: 'user-1', email });
     if (path.endsWith('/auth/logout')) { revoked = true; return reply({}); }
     if (path.endsWith('/vault') && req.method === 'GET') { reads++; return reply(items); }
+    if (path.endsWith('/vault/fixture-login') && req.method === 'PUT') {
+      if (failSave) return reply(null, 503);
+      const data = await decryptJSON(input.encryptedData, input.iv, key);
+      saved.push(data);
+      items = items.map(item => item.id === 'fixture-login' ? { ...item, encryptedData: input.encryptedData, iv: input.iv } : item);
+      return reply({ id: 'fixture-login' });
+    }
     if (path.endsWith('/vault') && req.method === 'POST') {
       if (failSave) return reply(null, 503);
       assert.ok(!body.includes('new-login-secret'));
@@ -103,6 +110,14 @@ test('real independent extension logs in, fills, locks, restarts and saves witho
     await context.route(/https?:\/\/(example|evil|example.test.evil)\.test\//, route => {
       const step = new URL(route.request().url()).pathname;
       const form = '<form><input id="email" type="email" autocomplete="username"><input id="password" type="password" autocomplete="current-password"></form>';
+      if (['/change', '/change-no-user', '/change-shadow', '/change-frame', '/change-foreign', '/ambiguous', '/new-password', '/many-new'].includes(step)) {
+        const fields = step === '/ambiguous' ? '<input id="current" type="password"><input id="next" type="password">' :
+          `${step !== '/new-password' ? '<input id="current" type="password" autocomplete="current-password">' : ''}<input id="next" type="password" autocomplete="new-password"><input id="confirm" type="password" autocomplete="new-password">${step === '/many-new' ? '<input id="repeat" type="password" autocomplete="new-password">' : ''}`;
+        const change = `<form action="/success" method="post">${step !== '/change-no-user' ? '<input id="email" type="text" autocomplete="username" value="octo">' : ''}${fields}<button id="submit">Change password</button></form>`;
+        if (step === '/change-frame' || step === '/change-foreign') return route.fulfill({ contentType: 'text/html', body: `<iframe src="https://${step === '/change-frame' ? 'example' : 'evil'}.test/change"></iframe>` });
+        if (step === '/change-shadow') return route.fulfill({ contentType: 'text/html', body: `<div id="host"></div><script>document.querySelector('#host').attachShadow({mode:'open'}).innerHTML=${JSON.stringify(change)}</script>` });
+        return route.fulfill({ contentType: 'text/html', body: change });
+      }
       if (step === '/card') return route.fulfill({ contentType: 'text/html', body: '<form><input id="card" autocomplete="cc-number"><input id="holder" autocomplete="cc-name"></form>' });
       if (step === '/identity') return route.fulfill({ contentType: 'text/html', body: '<form><input id="full-name" name="full-name"><input id="phone" type="tel" autocomplete="tel"></form>' });
       if (step === '/nested-foreign') return route.fulfill({ contentType: 'text/html', body: '<!doctype html><iframe src="https://evil.test/same-frame"></iframe>' });
@@ -132,6 +147,129 @@ test('real independent extension logs in, fills, locks, restarts and saves witho
     await popup.locator('[data-item-id="fixture-login"]').evaluate(button => button.click());
     assert.equal(reads, beforeSynthetic); await expect(target.locator('#password')).toHaveValue('');
     await popup.locator('[data-item-id="fixture-login"]').click(); await expect(target.locator('#password')).toHaveValue(credential.password);
+    await t.test('change forms fill current only and generate matching new passwords after a trusted popup click', async () => {
+      await target.goto('https://example.test/change'); await target.locator('#current').focus(); await target.bringToFront(); await popup.reload();
+      await expect(popup.locator('#items')).toContainText('Mevcut şifre');
+      await popup.locator('[data-item-id="fixture-login"]').click();
+      await expect(target.locator('#current')).toHaveValue(credential.password);
+      await expect(target.locator('#next')).toHaveValue(''); await expect(target.locator('#confirm')).toHaveValue('');
+      await popup.locator('[data-action="generate-password"]').evaluate(button => button.click());
+      await expect(target.locator('#next')).toHaveValue('');
+      await popup.locator('[data-action="generate-password"]').click();
+      const generated = await target.locator('#next').inputValue();
+      assert.match(generated, /^[A-Za-z0-9_-]{24}$/); assert.notEqual(generated, credential.password);
+      await expect(target.locator('#confirm')).toHaveValue(generated);
+      await popup.locator('[data-action="generate-password"]').click();
+      await expect(target.locator('#next')).toHaveValue(generated); // No silent overwrite.
+      await target.locator('#submit').click(); await target.waitForURL('https://example.test/success');
+      await expect(target.locator('[data-action="save"]')).toHaveText('Şifreyi Güncelle'); assert.equal(saved.length, 0);
+      await target.locator('[data-action="save"]').evaluate(button => button.click()); assert.equal(saved.length, 0);
+      await target.locator('[data-action="save"]').click(); await expect.poll(() => saved.length).toBe(1);
+      assert.equal(saved[0].password, generated); assert.equal(saved[0].username, 'octo');
+      items = items.map(item => item.id === 'fixture-login' ? { ...item, encryptedData: ciphertext.ciphertext, iv: ciphertext.iv } : item); saved.length = 0;
+    });
+    await t.test('change without username uses the explicitly selected current account', async () => {
+      await target.goto('https://example.test/change-no-user'); await target.bringToFront(); await popup.reload();
+      await popup.locator('[data-item-id="fixture-login"]').click();
+      await target.locator('#next').fill('manual-new-password'); await target.locator('#confirm').fill('manual-new-password');
+      await target.locator('#submit').click(); await target.waitForURL('https://example.test/success');
+      await expect(target.locator('[data-action="save"]')).toHaveText('Şifreyi Güncelle');
+      await target.locator('[data-action="dismiss"]').click(); assert.equal(saved.length, 0);
+    });
+    await t.test('SPA submit snapshots survive a success route without saving automatically', async () => {
+      await target.goto('https://example.test/change'); await target.bringToFront(); await popup.reload();
+      await popup.locator('[data-item-id="fixture-login"]').click();
+      await target.locator('#next').fill('spa-new-password'); await target.locator('#confirm').fill('spa-new-password');
+      await target.evaluate(() => document.querySelector('form').addEventListener('submit', event => {
+        event.preventDefault(); history.pushState({}, '', '/spa-success'); document.querySelector('form').remove();
+      }));
+      await target.locator('#submit').click(); await target.waitForURL('https://example.test/spa-success');
+      await expect(target.locator('[data-action="save"]')).toHaveText('Şifreyi Güncelle'); assert.equal(saved.length, 0);
+      await target.locator('[data-action="dismiss"]').click();
+    });
+    await t.test('an edited vault record cannot be silently overwritten after update approval', async () => {
+      await target.goto('https://example.test/change'); await target.bringToFront(); await popup.reload();
+      await popup.locator('[data-item-id="fixture-login"]').click();
+      await target.locator('#next').fill('new-password'); await target.locator('#confirm').fill('new-password');
+      await target.locator('#submit').click(); await target.waitForURL('https://example.test/success');
+      await expect(target.locator('[data-action="save"]')).toHaveText('Şifreyi Güncelle');
+      const changed = await encryptJSON({ ...credential, notes: 'concurrent edit' }, key);
+      items = items.map(item => item.id === 'fixture-login' ? { ...item, encryptedData: changed.ciphertext, iv: changed.iv } : item);
+      await target.locator('[data-action="save"]').click(); await expect(target.locator('[data-save-error]')).toContainText('üzerine yazılmadı');
+      assert.equal(saved.length, 0); await target.locator('[data-action="dismiss"]').click();
+      items = items.map(item => item.id === 'fixture-login' ? { ...item, encryptedData: ciphertext.ciphertext, iv: ciphertext.iv } : item);
+    });
+    await t.test('script submit, requestSubmit, and mismatched confirmations cannot capture credentials', async () => {
+      await target.goto('https://example.test/change');
+      await target.evaluate(() => { const form = document.querySelector('form'); form.addEventListener('submit', event => event.preventDefault());
+        document.querySelector('#next').value = 'script-secret'; document.querySelector('#confirm').value = 'script-secret';
+        form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })); form.requestSubmit(); });
+      await expect.poll(() => worker.evaluate(async () => Object.keys((await chrome.storage.session.get('vaultmasterPendingSaves')).vaultmasterPendingSaves || {}).length)).toBe(0);
+      await target.locator('#next').fill('new-password'); await target.locator('#confirm').fill('different-password');
+      await target.locator('#submit').click();
+      assert.equal(await target.locator('[data-action="save"]').count(), 0);
+      assert.equal(saved.length, 0);
+    });
+    await t.test('multiple unlabeled passwords are ambiguous and never filled or generated', async () => {
+      await target.goto('https://example.test/ambiguous'); await target.bringToFront(); await popup.reload();
+      await expect(popup.locator('#items')).toContainText('belirsiz');
+      assert.equal(await popup.locator('[data-item-id="fixture-login"]').count(), 0);
+      assert.equal(await popup.locator('[data-action="generate-password"]').count(), 0);
+      assert.equal((await fill()).ok, false); await expect(target.locator('#current')).toHaveValue('');
+    });
+    await t.test('new-only and multiple confirmation fields receive generated passwords but never saved passwords', async () => {
+      for (const path of ['new-password', 'many-new']) {
+        await target.goto(`https://example.test/${path}`); await target.bringToFront(); await popup.reload();
+        if (path === 'new-password') {
+          await popup.locator('[data-item-id="fixture-login"]').click(); await expect(target.locator('#next')).toHaveValue('');
+          assert.deepEqual(await worker.evaluate(async () => (await chrome.storage.session.get('vaultmasterPendingAutofill')).vaultmasterPendingAutofill || {}), {});
+        }
+        await popup.locator('[data-action="generate-password"]').click();
+        const generated = await target.locator('#next').inputValue(); assert.equal(generated.length, 24);
+        await expect(target.locator('#confirm')).toHaveValue(generated);
+        if (path === 'many-new') await expect(target.locator('#repeat')).toHaveValue(generated);
+      }
+    });
+    await t.test('SPA pushState, replaceState, hash and back navigation invalidate approvals on unchanged forms', async () => {
+      await target.goto('https://example.test/change'); await target.bringToFront(); await popup.reload();
+      await expect(popup.locator('[data-action="generate-password"]')).toBeVisible();
+      await target.evaluate(() => history.pushState({}, '', '/spa-password'));
+      await popup.locator('[data-action="generate-password"]').click(); await expect(target.locator('#next')).toHaveValue('');
+      await expect(popup.locator('#status')).toContainText('yeniden');
+      await target.bringToFront(); await popup.reload();
+      await expect(popup.locator('[data-item-id="fixture-login"]')).toBeVisible();
+      await target.evaluate(() => history.replaceState({}, '', '/spa-replaced'));
+      await popup.locator('[data-item-id="fixture-login"]').click(); await expect(target.locator('#current')).toHaveValue('');
+      await target.bringToFront(); await popup.reload();
+      await expect(popup.locator('[data-action="generate-password"]')).toBeVisible();
+      await target.evaluate(() => location.hash = 'password');
+      await popup.locator('[data-action="generate-password"]').click(); await expect(target.locator('#next')).toHaveValue('');
+      await target.goBack(); await target.bringToFront(); await popup.reload();
+      await popup.locator('[data-item-id="fixture-login"]').click(); await expect(target.locator('#current')).toHaveValue(credential.password);
+    });
+    await t.test('change generation preserves same-origin iframe and open-root boundaries', async () => {
+      for (const path of ['change-frame', 'change-shadow']) {
+        await target.goto(`https://example.test/${path}`);
+        const scope = path === 'change-frame' ? target.frameLocator('iframe') : target;
+        await scope.locator('#current').focus(); await target.bringToFront(); await popup.reload();
+        await popup.locator('[data-item-id="fixture-login"]').click(); await expect(scope.locator('#current')).toHaveValue(credential.password);
+        await popup.locator('[data-action="generate-password"]').click();
+        assert.equal((await scope.locator('#next').inputValue()).length, 24);
+        await expect(scope.locator('#confirm')).toHaveValue(await scope.locator('#next').inputValue());
+        if (path === 'change-shadow') {
+        await scope.locator('#submit').click(); await target.waitForURL('https://example.test/success');
+        await expect(target.locator('[data-action="save"]')).toHaveText('Şifreyi Güncelle');
+        await target.locator('[data-action="dismiss"]').click(); assert.equal(saved.length, 0);
+        }
+      }
+      await target.goto('https://example.test/change-foreign'); await target.bringToFront(); await popup.reload();
+      assert.equal(await popup.locator('[data-action="generate-password"]').count(), 0);
+      await expect(target.frameLocator('iframe').locator('#next')).toHaveValue('');
+      await target.goto('https://example.test.evil.test/change'); await target.bringToFront(); await popup.reload();
+      assert.equal(await popup.locator('[data-item-id="fixture-login"]').count(), 0);
+      await expect(target.locator('#current')).toHaveValue('');
+    });
+    await target.goto('https://example.test/login'); await target.bringToFront(); await popup.reload();
     // Real Chromium frame and Shadow DOM checks with the production extension UI.
     await t.test('same-origin iframe fills only its selected document', async () => {
       await target.goto('https://example.test/same-frame'); await target.bringToFront(); await popup.reload();
@@ -224,6 +362,12 @@ test('real independent extension logs in, fills, locks, restarts and saves witho
       const forged = await sourceCdp.send('Runtime.evaluate', { contextId: isolated.id, awaitPromise: true, returnByValue: true,
         expression: `chrome.runtime.sendMessage({type:'GET_LOGIN_CREDENTIAL',itemId:'fixture-login',pageUrl:'https://evil.test',forceFill:true})` });
       assert.equal(forged.result.value.ok, false);
+      const forgedCapture = await sourceCdp.send('Runtime.evaluate', { contextId: isolated.id, awaitPromise: true, returnByValue: true,
+        expression: `chrome.runtime.sendMessage({type:'CAPTURE_LOGIN',credential:{url:'https://evil.test',username:'octo',password:'phishing-secret'}})` });
+      assert.equal(forgedCapture.result.value.ok, false);
+      const forgedGenerate = await sourceCdp.send('Runtime.evaluate', { contextId: isolated.id, awaitPromise: true, returnByValue: true,
+        expression: `chrome.runtime.sendMessage({type:'GENERATE_AUTOFILL_PASSWORD',tabId:42,documentId:'main',formToken:'forged'})` });
+      assert.equal(forgedGenerate.result.value.ok, false);
       const verifiedPath = await sourceCdp.send('Runtime.evaluate', { contextId: isolated.id, awaitPromise: true, returnByValue: true,
         expression: `chrome.runtime.sendMessage({type:'LIST_LOGIN_SUGGESTIONS',pageUrl:'https://example.test/claimed-path',identifier:''})` });
       assert.equal(verifiedPath.result.value.ok, true);

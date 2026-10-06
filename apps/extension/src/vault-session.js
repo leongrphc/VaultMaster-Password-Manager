@@ -203,7 +203,7 @@ export class VaultSession {
     if (!status.isAuthenticated || status.isLocked) return { ok: true, payload: { status: status.isAuthenticated ? 'locked' : 'logged_out' } };
     const epoch = this.epoch, key = this.key;
     const secretRequest = ['VM_GET_LOGIN_CREDENTIAL_REQUEST', 'VM_GET_PASSWORD_REQUEST', 'VM_GET_TOTP_CODE_REQUEST',
-      'VM_GET_CREDIT_CARD_REQUEST', 'VM_GET_IDENTITY_REQUEST', 'VM_SAVE_LOGIN_REQUEST'].includes(type);
+      'VM_GET_CREDIT_CARD_REQUEST', 'VM_GET_IDENTITY_REQUEST', 'VM_SAVE_LOGIN_REQUEST', 'VM_PREVIEW_LOGIN_SAVE_REQUEST'].includes(type);
     if (secretRequest || !this.lastSyncedAt || this.now() - Date.parse(this.lastSyncedAt) > 30000) await this.sync();
     else await this.api('/auth/me');
     this.guard(epoch, key);
@@ -238,9 +238,21 @@ export class VaultSession {
       result = { status: 'ready', totpCode: totp.code, expiresIn: totp.expiresIn };
     }
     if (type === 'VM_PASSKEY_BRIDGE_REQUEST') result = { status: 'consent_required', candidates: [], message: 'Kasa passkey imzalama henüz desteklenmiyor.' };
-    if (type === 'VM_SAVE_LOGIN_REQUEST') {
+    if (['VM_SAVE_LOGIN_REQUEST', 'VM_PREVIEW_LOGIN_SAVE_REQUEST'].includes(type)) {
       const credential = payload.credential;
-      const existing = this.items.find(entry => entry.data.type === 'login' && normalize(entry.data.username) === normalize(credential.username) && hostScore(credential.url, entry.data.url) > 0);
+      const candidates = this.items.filter(entry => entry.data.type === 'login' && normalize(entry.data.username) === normalize(credential.username) && hostScore(credential.url, entry.data.url) > 0);
+      if (credential.itemId) {
+        const selected = candidates.find(entry => entry.id === credential.itemId);
+        if (!selected) return { ok: false, payload: { status: 'save_conflict' } };
+        candidates.splice(0, candidates.length, selected);
+      }
+      if (candidates.length > 1) return { ok: false, payload: { status: 'ambiguous_accounts' } };
+      const existing = candidates[0];
+      const preview = { operation: existing ? 'update' : 'create', itemId: existing?.id || null, encryptedData: existing?.encryptedData || null };
+      if (type === 'VM_PREVIEW_LOGIN_SAVE_REQUEST') return { ok: true, payload: preview };
+      if (payload.expectedSave && (payload.expectedSave.operation !== preview.operation || payload.expectedSave.itemId !== preview.itemId || payload.expectedSave.encryptedData !== preview.encryptedData)) {
+        return { ok: false, payload: { status: 'save_conflict' } };
+      }
       const data = existing ? { ...existing.data, password: credential.password } : { type: 'login', title: credential.title || new URL(credential.url).hostname,
         url: credential.url, username: credential.username, password: credential.password };
       const encrypted = await encryptJSON(data, key);

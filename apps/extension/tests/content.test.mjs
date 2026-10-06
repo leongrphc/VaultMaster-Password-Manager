@@ -44,10 +44,7 @@ async function loadContent({ credential, domainValid = true, state = {} } = {}) 
     },
   };
 
-  dom.window.VaultMasterFormDetector = {
-    detectCardFormContext: () => null,
-    detectIdentityFormContext: () => null,
-  };
+  dom.window.eval(await readFile(resolve("src/form-detector.js"), "utf8"));
 
   const source = await readFile(resolve("src/content.js"), "utf8");
   dom.window.eval(source);

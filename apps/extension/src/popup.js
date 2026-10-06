@@ -125,7 +125,21 @@ async function loadState() {
 		const decision = document.createElement('p');
 		decision.textContent = target.formToken ? 'Aynı köken: bu form için seçim yapabilirsiniz.' : 'Aynı köken: görünür desteklenen form bulunamadı.';
 		itemsNode.appendChild(decision);
-		renderSuggestions(target.suggestions, { ...target, tabId: activeTab.id });
+		if (target.passwordMode) decision.textContent += target.passwordMode === 'change' ? ' Mevcut şifre doldurulur; yeni şifre ayrı tutulur.' : target.passwordMode === 'ambiguous' ? ' Şifre alanları belirsiz; doldurulmaz.' : target.passwordMode === 'new' ? ' Yeni şifre formu.' : '';
+		if (target.canGenerate && target.formToken) {
+			const generate = document.createElement('button');
+			generate.type = 'button'; generate.dataset.action = 'generate-password';
+			generate.textContent = 'Yeni Şifre Üret (24 karakter)';
+			generate.addEventListener('click', async event => {
+				if (!event.isTrusted) return;
+				generate.disabled = true;
+				const result = await sendRuntimeMessage({ type: 'GENERATE_AUTOFILL_PASSWORD', tabId: activeTab.id,
+					documentId: target.documentId, formToken: target.formToken }).catch(() => null);
+				setStatus(result?.message || 'Şifre üretilemedi. Formu yeniden kontrol edin.'); generate.disabled = false;
+			});
+			itemsNode.appendChild(generate);
+		}
+		if (target.passwordMode !== 'ambiguous') renderSuggestions(target.suggestions, { ...target, tabId: activeTab.id });
 	}
 	setStatus('Hedef adresi kontrol edin, sonra bir hesap seçin. Kapalı Shadow DOM desteklenmez.');
 	if (!targets.length) renderEmptyState('Desteklenen giriş formu bulunamadı.');

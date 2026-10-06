@@ -67,3 +67,21 @@ test("detects identity forms from contact fields", async () => {
   assert.equal(context.phoneInput, window.document.querySelector("#phone"));
   assert.equal(context.addressInput, window.document.querySelector("#address"));
 });
+
+for (const [html, mode, current, count] of [
+  ['<input id="old" type="password" autocomplete="section-account current-password"><input type="password" autocomplete="new-password"><input type="password" autocomplete="new-password">', 'change', 'old', 2],
+  ['<input id="old" type="password" name="old_password"><input type="password" name="new_password"><input type="password" name="confirm_password">', 'change', 'old', 2],
+  ['<input type="password" autocomplete="new-password"><input type="password" autocomplete="new-password">', 'new', null, 2],
+  ['<input type="password"><input type="password">', 'ambiguous', null, 0],
+  ['<input type="password" autocomplete="current-password"><input type="password" autocomplete="current-password">', 'ambiguous', null, 0],
+  ['<input id="old" type="password">', 'login', 'old', 0],
+]) {
+  test(`password roles: ${mode}: ${html}`, async () => {
+    const window = await loadDetector(`<form>${html}</form>`);
+    const context = window.VaultMasterFormDetector.detectLoginFormContext(window.document.querySelector('input'));
+    assert.equal(context.passwordMode, mode);
+    assert.equal(context.passwordInput?.id || null, current);
+    assert.equal(context.newPasswordInputs.length, count);
+    window.close();
+  });
+}

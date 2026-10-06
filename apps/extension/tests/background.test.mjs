@@ -54,7 +54,7 @@ async function loadBackground({ frames: fixtureFrames, onVaultRequest, vaultTab 
   };
 
   globalThis.__vaultFixture = { ready: Promise.resolve(), status: async () => ({ isAuthenticated: true, isLocked: false }),
-    request: async (type, payload) => { await onVaultRequest?.(); tabMessages.push({ type, ...payload }); return tabResponse; } };
+    request: async (type, payload) => { await onVaultRequest?.(); if (type === "VM_PREVIEW_LOGIN_SAVE_REQUEST") return { ok: true, payload: { operation: "create", itemId: null, encryptedData: null } }; tabMessages.push({ type, ...payload }); return tabResponse; } };
   const source = (await readFile(resolve("src/background.js"), "utf8"))
     .replace("import { nativeVault } from './vault-session.js';", 'const nativeVault = globalThis.__vaultFixture;');
   await import(`data:text/javascript,${encodeURIComponent(source)}#${Date.now()}-${Math.random()}`);
@@ -381,4 +381,35 @@ test('rechecks the browser document after asynchronous vault work before returni
   const response = await background.send({ type: 'GET_LOGIN_CREDENTIAL', itemId: 'item-1', pageUrl: frames[0].url });
   assert.equal(response.ok, false);
   assert.equal(JSON.stringify(response).includes('must-not-return'), false);
+});
+
+test('generation accepts only protected popup targets', async () => {
+  const background = await loadBackground();
+  for (const sender of [{ tab: { id: 42 }, url: 'https://example.com' }, { id: 'another-extension', url: chrome.runtime.getURL('popup.html') }]) {
+    assert.equal((await background.send({ type: 'GENERATE_AUTOFILL_PASSWORD', tabId: 42, documentId: 'main', formToken: 'token' }, sender)).ok, false);
+  }
+  assert.equal(background.tabMessages.length, 0);
+});
+
+test('pending saves cannot be confirmed before the user sees a save/update preview', async () => {
+  const background = await loadBackground();
+  await background.send({ type: 'CAPTURE_LOGIN', credential: capturedCredential });
+  const draft = background.sessionStorage.get('vaultmasterPendingSaves')['42:0'];
+  assert.equal((await background.send({ type: 'CONFIRM_LOGIN_SAVE', draftId: draft.id })).ok, false);
+  assert.equal(background.tabMessages.length, 0);
+});
+
+test('SPA requests use the current browser URL in the same verified document', async () => {
+  const background = await loadBackground({ frames: [{ frameId: 0, parentFrameId: -1, documentId: 'main', url: 'https://example.com/settings/password', documentLifecycle: 'active' }] });
+  const response = await background.send({ type: 'GET_LOGIN_CREDENTIAL', itemId: 'item-1', pageUrl: 'https://example.com/claimed' },
+    { tab: { id: 42 }, documentId: 'main', url: 'https://example.com/login', origin: 'https://example.com' });
+  assert.equal(response.ok, true);
+  assert.equal(background.tabMessages[0].pageUrl, 'https://example.com/settings/password');
+});
+
+test('locked vault submissions do not retain a password draft', async () => {
+  const background = await loadBackground();
+  globalThis.__vaultFixture.status = async () => ({ isAuthenticated: true, isLocked: true });
+  assert.equal((await background.send({ type: 'CAPTURE_LOGIN', credential: capturedCredential })).payload.status, 'locked');
+  assert.equal(background.sessionStorage.has('vaultmasterPendingSaves'), false);
 });

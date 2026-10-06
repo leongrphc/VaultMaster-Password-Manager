@@ -31,6 +31,27 @@ let activeField = null;
 let activePanel = null;
 let activeLauncher = null;
 let pendingSavePromptId = null;
+let routeUrl = window.location.href;
+let routeEpoch = 0;
+const selectedAccounts = new WeakMap();
+const observedSaveRoots = new WeakSet();
+let submitAction = null;
+
+function checkRouteChange(force = false) {
+	if (force !== true && routeUrl === window.location.href) return;
+	routeUrl = window.location.href;
+	routeEpoch++;
+	activeField = null;
+	submitAction = null;
+	suggestionCache.clear();
+	autofillSuppressions.clear();
+	dismissedPanelKeys.clear();
+	pageAutofillState = { status: "initializing", suggestions: [], updatedAt: 0 };
+	removePanel(); removeLauncher();
+	pendingSavePromptId = null;
+	scheduleEvaluation(); schedulePrewarm(0);
+	void refreshPendingSavePrompt();
+}
 let pageAutofillState = {
 	status: "initializing",
 	suggestions: [],
@@ -170,6 +191,12 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 if (!isVaultMasterPage()) {
 	chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 		if (sender.id !== chrome.runtime.id || sender.tab) return false;
+		if (message?.type === "PAGE_ROUTE_CHANGED") {
+			checkRouteChange(true); sendResponse({ ok: true }); return true;
+		}
+		if (message?.type === "GENERATE_PASSWORD") {
+			void generatePasswordForContext(message, sendResponse); return true;
+		}
 		if (message?.type === "GET_PAGE_AUTOFILL_STATE") {
 			void getPageAutofillState(message, sendResponse).catch(() => sendResponse({ ok: false }));
 			return true;
@@ -332,10 +359,19 @@ function initializeAutofillAssistant() {
 	document.addEventListener("click", onFieldActivity, true);
 	document.addEventListener("keydown", onKeyDown, true);
 	document.addEventListener("submit", onFormSubmitCapture, true);
+	for (const type of ["click", "keydown"]) document.addEventListener(type, event => {
+		if (!event.isTrusted || (type === "keydown" && event.key !== "Enter")) return;
+		const target = event.composedPath()[0];
+		const form = target?.form || target?.closest?.("form");
+		const button = target.closest?.('button, input[type="submit"], input[type="image"]');
+		if (form && (type === "keydown" || ["submit", "image"].includes(button?.type))) submitAction = { form, at: Date.now() };
+	}, true);
+	window.addEventListener("popstate", checkRouteChange);
+	window.addEventListener("hashchange", checkRouteChange);
 	window.addEventListener("resize", updatePanelPosition, true);
 	window.addEventListener("scroll", updatePanelPosition, true);
 
-	const observer = new MutationObserver(() => scheduleEvaluation());
+	const observer = new MutationObserver(() => { if (!document?.documentElement) return; checkRouteChange(); scheduleEvaluation(); });
 	observer.observe(document.documentElement, {
 		childList: true,
 		subtree: true,
@@ -377,15 +413,21 @@ function onKeyDown(event) {
 function onFormSubmitCapture(event) {
 	const form = event.target;
 	if (!(form instanceof HTMLFormElement)) return;
-	const inputs = Array.from(form.querySelectorAll("input"));
-	const passwordInput = inputs.find(input => normalizeInputType(input) === "password");
-	const usernameInput = inputs.find(input => isLikelyIdentifierInput(input)) ||
-		(passwordInput ? inputs.slice(0, inputs.indexOf(passwordInput)).reverse().find(input => ["text", "email", "tel"].includes(normalizeInputType(input))) : null);
-	if (!usernameInput?.value.trim() || !passwordInput?.value) return;
+	checkRouteChange();
+	if (!event.isTrusted || submitAction?.form !== form || Date.now() - submitAction.at > 1500) return;
+	submitAction = null;
+	const context = getLoginFormContext(form.querySelector("input"));
+	if (!context || context.ambiguousPasswords) return;
+	const selected = selectedAccounts.get(context.passwordInput || context.usernameInput);
+	const account = selected?.routeEpoch === routeEpoch ? selected : null;
+	const username = context.usernameInput?.value.trim() || account?.username;
+	const newFields = context.newPasswordInputs || [];
+	const password = newFields.length ? newFields[0].value : context.passwordInput?.value;
+	if (!username || !password || newFields.some(input => input.value !== password)) return;
 	// Snapshot and send before any await or timer: a native submit can unload this document immediately.
 	const credential = {
 		title: document.title || formatHostname(window.location.href), url: window.location.origin,
-		username: usernameInput.value.trim(), password: passwordInput.value,
+		username, password, ...(account?.itemId && normalizeIdentifier(account.username) === normalizeIdentifier(username) ? { itemId: account.itemId } : {}),
 	};
 	void sendRuntimeMessage({ type: "CAPTURE_LOGIN", credential }).then(response => {
 		if (response?.payload?.status === "captured") {
@@ -419,12 +461,16 @@ function schedulePrewarm(delay = 220) {
 }
 
 function getSelectionContext() {
+	checkRouteChange();
 	const detector = window.VaultMasterFormDetector;
-	return detector?.detectCardFormContext(activeField) || detector?.detectIdentityFormContext(activeField) || getPageLoginContext();
+	const card = detector?.detectCardFormContext(activeField);
+	const login = getPageLoginContext();
+	return card || (login?.passwordFields?.length ? login : detector?.detectIdentityFormContext(activeField) || login);
 }
 
 async function getPageAutofillState(_message, sendResponse) {
 	const context = getSelectionContext();
+	checkRouteChange();
 	const kind = context?.type || 'login';
 	if (kind !== 'login') {
 		const payload = kind === 'credit_card' ? await fetchCreditCards() : await fetchIdentities();
@@ -433,6 +479,7 @@ async function getPageAutofillState(_message, sendResponse) {
 	}
 	if (Date.now() - pageAutofillState.updatedAt > SUGGESTION_CACHE_TTL_MS) await prewarmPageAutofillState();
 	sendResponse({ ok: true, payload: { ...pageAutofillState, kind,
+		passwordMode: context?.passwordMode, canGenerate: Boolean(context?.newPasswordInputs?.length),
 		formToken: context ? getFormToken(context) : null } });
 }
 
@@ -486,7 +533,7 @@ async function evaluateAutofillOpportunity() {
 		}
 	}
 
-	const identityContext = detector?.detectIdentityFormContext(activeField);
+	const identityContext = getPageLoginContext()?.passwordFields?.length ? null : detector?.detectIdentityFormContext(activeField);
 	if (identityContext) {
 		const identitiesPayload = await fetchIdentities();
 		if (identitiesPayload?.identities?.length) {
@@ -561,21 +608,25 @@ function showSuggestionPanel({ suggestions }) {
 
 const formTokens = new WeakMap();
 function getContextInputs(context) {
-	return Object.values(context).filter(value => value instanceof HTMLInputElement);
+	return [...new Set(Object.values(context).flat().filter(value => value instanceof HTMLInputElement))];
 }
 
 function getFormToken(context) {
+	if (!context) return null;
 	const inputs = getContextInputs(context);
 	const anchor = context.passwordInput || context.usernameInput || inputs[0];
+	const signature = `${routeEpoch}|${window.location.href}|${inputs.map(input => getInputHintText(input) + Array.from(input.labels || []).map(label => label.textContent).join(" ") + input.type + input.readOnly + input.disabled).join("|")}|${context.passwordMode}`;
+	if (!anchor) return null;
 	let entry = formTokens.get(anchor);
-	if (!entry || entry.inputs.length !== inputs.length || entry.inputs.some((input, index) => input !== inputs[index])) {
-		entry = { token: generatePendingNonce(), inputs };
+	if (!entry || entry.signature !== signature || entry.inputs.length !== inputs.length || entry.inputs.some((input, index) => input !== inputs[index])) {
+		entry = { token: generatePendingNonce(), inputs, signature };
 		formTokens.set(anchor, entry);
 	}
 	return entry.token;
 }
 
 async function fillCredentialFromMessage(message, sendResponse) {
+	checkRouteChange();
 	const context = getSelectionContext();
 	if (!context) {
 		sendResponse({ ok: false, message: "Giriş alanı bulunamadı." });
@@ -608,6 +659,9 @@ async function fillCredentialFromMessage(message, sendResponse) {
 		}
 		sendResponse({ ok: true, message: 'Dolduruldu.' }); return;
 	}
+	if (context.ambiguousPasswords || (context.newPasswordInputs?.length && !context.passwordInput && !context.usernameInput)) {
+		sendResponse({ ok: false, message: 'Mevcut şifre alanı bulunamadı veya alanlar belirsiz.' }); return;
+	}
 	const result = await fillCredentialIntoContext(itemId, context, { forceFill: message.forceFill === true });
 	if (result.ok) {
 		if (result.filledFields?.includes("password")) suppressAutofillForContext(context);
@@ -619,6 +673,7 @@ async function fillCredentialFromMessage(message, sendResponse) {
 
 async function fillCredentialIntoContext(itemId, context, options = {}) {
 	const originalRoots = [context.usernameInput?.getRootNode(), context.passwordInput?.getRootNode()];
+	const approvedToken = getFormToken(context);
 	const credentialResult = await requestCredential(itemId, { forceFill: options.forceFill });
 	const credential = credentialResult?.credential;
 	if (!credential) {
@@ -632,17 +687,17 @@ async function fillCredentialIntoContext(itemId, context, options = {}) {
 	}
 	// Do not retarget a credential after asynchronous vault work or page events.
 	const latestContext = context;
-	if ([context.usernameInput, context.passwordInput].some((input, index) => input && (!input.isConnected || input.getRootNode() !== originalRoots[index]))) {
+	if (approvedToken !== getFormToken(context) || [context.usernameInput, context.passwordInput].some((input, index) => input && (!input.isConnected || input.getRootNode() !== originalRoots[index]))) {
 		return { ok: false, message: 'Giriş formu değişti.' };
 	}
 	const filledFields = [];
 
-	if (latestContext.usernameInput && credential.username && (options.forceFill || !latestContext.usernameInput.value.trim())) {
+	if (latestContext.usernameInput && !latestContext.usernameInput.readOnly && credential.username && (options.forceFill || !latestContext.usernameInput.value.trim())) {
 		setNativeValue(latestContext.usernameInput, credential.username);
 		filledFields.push("identifier");
 	}
 
-	if (latestContext.passwordInput?.isConnected && credential.password && (options.forceFill || !latestContext.passwordInput.value.trim())) {
+	if (latestContext.passwordInput?.isConnected && !latestContext.passwordInput.readOnly && credential.password && (options.forceFill || !latestContext.passwordInput.value.trim())) {
 		setNativeValue(latestContext.passwordInput, credential.password);
 		latestContext.passwordInput.focus();
 		filledFields.push("password");
@@ -652,7 +707,8 @@ async function fillCredentialIntoContext(itemId, context, options = {}) {
 		return { ok: false, message: "Alanlar dolu. Üzerine yazmak için uyarı panelindeki 'Yine de doldur' seçeneğini kullanın." };
 	}
 
-	if (filledFields.includes("identifier") && !filledFields.includes("password") && credential.password) {
+	selectedAccounts.set(context.passwordInput || context.usernameInput, { username: credential.username, itemId: credential.itemId, routeEpoch });
+	if (context.passwordMode === "login" && filledFields.includes("identifier") && !filledFields.includes("password") && credential.password) {
 		await rememberPendingAutofill(credential);
 	} else {
 		await clearPendingAutofill();
@@ -742,12 +798,12 @@ function showSavePrompt(credential) {
 
 	panel.innerHTML = `
 		<div style="padding:14px;border-bottom:1px solid rgba(144,160,195,0.12);">
-			<div style="font-weight:700;margin-bottom:4px;">VaultMaster'a kaydet?</div>
-			<div style="color:#90a0c3;font-size:12px;">${escapeHtml(formatHostname(credential.url))} • ${escapeHtml(maskIdentifier(credential.username))}</div>
+			<div style="font-weight:700;margin-bottom:4px;">${credential.operation === 'update' ? 'Mevcut kaydın şifresini güncelle?' : 'Yeni giriş kaydı oluştur?'}</div>
+			<div style="color:#90a0c3;font-size:12px;">${escapeHtml(credential.url)} • ${escapeHtml(maskIdentifier(credential.username))}</div>
 		</div>
 		<div style="padding:12px;display:grid;gap:8px;">
 			<div style="display:flex;gap:8px;">
-					<button data-action="save" style="flex:1;border:0;border-radius:12px;background:#00ffb2;color:#04111d;padding:10px;font-weight:700;cursor:pointer;">Kaydet/Güncelle</button>
+					<button data-action="save" style="flex:1;border:0;border-radius:12px;background:#00ffb2;color:#04111d;padding:10px;font-weight:700;cursor:pointer;">${credential.operation === 'update' ? 'Şifreyi Güncelle' : 'Kaydet'}</button>
 					<button data-action="dismiss" style="border:1px solid rgba(144,160,195,0.18);border-radius:12px;background:rgba(18,26,49,0.9);color:#90a0c3;padding:10px 12px;font-weight:700;cursor:pointer;">Geç</button>
 				</div>
 				<button data-action="never-save" style="border:0;background:transparent;color:#90a0c3;padding:4px 8px;font-size:12px;text-align:left;cursor:pointer;">Bu sitede bir daha sorma</button>
@@ -758,8 +814,9 @@ function showSavePrompt(credential) {
 		await sendRuntimeMessage({ type: "DISMISS_LOGIN_SAVE", draftId: credential.id }).catch(() => null);
 		removePanel();
 	};
-	panel.querySelector("[data-action='dismiss']")?.addEventListener("click", dismissSave);
-	panel.querySelector("[data-action='never-save']")?.addEventListener("click", async () => {
+	panel.querySelector("[data-action='dismiss']")?.addEventListener("click", event => { if (event.isTrusted) void dismissSave(); });
+	panel.querySelector("[data-action='never-save']")?.addEventListener("click", async event => {
+		if (!event.isTrusted) return;
 		const hostname = normalizeHostname(credential.url);
 		if (hostname) {
 			await addNeverSaveHost(hostname);
@@ -785,7 +842,7 @@ function showSavePrompt(credential) {
 			error.style.cssText = "padding:12px;color:#ff9aac";
 			panel.appendChild(error);
 		}
-		error.textContent = "Kaydetme başarısız. Eklentide kasanın açık olduğunu ve bağlantınızı kontrol edip tekrar deneyin.";
+		error.textContent = status === "save_conflict" ? "Kayıt değişti; üzerine yazılmadı. Formu tekrar gönderip yeni onay alın." : "Kaydetme başarısız. Eklentide kasanın açık olduğunu ve bağlantınızı kontrol edip tekrar deneyin.";
 	});
 
 	document.body.appendChild(panel);
@@ -923,8 +980,8 @@ function getLoginFormContext(currentInput) {
 	}
 
 	const visibleInputs = getScopedVisibleInputs(currentInput);
-	const passwordInput =
-		visibleInputs.find((input) => normalizeInputType(input) === "password") || null;
+	const passwords = window.VaultMasterFormDetector.classifyPasswordFields(visibleInputs);
+	const passwordInput = passwords.currentPasswordInput;
 
 	const usernameInput =
 		findIdentifierField(visibleInputs, currentInput) ||
@@ -932,11 +989,11 @@ function getLoginFormContext(currentInput) {
 		(isLikelyIdentifierInput(currentInput) ? currentInput : null) ||
 		null;
 
-	if (!passwordInput && !usernameInput) {
+	if (!passwordInput && !usernameInput && !passwords.newPasswordInputs.length && !passwords.ambiguousPasswords) {
 		return null;
 	}
 
-	if (!passwordInput && usernameInput && !isLikelyIdentifierInput(usernameInput)) {
+	if (!passwordInput && !passwords.newPasswordInputs.length && usernameInput && !isLikelyIdentifierInput(usernameInput)) {
 		return null;
 	}
 
@@ -946,6 +1003,7 @@ function getLoginFormContext(currentInput) {
 			: usernameInput || passwordInput;
 
 	return {
+		...passwords,
 		usernameInput,
 		passwordInput,
 		anchorInput,
@@ -965,7 +1023,15 @@ function getPageLoginContext() {
 	return getLoginFormContext(activeField) || getFallbackLoginFormContext();
 }
 
+function observeSaveRoot(root) {
+	if (root instanceof ShadowRoot && !observedSaveRoots.has(root)) {
+		observedSaveRoots.add(root);
+		root.addEventListener("submit", onFormSubmitCapture, true);
+	}
+}
+
 function collectOpenInputs(root) {
+	observeSaveRoot(root);
 	const inputs = Array.from(root.querySelectorAll('input'));
 	for (const element of root.querySelectorAll('*')) {
 		if (element.shadowRoot?.mode === 'open') inputs.push(...collectOpenInputs(element.shadowRoot));
@@ -974,6 +1040,7 @@ function collectOpenInputs(root) {
 }
 
 function getScopedVisibleInputs(currentInput) {
+	observeSaveRoot(currentInput?.getRootNode());
 	const scopeRoot =
 		currentInput instanceof HTMLElement ? currentInput.closest("form") : null;
 
@@ -1130,7 +1197,7 @@ async function clearPendingAutofill() {
 let applyingPendingAutofill = false;
 
 async function tryApplyPendingAutofill(context) {
-	if (applyingPendingAutofill || !context?.passwordInput) return false;
+	if (applyingPendingAutofill || context?.passwordMode !== "login" || !context?.passwordInput) return false;
 	applyingPendingAutofill = true;
 	try {
 		const pending = await getPendingAutofill();
@@ -1430,4 +1497,26 @@ function escapeHtml(value) {
 		.replaceAll(">", "&gt;")
 		.replaceAll('"', "&quot;")
 		.replaceAll("'", "&#39;");
+}
+
+function generatePasswordForContext(message, sendResponse) {
+	checkRouteChange();
+	const context = getPageLoginContext();
+	const fields = context?.newPasswordInputs || [];
+	if (!fields.length || message.formToken !== getFormToken(context) || fields.some(input => !input.isConnected || input.readOnly || input.value || (input.maxLength > 0 && input.maxLength < 24))) {
+		sendResponse({ ok: false, message: 'Yeni şifre alanları boş olmalı; formu yeniden kontrol edin.' }); return;
+	}
+	// Uniform 64-symbol sampling; reject candidates missing a character category.
+	const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
+	let password;
+	do { password = Array.from(crypto.getRandomValues(new Uint8Array(24)), byte => alphabet[byte & 63]).join(''); }
+	while (!/[A-Z]/.test(password) || !/[a-z]/.test(password) || !/[0-9]/.test(password) || !/[-_]/.test(password));
+	const token = getFormToken(context);
+	for (const input of fields) {
+		if (!input.isConnected || token !== getFormToken(getPageLoginContext()) || input.value) {
+			sendResponse({ ok: false, message: 'Form değişti.' }); return;
+		}
+		setNativeValue(input, password);
+	}
+	sendResponse({ ok: true, message: 'Yeni şifre üretildi. Siteye gönderin, sonra kaydetmeyi onaylayın.' });
 }

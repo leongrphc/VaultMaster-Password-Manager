@@ -141,3 +141,28 @@ test('2FA challenge does not establish a session or retain a password', async ()
   assert.equal(storage.session.values.has('vaultmasterNativeSession'), false);
   await session.login({ email, password, code: '123456' }); assert.ok(session.key);
 });
+
+test('save preview requires the same record and ciphertext at confirmation', async () => {
+  const { session, state } = await fixture(); await login(session);
+  const credential = { url: record.url, username: record.username, password: 'changed-password' };
+  const preview = (await session.request('VM_PREVIEW_LOGIN_SAVE_REQUEST', { credential })).payload;
+  assert.equal(preview.operation, 'update'); assert.equal(preview.itemId, 'item-1'); assert.equal(state.saved, undefined);
+  const changed = await encryptJSON({ ...record, notes: 'edited elsewhere' }, key);
+  state.items = [{ ...encryptedItem, encryptedData: changed.ciphertext, iv: changed.iv }];
+  assert.equal((await session.request('VM_SAVE_LOGIN_REQUEST', { credential, expectedSave: preview })).payload.status, 'save_conflict');
+  assert.equal(state.saved, undefined);
+});
+
+test('create preview cannot silently become an update and duplicate accounts are rejected', async () => {
+  const { session, state } = await fixture(); await login(session);
+  const credential = { url: record.url, username: 'new-user', password: 'new-password' };
+  const preview = (await session.request('VM_PREVIEW_LOGIN_SAVE_REQUEST', { credential })).payload;
+  assert.equal(preview.operation, 'create');
+  const added = await encryptJSON({ ...record, username: credential.username }, key);
+  state.items = [...state.items, { id: 'new-item', encryptedData: added.ciphertext, iv: added.iv }];
+  assert.equal((await session.request('VM_SAVE_LOGIN_REQUEST', { credential, expectedSave: preview })).payload.status, 'save_conflict');
+  state.items.push({ ...state.items[1], id: 'duplicate' });
+  assert.equal((await session.request('VM_PREVIEW_LOGIN_SAVE_REQUEST', { credential })).payload.status, 'ambiguous_accounts');
+  assert.equal((await session.request('VM_SAVE_LOGIN_REQUEST', { credential })).payload.status, 'ambiguous_accounts');
+  assert.equal(state.saved, undefined);
+});
