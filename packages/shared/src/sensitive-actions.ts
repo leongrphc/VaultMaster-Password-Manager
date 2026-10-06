@@ -16,10 +16,14 @@ export function sensitiveAction(method: string, path: string): string | null {
   if (/^\/devices\/[^/]+$/.test(path) && ['PATCH', 'DELETE'].includes(method)) return method === 'PATCH' ? 'security.session.rename' : 'security.session.revoke';
   if (method === 'GET' && path === '/backups/snapshot') return 'vault.backup.export';
   if (method === 'POST' && path === '/auth/export-authorize') return 'vault.export';
+  if (path === '/key-exchange/key' && ['POST', 'DELETE'].includes(method)) return 'exchange.key';
+  if (method === 'POST' && (path === '/key-exchange' || /^\/key-exchange\/[^/]+\/(accept|request|grant|reject|revoke|open)$/.test(path))) return 'exchange.approval';
   return null;
 }
 
 export const SECURITY_MESSAGES: Record<string, string> = {
+  'exchange.key': 'Paylaşım cihaz anahtarı değiştirildi. Önceki davetler geçersiz olabilir.',
+  'exchange.approval': 'Paylaşım veya acil durum erişimi işlemi açıkça onaylandı.',
   'auth.login': 'Yeni bir oturum açıldı. Tanımıyorsanız oturumları kontrol edin.',
   'auth.login.2fa': 'İki adımlı doğrulama ile yeni bir oturum açıldı.',
   'auth.refresh.reuse_detected': 'Oturum yenileme bilgisi tekrar kullanıldı; bu oturum güvenlik için kapatıldı.',

@@ -105,14 +105,16 @@ jobs:
           pnpm package:extension test-results/extension-second.zip
           cmp test-results/extension-first.zip test-results/extension-second.zip
           pnpm verify:extension test-results/extension-first.zip
-      - name: Run isolated rollback and observability drill
+      - name: Install recovery tools and verify unsafe historical rollback is blocked
         run: |
           sudo apt-get update
           sudo apt-get install -y postgresql postgresql-client
-          pnpm drill:observability-rollback
+          node --test scripts/tests/key-exchange-rollback.test.mjs
       - name: Run unit and database integration tests
         run: pnpm test
       - name: Install Chromium
         run: pnpm exec playwright install --with-deps chromium
       - name: Test the web app and real browser extension
         run: pnpm test:web:browser && pnpm test:extension:browser
+      - name: Verify client sharing and emergency recovery with isolated API and Chromium
+        run: bash scripts/key-exchange-checks.sh

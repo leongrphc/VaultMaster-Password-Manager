@@ -22,6 +22,7 @@ import devicesRoutes from "./routes/devices.routes.js";
 import auditRoutes from "./routes/audit.routes.js";
 import sharedVaultRoutes from "./routes/shared-vault.routes.js";
 import emergencyAccessRoutes from "./routes/emergency-access.routes.js";
+import keyExchangeRoutes from "./routes/key-exchange.routes.js";
 import backupsRoutes from "./routes/backups.routes.js";
 import { webSessionProtection } from "./utils/web-session.js";
 import { logInfo } from "./utils/logger.js";
@@ -127,6 +128,7 @@ export function createApp(): Express {
   app.use("/api/auth/webauthn", webAuthnRoutes);
   app.use("/api/devices", devicesRoutes);
   app.use("/api/audit-events", auditRoutes);
+  app.use("/api/key-exchange", keyExchangeRoutes);
   app.use("/api/shared-vaults", sharedVaultRoutes);
   app.use("/api/emergency-access", emergencyAccessRoutes);
   app.use("/api/vault", vaultRoutes);

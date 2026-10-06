@@ -455,3 +455,15 @@ and a trusted verified-backup heartbeat. The pinned local compatibility target
 predates log privacy hardening and is **not** approved for production rollback.
 The isolated drill verifies candidate/prior/forward API switching with synthetic
 data; no provider deployment or traffic rollback is claimed.
+
+## Client key exchange (P2-2)
+
+Apply `20261006030000_client_key_exchange` before the API, then rebuild/publish
+web and extension. Read [protocol, approval, compatibility and recovery limits](docs/CLIENT_KEY_EXCHANGE.md).
+Legacy raw-ciphertext sharing/emergency routes now return generic 410; their rows
+remain intact and require explicit v1 recreation. Emergency snapshots require an
+online unlocked owner grant after the wait, with no automatic/offline release.
+Personal backups exclude contact keys/relationships; server dumps include encrypted
+device wrappers/grants. Do not roll back to the legacy API authorization behavior.
+Run `bash scripts/key-exchange-checks.sh` after a static build for isolated real
+API/Chromium/recovery verification; no deployment connection URL is accepted.

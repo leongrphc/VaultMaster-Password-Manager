@@ -435,3 +435,15 @@ test('stored passkey cancel, foreign origins, frames and expired pending request
   assert.equal((await background.send({ type: 'PASSKEY_CANCEL', requestId: 'cancel' }, sender)).ok, true);
   assert.equal((await background.send({ type: 'PASSKEY_POLL', requestId: 'cancel' }, sender)).ok, false);
 });
+
+
+test('sharing management opens only from protected popup; pages cannot create or approve exchanges', async () => {
+  const fixture = await loadBackground();
+  const created = []; chrome.tabs.create = async options => { created.push(options); };
+  assert.equal((await fixture.send({ type: 'OPEN_SHARING_SETTINGS' })).ok, false);
+  assert.deepEqual(created, []);
+  assert.equal((await fixture.send({ type: 'OPEN_SHARING_SETTINGS' }, { id: chrome.runtime.id, url: chrome.runtime.getURL('popup.html') })).ok, true);
+  assert.deepEqual(created, [{ url: 'http://localhost:3000/vault/settings/?tab=sharing' }]);
+  const denied = await fixture.send({ type: 'OPEN_SHARING_SETTINGS' }, { id: chrome.runtime.id, url: chrome.runtime.getURL('content.js') });
+  assert.equal(denied.ok, false); assert.equal(created.length, 1);
+});

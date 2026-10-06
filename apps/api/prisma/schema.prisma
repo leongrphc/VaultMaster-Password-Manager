@@ -114,6 +114,7 @@ model Device {
   refreshTokenHash         String? @unique
   previousRefreshTokenHash String? @unique
   refreshTokenReusedAt     DateTime?
+  exchangeKey ExchangeKey?
   auditEvents              AuditEvent[]
   reauthentications Reauthentication[]
 
@@ -296,4 +297,34 @@ model SecurityNotification {
   readAt DateTime?
   @@index([userId, createdAt], map: "security_notifications_user_created")
   @@map("security_notifications")
+}
+
+// v1 immutable snapshot exchange. Device deletion cascades keys and grants.
+model ExchangeKey {
+  id String @id
+  deviceId String @unique
+  device Device @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  card Json
+  wrapped String
+  iv String
+  sent ExchangeGrant[] @relation("ExchangeSender")
+  received ExchangeGrant[] @relation("ExchangeRecipient")
+  @@map("exchange_keys")
+}
+model ExchangeGrant {
+  id String @id
+  senderKeyId String
+  sender ExchangeKey @relation("ExchangeSender", fields: [senderKeyId], references: [id], onDelete: Cascade)
+  recipientKeyId String
+  recipient ExchangeKey @relation("ExchangeRecipient", fields: [recipientKeyId], references: [id], onDelete: Cascade)
+  kind String
+  status String @default("pending")
+  revision Int @default(0)
+  expiresAt DateTime
+  requestedAt DateTime?
+  waitHours Int @default(24)
+  envelope Json?
+  creationHash String
+  @@index([recipientKeyId, expiresAt])
+  @@map("exchange_grants")
 }

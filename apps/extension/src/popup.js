@@ -348,3 +348,8 @@ async function renderPasskeyRequests(tabId) {
   }
   return true;
 }
+
+// Management uses the web's own device/session and explicit approval dialogs.
+document.getElementById('open-sharing-button').addEventListener('click', () => {
+  chrome.runtime.sendMessage({ type: 'OPEN_SHARING_SETTINGS' });
+});

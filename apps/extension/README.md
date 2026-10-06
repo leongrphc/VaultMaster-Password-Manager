@@ -246,3 +246,18 @@ is claimed. The initial subset requires a top-level secure page, an exact-host
 RP ID, ES256 and none attestation; required UV, parent-domain RPs and other
 unsupported capabilities retain native WebAuthn. See the
 [passkey policy and recovery/deployment limits](../../docs/VAULT_PASSKEYS.md).
+
+## Paylaşım ve acil durum erişimi
+
+Korunan eklenti penceresindeki **Paylaşım ve Acil Durum Erişimi** düğmesi web
+ayarlarını açar. Web kendi oturumuyla giriş ve kasa kilidi açma ister; eklentinin
+anahtarı veya oturumu aktarılmaz. Kişi kartlarını güvenilir başka bir kanalda
+karşılaştırın. Paylaşım, kabul, iptal, acil talep ve kasa görüntüsünü paylaşma
+ayrı açık onay ve yeniden doğrulama gerektirir. Eklenti doğrudan davet oluşturmaz
+ve kabul etmez; webde incelenip açıkça kişisel kasaya eklenen öğeler normal
+şifreli eşitleme ve otomatik doldurmada kullanılabilir.
+
+Acil erişim için çevrimiçi ve kasası açık kasa sahibinin bekleme süresinden sonra
+onayı gerekir. Çevrimdışı veya otomatik kurtarma yoktur. Önceden alınmış kopyalar
+iptalle silinmez; kişi kartları ve davetler kişisel yedeğe dahil edilmez. Cihaz
+veya oturum silinirse yeni kart/davet gerekir. [Protokol ve sınırlar](../../docs/CLIENT_KEY_EXCHANGE.md).

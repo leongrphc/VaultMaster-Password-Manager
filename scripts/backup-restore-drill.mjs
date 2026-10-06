@@ -4,7 +4,7 @@ import { randomUUID, createHash, randomBytes } from 'node:crypto';
 import { readFile, writeFile } from 'node:fs/promises';
 import { execFileSync } from 'node:child_process';
 import { createRequire } from 'node:module';
-import { createStoredPasskey, signStoredPasskey, createVaultKey, exportMasterKeyBase64, encryptJSON, encryptBinary, decryptJSON, decryptBinary } from '../packages/crypto/dist/index.js';
+import { createExchangeIdentity, wrapExchangeIdentity, unwrapExchangeIdentity, contactFingerprint, sealExchange, openExchange, createStoredPasskey, signStoredPasskey, createVaultKey, exportMasterKeyBase64, encryptJSON, encryptBinary, decryptJSON, decryptBinary } from '../packages/crypto/dist/index.js';
 import { build } from 'esbuild';
 
 const work = process.env.VM_DRILL_WORK;
@@ -27,7 +27,7 @@ const evidence = { formatVersion: 1, timestamp: new Date().toISOString(),
   scope: 'synthetic-only; local Unix socket; TCP disabled', status: 'incomplete', checks: {} };
 const { server, baseUrl } = await startTestServer();
 const originalTransaction = prisma.$transaction.bind(prisma);
-let source, target;
+let source, target, exchangePeer;
 const date = new Date('2026-01-02T03:04:05.000Z');
 const counts = async userId => ({
   folders: await prisma.folder.count({ where: { userId } }),
@@ -155,6 +155,27 @@ try {
   assert.equal(await prisma.backupTransferChunk.count(), 0);
   evidence.checks.restore = { counts: expected, uploadChunks: encoded.manifest.chunkCount, duplicateUploads: 'accepted', concurrentAndSequentialRetries: 'one receipt; no duplicates', destinationDecryption: 'all content types passed', existingItemUnchanged: true };
 
+  // P2-2: device keys/grants are operational state, excluded from personal files.
+  // Persist a real authenticated emergency envelope and verify it after pg_restore.
+  await prisma.abuseBucket.deleteMany();
+  exchangePeer = await registerUser(baseUrl);
+  const peerDevice = await prisma.device.findFirstOrThrow({ where: { userId: exchangePeer.data.user.id } });
+  const targetDevice = await prisma.device.findFirstOrThrow({ where: { userId: target.data.user.id } });
+  const exchangeSender = await createExchangeIdentity(), exchangeRecipient = await createExchangeIdentity();
+  const senderWrapped = await wrapExchangeIdentity(exchangeSender, await createVaultKey(), peerDevice.id);
+  const recipientWrapped = await wrapExchangeIdentity(exchangeRecipient, targetKey, targetDevice.id);
+  for (const [identity, wrapped, device] of [[exchangeSender, senderWrapped, peerDevice], [exchangeRecipient, recipientWrapped, targetDevice]]) {
+    await prisma.exchangeKey.create({ data: { id: identity.card.id, deviceId: device.id, card: identity.card, wrapped: wrapped.ciphertext, iv: wrapped.iv } });
+  }
+  const exchangeContext = { id: randomUUID(), kind: 'emergency', sender: await contactFingerprint(exchangeSender.card), recipient: await contactFingerprint(exchangeRecipient.card), expiresAt: new Date(Date.now() + 86400000).toISOString(), revision: 3 };
+  const exchangeEnvelope = await sealExchange(payload, exchangeSender, exchangeRecipient.card, exchangeContext);
+  await prisma.exchangeGrant.create({ data: { id: exchangeContext.id, senderKeyId: exchangeSender.card.id, recipientKeyId: exchangeRecipient.card.id, kind: 'emergency', status: 'granted', revision: 3, expiresAt: new Date(exchangeContext.expiresAt), envelope: exchangeEnvelope, creationHash: 'synthetic-recovery-receipt' } });
+
+  const personalAfterEnrollment = await api('/api/backups/snapshot', { headers: targetHeaders });
+  assert.deepEqual(Object.keys(personalAfterEnrollment.snapshot).sort(), ['folders', 'items']);
+  const personalSerialized = JSON.stringify(personalAfterEnrollment.snapshot);
+  for (const excluded of [exchangeRecipient.card.id, exchangeSender.card.id, recipientWrapped.ciphertext, exchangeContext.id]) assert.equal(personalSerialized.includes(excluded), false);
+
   // Exercise operational PostgreSQL backup and recovery, separate from personal export.
   const pg = (tool, args) => execFileSync(`${process.env.VM_DRILL_PGBIN}/${tool}`, args, { stdio: 'pipe' });
   pg('pg_dump', ['-h', `${work}/socket`, '-U', 'drill', '-d', 'drill_source', '-Fc', '-f', `${work}/server.dump`]);
@@ -170,11 +191,19 @@ try {
   const recoveredItem = await recoveredDb.vaultItem.findUniqueOrThrow({ where: { id: restored[0].id } });
   assert.deepEqual(await decryptJSON(recoveredItem.encryptedData, recoveredItem.iv, targetKey), payload);
   await verifyRecoveredPasskey(await decryptJSON(recoveredItem.encryptedData, recoveredItem.iv, targetKey));
+  const restoredExchangeKey = await recoveredDb.exchangeKey.findUniqueOrThrow({ where: { id: exchangeRecipient.card.id } });
+  const restoredIdentity = await unwrapExchangeIdentity({ ciphertext: restoredExchangeKey.wrapped, iv: restoredExchangeKey.iv }, restoredExchangeKey.card, targetKey, restoredExchangeKey.deviceId);
+  const restoredGrant = await recoveredDb.exchangeGrant.findUniqueOrThrow({ where: { id: exchangeContext.id } });
+  const recoveredExchangeData = await openExchange(restoredGrant.envelope, restoredIdentity, exchangeSender.card, exchangeContext);
+  assert.deepEqual(recoveredExchangeData, payload);
+  await verifyRecoveredPasskey(recoveredExchangeData);
+  evidence.checks.clientKeyExchangeRecovery = { wrappedDeviceKey: 'verified after database restore', authenticatedEmergencyEnvelope: 'decrypted and passkey signature verified', personalBackupRelationships: 'excluded; re-enrollment required', sourceVaultKeyShared: false };
   evidence.checks.vaultPasskeyRecovery = { personalFile: true, databaseDump: true, verifiedAssertions: 2 };
   evidence.checks.postgresqlRecovery = { format: 'pg_dump custom / pg_restore --exit-on-error', tablesCompared: tables.length, everyRowEqual: true, destinationDecryption: 'passed', dumpSha256: createHash('sha256').update(await readFile(`${work}/server.dump`)).digest('hex') };
   // The recovered database includes synthetic auth/session state; remove it too.
   await recoveredDb.user.deleteMany();
   await prisma.user.delete({ where: { id: target.data.user.id } }); target = null;
+  await prisma.user.delete({ where: { id: exchangePeer.data.user.id } }); exchangePeer = null;
   for (const db of [prisma, recoveredDb]) {
     await db.abuseBucket.deleteMany(); // Synthetic rate budgets have no account FK.
     for (const { tablename } of tables.filter(table => table.tablename !== '_prisma_migrations')) {
@@ -187,6 +216,7 @@ try {
   prisma.$transaction = originalTransaction;
   if (source?.data?.user) await prisma.user.delete({ where: { id: source.data.user.id } });
   if (target?.data?.user) await prisma.user.delete({ where: { id: target.data.user.id } });
+  if (exchangePeer?.data?.user) await prisma.user.delete({ where: { id: exchangePeer.data.user.id } });
   await stopTestServer(server);
   await prisma.$disconnect();
   await recoveredDb.$disconnect();

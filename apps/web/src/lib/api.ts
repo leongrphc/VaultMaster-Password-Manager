@@ -115,6 +115,9 @@ async function mutateSession<T>(operation: () => Promise<T>): Promise<T> {
 }
 
 export const api = {
+  exchange: {
+    call: <T>(path: string, method = "GET", body?: unknown) => request<{ data: T }>(`/key-exchange${path}`, { method, body }),
+  },
   backups: {
     importState: (token: string) => request<{ data: import("./import-conflicts").ImportState }>("/backups/import-state", { token }),
     snapshot: async (token: string, guard = () => {}) => {

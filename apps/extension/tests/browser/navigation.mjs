@@ -109,6 +109,18 @@ test('real independent extension logs in, fills, locks, restarts and saves witho
       throw new Error(`${await popup.locator('#status').innerText()} | ${JSON.stringify(pageErrors)} | ${probe}`, { cause: error });
     }
     assert.equal(await popup.locator('#master-password').inputValue(), '');
+    await t.test('protected sharing shortcut opens web settings without transferring native secrets', async () => {
+      const newTab = context.waitForEvent('page');
+      await popup.getByRole('button', { name: 'Paylaşım ve Acil Durum Erişimi', exact: true }).click();
+      const management = await newTab;
+      // The fixture deliberately has no web server. Inspect Chrome's requested
+      // destination without requiring a successful web navigation.
+      const requestedUrl = await worker.evaluate(async () => (await chrome.tabs.query({})).map(tab => tab.pendingUrl || tab.url).find(url => url?.includes('/vault/settings/?tab=sharing')));
+      assert.equal(new URL(requestedUrl).searchParams.get('tab'), 'sharing');
+      assert.ok(!requestedUrl.includes(rawKey) && !requestedUrl.includes(email));
+      await management.close(); await popup.bringToFront();
+    });
+
     assert.ok(!context.pages().some(page => page.url().startsWith('http://localhost:3000')));
     await context.route(/https?:\/\/(example|evil|example.test.evil)\.test\//, route => {
       const step = new URL(route.request().url()).pathname;

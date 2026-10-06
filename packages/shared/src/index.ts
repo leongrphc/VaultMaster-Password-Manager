@@ -6,3 +6,4 @@ export * from "./sensitive-actions.js";
 export * from "./import.js";
 export { newCorrelationId, structuredEvent, safeTelemetryEvent, eventNames } from './observability.js';
 export type { EventName } from './observability.js';
+export * from './key-exchange.js';

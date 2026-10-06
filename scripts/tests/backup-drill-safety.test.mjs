@@ -5,16 +5,17 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 
-const script = new URL('../backup-restore-drill.sh', import.meta.url).pathname;
+for (const harness of ['backup-restore-drill.sh', 'key-exchange-checks.sh']) {
+const script = new URL('../' + harness, import.meta.url).pathname;
 
-test('drill rejects supplied database arguments before provisioning', () => {
+test(harness + ' rejects supplied database arguments before provisioning', () => {
   const result = spawnSync('bash', [script, 'postgresql://synthetic-sentinel.invalid/db'], { encoding: 'utf8' });
   assert.equal(result.status, 1);
   assert.match(result.stderr, /accepts no database URLs or arguments/);
   assert.ok(!result.stderr.includes('synthetic-sentinel'));
 });
 
-test('drill discards connection, telemetry and Node preload settings before invoking tools', () => {
+test(harness + ' discards connection, telemetry and Node preload settings before invoking tools', () => {
   const directory = mkdtempSync(join(tmpdir(), 'vm-drill-safety-'));
   try {
     // Stop at prerequisite validation, so this safety test needs no database.
@@ -35,3 +36,5 @@ printf '%s\\n' '/missing-drill-postgresql-tools'
     rmSync(directory, { recursive: true, force: true });
   }
 });
+
+}

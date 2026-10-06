@@ -9,3 +9,4 @@ export { generatePassword, generatePassphrase, calculateStrength, getStrengthLab
 export { arrayBufferToBase64, base64ToArrayBuffer, arrayBufferToHex, hexToArrayBuffer, generateRandomBytes } from "./utils.js";
 export { encryptChunkedBackup, decryptChunkedBackup, BACKUP_CHUNK_BYTES, MAX_CHUNKED_BACKUP_BYTES, MAX_CHUNKED_BACKUP_FILE_BYTES, type ChunkedBackup } from "./chunked-backup.js";
 export { createStoredPasskey, signStoredPasskey, isStoredPasskey, validatePasskeyRequest, passkeyBase64, passkeyBytes, type PasskeyRequest, type StoredPasskey } from './passkey.js';
+export * from './key-exchange.js';

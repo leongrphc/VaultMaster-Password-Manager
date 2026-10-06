@@ -1,0 +1,122 @@
+{
+  "formatVersion": 1,
+  "timestamp": "2026-10-06T15:36:30.657Z",
+  "revision": "54f9b1699d376234f4376f85a4598e8ef2e588ce",
+  "implementationSha256": {
+    "harness": "06bb0c3cf6728a509ba6026069fee6da86fe407a24ffb8395212cc11f4f3ef3d",
+    "scenario": "24e138550064af0b24d986ca0b5160c2eadb0f88196625a47d8ec2b52f140488",
+    "scripts/key-exchange-checks.sh": "f68bb42e3b11b6b8d33b06ad1d6545613b740b8d7092c689961272b73d1edc00",
+    "tests/recovery/key-exchange.mjs": "a76c75822814a1abd9f6efc9905c71969509fd38a7e184214eea88825ae243f0",
+    "packages/crypto/src/key-exchange.ts": "0aaba29ea240515ae140cb7be7f026e6ad2ea240f1bd6e4a01f9edb8ca808f13",
+    "apps/api/src/routes/key-exchange.routes.ts": "2f22dbc403a3272d60e40c2a46ba91bef26b749949d6ab0c8841a207b407be40",
+    "apps/web/src/lib/key-exchange.ts": "82c0e7193ddd57a543080c7d4008a8b086e3d8717e4dd83f33291bcac13d8223",
+    "apps/web/src/components/vault/KeyExchangePanel.tsx": "f8eacb47e59b93d65d641b01bf7130d8f77dcea9f68221535f8fc38d000195d9",
+    "packages/shared/src/key-exchange.ts": "b079ee3f2fafe7ffb6dda59dac3c072873826efe5332a06bc1adf9582c2bc3f4",
+    "apps/api/prisma/migrations/20261006030000_client_key_exchange/migration.sql": "87de7243783b9ef07476ca4558e619fa012625f3e246f86c5e6a94f40d26a3c1"
+  },
+  "nodeVersion": "v26.10.0",
+  "postgresqlVersion": "pg_dump (PostgreSQL) 18.6 (Ubuntu 18.6-0ubuntu0.26.04.1)",
+  "scope": "synthetic-only; local Unix socket; TCP disabled",
+  "status": "passed",
+  "checks": {
+    "personalBackup": {
+      "version": 4,
+      "exportChunks": 5,
+      "fileChunks": 5,
+      "sourceDeletedBeforeRecovery": true
+    },
+    "rollback": {
+      "injectedAt": "receipt creation after all inserts",
+      "httpStatus": 500,
+      "before": {
+        "folders": 0,
+        "items": 1,
+        "versions": 0,
+        "attachments": 0,
+        "receipts": 0
+      },
+      "insideTransaction": {
+        "folders": 1,
+        "items": 3,
+        "versions": 1,
+        "attachments": 1
+      },
+      "after": {
+        "folders": 0,
+        "items": 1,
+        "versions": 0,
+        "attachments": 0,
+        "receipts": 0
+      },
+      "stagedChunksRetained": true,
+      "existingItemUnchanged": true
+    },
+    "restore": {
+      "counts": {
+        "folders": 1,
+        "items": 2,
+        "trash": 1,
+        "versions": 1,
+        "attachments": 1
+      },
+      "uploadChunks": 5,
+      "duplicateUploads": "accepted",
+      "concurrentAndSequentialRetries": "one receipt; no duplicates",
+      "destinationDecryption": "all content types passed",
+      "existingItemUnchanged": true
+    },
+    "clientKeyExchangeRecovery": {
+      "wrappedDeviceKey": "verified after database restore",
+      "authenticatedEmergencyEnvelope": "decrypted and passkey signature verified",
+      "personalBackupRelationships": "excluded; re-enrollment required",
+      "sourceVaultKeyShared": false
+    },
+    "vaultPasskeyRecovery": {
+      "personalFile": true,
+      "databaseDump": true,
+      "verifiedAssertions": 2
+    },
+    "postgresqlRecovery": {
+      "format": "pg_dump custom / pg_restore --exit-on-error",
+      "tablesCompared": 21,
+      "everyRowEqual": true,
+      "destinationDecryption": "passed",
+      "dumpSha256": "0a895020cb143984f69028a8aa09dffe59f47f8fdc5dc221163eca477e2bc01e"
+    },
+    "p2Verification": {
+      "apiTests": 71,
+      "webTests": 119,
+      "cryptoTests": 24,
+      "extensionTests": 82,
+      "webChromiumChecks": 3,
+      "extensionChromiumChecks": 24,
+      "realApiChromiumSharingEmergency": "passed",
+      "frozenInstall": "passed",
+      "typecheck": "passed",
+      "lint": "passed with two existing warnings",
+      "staticAndApiBuild": "passed",
+      "dependencyReview": "passed with two existing reviewed advisory constraints",
+      "criticalDependencyGate": "passed",
+      "safetyPrivacyDocsGates": "passed",
+      "reproducibleExtensionArchive": "byte-identical; verified",
+      "personalBackupDrill": "passed separately"
+    },
+    "historicalRollback": {
+      "status": "blocked by unchanged schema/dependency guard",
+      "oldArtifactApprovedForProduction": false,
+      "denialGate": "passed",
+      "historicalArtifactRehearsal": "not passed; forward fix or independently reviewed replacement required"
+    },
+    "verificationProvenance": {
+      "dedicatedApiChromiumRecoveryTimestamp": "2026-10-06T15:28:31.245Z",
+      "standaloneRecoveryTimestamp": "2026-10-06T15:36:30.657Z",
+      "standaloneAlsoVerifiesPersonalExportExcludesEnrolledKeysAndRelationships": true,
+      "protocolAndBrowserSourceUnchangedBetweenRuns": true
+    }
+  },
+  "cleanup": {
+    "accountsAndTransfers": "verified-empty",
+    "cluster": "stopped",
+    "temporaryFiles": "removed"
+  }
+}

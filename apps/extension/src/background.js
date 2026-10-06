@@ -198,6 +198,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 			.catch(() => sendResponse({ ok: false, payload: { status: "error" } }));
 		return true;
 	}
+  if (message?.type === 'OPEN_SHARING_SETTINGS') {
+    if (sender.id !== chrome.runtime.id || sender.url !== chrome.runtime.getURL('popup.html')) {
+      rejectInvalidPayload(sendResponse); return true;
+    }
+    void chrome.tabs.create({ url: new URL('/vault/settings/?tab=sharing', APP_URL).href })
+      .then(() => sendResponse({ ok: true })).catch(() => sendResponse({ ok: false }));
+    return true;
+  }
 	if (message?.type === "OPEN_VAULTMASTER") {
 		void openVaultMaster(sendResponse);
 		return true;
