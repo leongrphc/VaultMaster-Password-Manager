@@ -39,6 +39,12 @@ export const personalSnapshotSchema = z.object({
 
 export const restoreBackupSchema = z.object({
   backupId: id, snapshot: personalSnapshotSchema,
+  review: z.object({
+    state: z.string().regex(/^[a-f0-9]{64}$/),
+    folderMap: z.record(z.string().uuid(), z.string().uuid()),
+    replacements: z.record(z.string().uuid(), z.string().uuid()),
+    overwriteApproved: z.boolean(),
+  }).strict().optional(),
 }).strict();
 export type PersonalSnapshot = z.infer<typeof personalSnapshotSchema>;
 export type RestoreBackupInput = z.infer<typeof restoreBackupSchema>;

@@ -110,6 +110,7 @@ async function mutateSession<T>(operation: () => Promise<T>): Promise<T> {
 
 export const api = {
   backups: {
+    importState: (token: string) => request<{ data: import("./import-conflicts").ImportState }>("/backups/import-state", { token }),
     snapshot: async (token: string, guard = () => {}) => {
       guard();
       const response = await request<{ data: { transferId: string; totalBytes: number; chunkCount: number } }>("/backups/snapshot?version=4", { token });

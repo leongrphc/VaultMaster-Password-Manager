@@ -5,7 +5,7 @@ import { createServer } from 'node:http';
 import { readFile, stat } from 'node:fs/promises';
 import { resolve, join, extname, sep } from 'node:path';
 import { chromium, expect } from '@playwright/test';
-import { deriveMasterKey, generateAuthHash, encryptJSON, exportMasterKeyBase64, unwrapVaultKey } from '../../packages/crypto/dist/index.js';
+import { deriveMasterKey, generateAuthHash, encryptJSON, exportMasterKeyBase64, unwrapVaultKey, importMasterKey } from '../../packages/crypto/dist/index.js';
 
 // Uses the built static export and intercepts every API request. No live account
 // or production database is accessed. Run a static web build before this test.
@@ -39,6 +39,7 @@ test('web preserves its random data key through password change, reload and unlo
     let vaultKeyEnvelope;
     const backupId = crypto.randomUUID();
     let restoreCalls = 0;
+    let csvReceipt;
     let exportBytes;
     const restoreChunks = [];
     let sessionExpired = false;
@@ -81,6 +82,7 @@ test('web preserves its random data key through password change, reload and unlo
         data = { proof, expiresIn: 300 };
       }
       else if (pathname.endsWith('/auth/security-notifications')) data = notifications;
+      else if (pathname.endsWith('/backups/import-state')) data = { state: 'a'.repeat(64), folders: [], items: [{ id: '00000000-0000-4000-8000-000000000001', folderId: null, favorite: false, deletedAt: null, encryptedData: encrypted.ciphertext, iv: encrypted.iv, createdAt: timestamp, updatedAt: timestamp, _count: { versions: 0, attachments: 0 } }] };
       else if (pathname.endsWith('/backups/snapshot')) {
         const snapshot = { backupId, exportedAt: timestamp, sourceEmail: email, snapshot: { folders: [], items: [{
           id: crypto.randomUUID(), folderId: null, favorite: false, deletedAt: null,
@@ -103,10 +105,22 @@ test('web preserves its random data key through password change, reload and unlo
       }
       else if (pathname.endsWith('/backups/transfers/restore-transfer/commit')) {
         const body = JSON.parse(Buffer.concat(restoreChunks).toString('utf8'));
-        assert.equal(body.backupId, backupId);
+        if (body.backupId === backupId) assert.equal(body.snapshot.items.length, 0);
+        else if (body.snapshot.items.length) { assert.equal(body.review.overwriteApproved, true); assert.equal(Object.values(body.review.replacements)[0], '00000000-0000-4000-8000-000000000001'); assert.equal(body.snapshot.items.length, 1); }
+        assert.ok(body.review);
         assert.ok(!JSON.stringify(body).includes(keyBase64));
         assert.ok(!JSON.stringify(body).includes('fixture-secret'));
-        data = { alreadyRestored: restoreCalls++ > 0, counts: { folders: 0, items: 1, trash: 0, versions: 0, attachments: 0 } };
+        assert.ok(!JSON.stringify(body).includes('changed-fixture-secret'));
+        if (body.snapshot.items.length && !csvReceipt) {
+          csvReceipt = JSON.stringify(body); restoreCalls++;
+          // The synthetic server committed, but its response was lost.
+          return route.abort('failed');
+        }
+        if (body.snapshot.items.length) {
+          assert.equal(JSON.stringify(body), csvReceipt);
+          data = { alreadyRestored: true, counts: { folders: 0, items: 1, trash: 0, versions: 0, attachments: 0 } };
+        } else data = { alreadyRestored: false, counts: { folders: 0, items: 0, trash: 0, versions: 0, attachments: 0 } };
+        if (!body.snapshot.items.length) restoreCalls++;
       }
       else if (pathname.includes('/backups/transfers/') && route.request().method() === 'DELETE') data = {};
       else if (pathname.endsWith('/auth/change-password')) {
@@ -207,15 +221,42 @@ test('web preserves its random data key through password change, reload and unlo
     await page.getByLabel('Tam yedek dosyası').setInputFiles({ name: 'portable-backup.json', mimeType: 'application/json', buffer: Buffer.from(backupText) });
     await page.getByLabel('Geri yüklenecek yedeğin şifresi').fill('wrong-password');
     await page.getByRole('button', { name: 'Yedeği Kontrol Et' }).click();
-    await expect(page.getByRole('alert').filter({ hasText: 'Yedek açılamadı' })).toBeVisible();
+    await expect(page.getByRole('alert').filter({ hasText: 'Yedek işlemi tamamlanamadı' })).toBeVisible();
     assert.equal(restoreCalls, 0);
     await page.getByLabel('Geri yüklenecek yedeğin şifresi').fill('Independent-backup-password-2026!');
     await page.getByRole('button', { name: 'Yedeği Kontrol Et' }).click();
-    await expect(page.getByRole('button', { name: 'Mevcut Kasaya Ekle' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'İncelemeyi Onayla ve İçe Aktar' })).toBeVisible();
     assert.equal(restoreCalls, 0);
-    await page.getByRole('button', { name: 'Mevcut Kasaya Ekle' }).click();
+    await page.getByRole('button', { name: 'İncelemeyi Onayla ve İçe Aktar' }).click();
     await expect(page.getByText('Tam yedek başarıyla geri yüklendi.', { exact: true })).toBeVisible();
     assert.equal(restoreCalls, 1);
+    // CSV review shows only fixed labels; no request commits until separate
+    // overwrite approval. Cancel leaves the vault unchanged.
+    const csv = 'title,url,username,password\nChanged,https://example.test/new,octo,changed-fixture-secret';
+    const fileInput = page.locator('input[type="file"]').last();
+    await fileInput.setInputFiles({ name: 'synthetic.csv', mimeType: 'text/csv', buffer: Buffer.from(csv) });
+    const review = page.getByLabel('İçe aktarma incelemesi');
+    await expect(review).toBeVisible();
+    assert.ok(!(await review.innerText()).includes('changed-fixture-secret'));
+    assert.ok(!(await review.innerText()).includes('octo'));
+    assert.equal(restoreCalls, 1);
+    await review.getByRole('button', { name: 'İptal', exact: true }).click();
+    assert.equal(restoreCalls, 1);
+    await fileInput.setInputFiles({ name: 'synthetic.csv', mimeType: 'text/csv', buffer: Buffer.from(csv) });
+    await expect(review).toBeVisible();
+    await review.getByLabel('Kayıt 1 kararı').selectOption('replace');
+    await expect(review.getByRole('button', { name: 'İncelemeyi Onayla ve İçe Aktar' })).toBeDisabled();
+    await review.getByRole('checkbox').check();
+    await review.getByRole('button', { name: 'İncelemeyi Onayla ve İçe Aktar' }).click();
+    await expect(page.getByText('1 öğe başarıyla içe aktarıldı', { exact: true })).toBeVisible();
+    assert.equal(restoreCalls, 2);
+    const legacy = await encryptJSON({ version: '2.0', exportDate: timestamp, itemCount: 1, folderCount: 0, folders: [], items: [{ data: { type: 'login', title: 'Encrypted browser fixture', username: 'octo', password: 'fixture-secret', url: 'https://example.test' }, folderId: null, favorite: false }] }, await importMasterKey(keyBase64));
+    await fileInput.setInputFiles({ name: 'legacy.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify({ encrypted: true, ...legacy })) });
+    await expect(review.getByText('Kayıt 1: Aynı kayıt — atlanacak')).toBeVisible();
+    assert.equal(restoreCalls, 2);
+    await review.getByRole('button', { name: 'İncelemeyi Onayla ve İçe Aktar' }).click();
+    await expect(page.getByText('0 öğe başarıyla içe aktarıldı', { exact: true })).toBeVisible();
+    assert.equal(restoreCalls, 3);
     const secondTab = await page.context().newPage();
     secondTab.on('pageerror', error => pageErrors.push(error.message));
     await secondTab.goto(`http://127.0.0.1:${server.address().port}/vault/`);

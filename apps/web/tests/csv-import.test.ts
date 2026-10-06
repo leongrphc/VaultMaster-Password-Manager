@@ -81,3 +81,15 @@ describe("parseVaultCsv", () => {
     expect(() => parseVaultCsv("foo,bar\n1,2")).toThrow(CsvImportError);
   });
 });
+
+it("rejects malformed quote/column/header structures and preserves password whitespace", () => {
+  for (const csv of ['title,url,username,password\n"Unclosed,https://example.test,user,secret', 'title,url,username,password\nExample,url,user', 'title,url,username,password,password\nExample,url,user,a,b']) expect(() => parseVaultCsv(csv)).toThrow(CsvImportError);
+  expect(parseVaultCsv('title,url,username,password\nExample,https://example.test, user ," secret "').items[0]).toMatchObject({ username: " user ", password: " secret " });
+});
+
+it("retains folders, favorites and semicolon-delimited tags while reporting unsupported columns", () => {
+  const result = parseVaultCsv('folder,favorite,type,name,login_uri,login_username,login_password,tags,fields\nWork,1,login,Example,https://example.test,user,secret,work;personal,unsupported-custom-field');
+  expect(result.records[0]).toMatchObject({ folderName: "Work", favorite: true, data: { tags: ["work", "personal"] } });
+  expect(result.ignoredColumns).toBe(1);
+  expect(JSON.stringify({ skipped: result.skipped, ignoredColumns: result.ignoredColumns })).not.toContain("unsupported-custom-field");
+});

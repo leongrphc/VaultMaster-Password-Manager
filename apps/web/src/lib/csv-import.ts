@@ -19,6 +19,8 @@ export interface CsvImportResult {
   provider: CsvProvider;
   items: VaultItemData[];
   skipped: number;
+  records: Array<{ data: VaultItemData; folderName: string; favorite: boolean }>;
+  ignoredColumns: number;
 }
 
 type HeaderMap = Map<string, number>;
@@ -110,12 +112,13 @@ const MAPPINGS: CsvMapping[] = [
 ];
 
 export function parseVaultCsv(text: string): CsvImportResult {
-  const rows = parseCsv(text).filter((row) => row.some((cell) => cell.trim().length > 0));
+  const rows = parseCsv(text.replace(/^﻿/, "")).filter((row) => row.some((cell) => cell.trim().length > 0));
 
   if (rows.length < 2) {
     throw new CsvImportError("empty");
   }
 
+  if (new Set(rows[0]!.map(normalizeHeader)).size !== rows[0]!.length || rows.slice(1).some(row => row.length !== rows[0]!.length)) throw new CsvImportError("invalid");
   const headerMap = buildHeaderMap(rows[0]!);
   const mapping = detectMapping(headerMap);
 
@@ -125,6 +128,10 @@ export function parseVaultCsv(text: string): CsvImportResult {
 
   const items: VaultItemData[] = [];
   let skipped = 0;
+  const records: CsvImportResult["records"] = [];
+  const supportedHeaders = new Set([...mapping.title, ...mapping.url, ...mapping.username, ...mapping.password,
+    ...mapping.notes, ...mapping.totpSecret, ...(mapping.type ?? []), "folder", "grouping", "favorite", "fav", "tags"]);
+  const ignoredColumns = [...headerMap.entries()].filter(([header, index]) => !supportedHeaders.has(header) && rows.slice(1).some(row => row[index]?.length)).length;
 
   for (const row of rows.slice(1)) {
     if (mapping.type) {
@@ -148,6 +155,10 @@ export function parseVaultCsv(text: string): CsvImportResult {
     const notes = readValue(row, headerMap, mapping.notes);
     const totpSecret = readValue(row, headerMap, mapping.totpSecret);
 
+    const folderName = readValue(row, headerMap, ["folder", "grouping"]).trim();
+    const favoriteValue = readValue(row, headerMap, ["favorite", "fav"]).trim().toLowerCase();
+    if (folderName.length > 100 || !["", "0", "false", "1", "true"].includes(favoriteValue)) throw new CsvImportError("invalid");
+    const tags = readValue(row, headerMap, ["tags"]).split(";").map(tag => tag.trim()).filter(Boolean);
     items.push({
       type: "login",
       title,
@@ -156,14 +167,16 @@ export function parseVaultCsv(text: string): CsvImportResult {
       password,
       notes,
       ...(totpSecret ? { totpSecret } : {}),
+      ...(tags.length ? { tags: [...new Set(tags)] } : {}),
     });
+    records.push({ data: items[items.length - 1]!, folderName, favorite: ["1", "true"].includes(favoriteValue) });
   }
 
   if (items.length === 0) {
     throw new CsvImportError("empty");
   }
 
-  return { provider: mapping.provider, items, skipped };
+  return { provider: mapping.provider, items, skipped, records, ignoredColumns };
 }
 
 function parseCsv(text: string): string[][] {
@@ -171,6 +184,7 @@ function parseCsv(text: string): string[][] {
   let row: string[] = [];
   let current = "";
   let inQuotes = false;
+  let closedQuote = false;
 
   for (let i = 0; i < text.length; i++) {
     const char = text[i];
@@ -183,6 +197,7 @@ function parseCsv(text: string): string[][] {
           i++;
         } else {
           inQuotes = false;
+          closedQuote = true;
         }
       } else {
         current += char;
@@ -190,22 +205,27 @@ function parseCsv(text: string): string[][] {
       continue;
     }
 
+    if (closedQuote && ![",", "\n", "\r"].includes(char!)) throw new CsvImportError("invalid");
     if (char === '"') {
+      if (current.length) throw new CsvImportError("invalid");
       inQuotes = true;
     } else if (char === ",") {
-      row.push(current.trim());
+      row.push(current);
       current = "";
+      closedQuote = false;
     } else if (char === "\n") {
-      row.push(current.trim());
+      row.push(current);
       rows.push(row);
       row = [];
       current = "";
+      closedQuote = false;
     } else if (char !== "\r") {
       current += char;
     }
   }
 
-  row.push(current.trim());
+  if (inQuotes) throw new CsvImportError("invalid");
+  row.push(current);
   rows.push(row);
 
   return rows;
@@ -232,7 +252,7 @@ function readValue(row: string[], headerMap: HeaderMap, aliases: string[]): stri
     const index = headerMap.get(alias);
     if (index === undefined) continue;
 
-    const value = row[index]?.trim();
+    const value = row[index];
     if (value) return value;
   }
 

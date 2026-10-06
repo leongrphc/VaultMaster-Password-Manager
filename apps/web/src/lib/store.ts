@@ -125,7 +125,7 @@ interface AppStore extends AuthState, VaultState {
   exportFullBackup: (password: string) => Promise<void>;
   getVaultOperationGuard: () => () => void;
   syncExternalSession: (state: unknown) => void;
-  restoreFullBackup: (archive: BackupArchive) => Promise<{ alreadyRestored: boolean; counts: BackupCounts }>;
+  restoreFullBackup: (archive: BackupArchive, reviewedBody?: import("@vaultmaster/shared").RestoreBackupInput) => Promise<{ alreadyRestored: boolean; counts: BackupCounts }>;
   setTokens: (tokens: AuthTokens) => void;
   setMasterKey: (keyBase64: string) => void;
   bootstrapSessionSecurity: () => Promise<void>;
@@ -383,12 +383,12 @@ export const useStore = create<AppStore>()(
         } finally { URL.revokeObjectURL(url); }
       },
 
-      restoreFullBackup: async (archive) => {
+      restoreFullBackup: async (archive, reviewedBody) => {
         const epoch = vaultSecurityEpoch;
         const key = get().masterKeyBase64;
         const assertCurrent = () => requireCurrentVaultSession(get(), epoch, key);
         requireCurrentVaultSession(get(), epoch, key);
-        const body = await prepareBackupRestore(archive, key, assertCurrent);
+        const body = reviewedBody ?? await prepareBackupRestore(archive, key, assertCurrent);
         assertCurrent();
         const response = await get().runWithValidAccessToken(token => { assertCurrent(); return api.backups.restore(body, token, assertCurrent); });
         assertCurrent();

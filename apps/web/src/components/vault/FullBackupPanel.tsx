@@ -1,8 +1,11 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useStore } from "@/lib/store";
-import { openFullBackup, countBackup, type BackupArchive } from "@/lib/full-backup";
+import { openFullBackup, prepareBackupRestore, countBackup, type BackupArchive } from "@/lib/full-backup";
+import { api } from "@/lib/api";
+import { reviewImport, type ImportReview } from "@/lib/import-conflicts";
+import ImportReviewPanel from "./ImportReviewPanel";
 import { MAX_CHUNKED_BACKUP_FILE_BYTES } from "@vaultmaster/crypto";
 
 export default function FullBackupPanel() {
@@ -11,6 +14,9 @@ export default function FullBackupPanel() {
   const [restorePassword, setRestorePassword] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<BackupArchive | null>(null);
+  const [review, setReview] = useState<ImportReview | null>(null);
+  const key = useStore(state => state.masterKeyBase64);
+  useEffect(() => { setPreview(null); setReview(null); setRestorePassword(""); previewGuard.current = null; }, [key]);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
@@ -21,7 +27,7 @@ export default function FullBackupPanel() {
     const guard = useStore.getState().getVaultOperationGuard();
     setBusy(true); setMessage(""); setError("");
     try { await operation(); guard(); }
-    catch (failure) { setError(failure instanceof Error ? failure.message : "Yedek işlemi tamamlanamadı."); }
+    catch { setError("Yedek işlemi tamamlanamadı. Dosyayı, şifreyi ve kasa oturumunu kontrol edin."); }
     finally { setBusy(false); }
   };
   const counts = preview ? countBackup(preview.snapshot) : null;
@@ -46,29 +52,36 @@ export default function FullBackupPanel() {
     </form>
     <div className="border-t border-border pt-5 space-y-3">
       <h4 className="text-sm font-semibold">Tam Yedeği Geri Yükle</h4>
-      <p className="text-sm text-text-secondary">Mevcut kayıtlar korunur; yedek ayrı kayıtlar olarak eklenir. Aynı yedek bu hesapta ikinci kez eklenmez.</p>
+      <p className="text-sm text-text-secondary">Kopyalar ve çakışmalar onaydan önce incelenir. Geçmiş/ek içeren kayıtlar yalnızca atlanabilir veya ayrı kopya olarak eklenebilir.</p>
       <input ref={fileInput} aria-label="Tam yedek dosyası" type="file" accept=".json" disabled={busy} onChange={event => {
-        setPreview(null); previewGuard.current = null; setMessage(""); setError("");
+        setPreview(null); setReview(null); previewGuard.current = null; setMessage(""); setError("");
         const selected = event.target.files?.[0] ?? null;
         if (selected && selected.size > MAX_CHUNKED_BACKUP_FILE_BYTES) { setFile(null); setError("Yedek dosyası 90 MiB sınırını aşıyor."); }
         else setFile(selected);
       }} className="block w-full text-sm text-text-secondary" />
-      <input aria-label="Geri yüklenecek yedeğin şifresi" type="password" autoComplete="off" value={restorePassword} onChange={event => { setRestorePassword(event.target.value); setPreview(null); }} placeholder="Dosyanın yedek şifresi" className={inputClass} />
+      <input aria-label="Geri yüklenecek yedeğin şifresi" disabled={busy} type="password" autoComplete="off" value={restorePassword} onChange={event => { setRestorePassword(event.target.value); setPreview(null); setReview(null); }} placeholder="Dosyanın yedek şifresi" className={inputClass} />
       <button type="button" disabled={busy || !file || !restorePassword} className="rounded-xl bg-surface px-4 py-2.5 text-sm disabled:opacity-50" onClick={() => void run(async () => {
         const guard = useStore.getState().getVaultOperationGuard();
         const archive = await openFullBackup(await file!.text(), restorePassword);
-        guard(); previewGuard.current = guard; setPreview(archive);
+        guard();
+        const body = await prepareBackupRestore(archive, key!, guard);
+        const current = await useStore.getState().runWithValidAccessToken(token => { guard(); return api.backups.importState(token); });
+        const planned = await reviewImport(body, current.data, key!, guard, true);
+        guard(); previewGuard.current = guard; setPreview(archive); setReview(planned);
       })}>Yedeği Kontrol Et</button>
       {preview && counts && <div className="rounded-xl border border-accent/20 p-4 space-y-3">
         <p className="text-sm">{preview.sourceEmail} · {new Date(preview.exportedAt).toLocaleString("tr-TR")}</p>
         <p className="text-sm text-text-secondary">{counts.folders} klasör · {counts.items - counts.trash} aktif kayıt · {counts.trash} çöp kaydı · {counts.versions} geçmiş sürümü · {counts.attachments} ek</p>
-        <button type="button" disabled={busy} className="rounded-xl bg-accent px-4 py-2.5 text-sm font-semibold text-midnight disabled:opacity-50" onClick={() => void run(async () => {
-          previewGuard.current?.();
-          const result = await useStore.getState().restoreFullBackup(preview);
-          setPreview(null); previewGuard.current = null; setRestorePassword(""); setFile(null);
-          if (fileInput.current) fileInput.current.value = "";
-          setMessage(result.alreadyRestored ? "Bu yedek daha önce geri yüklenmiş; kopya eklenmedi." : "Tam yedek başarıyla geri yüklendi.");
-        })}>Mevcut Kasaya Ekle</button>
+        {review && <ImportReviewPanel key={review.body.backupId} review={review} busy={busy} cancel={() => { setPreview(null); setReview(null); previewGuard.current = null; }} commit={async body => {
+          if (!previewGuard.current) throw new Error("Import cancelled");
+          previewGuard.current(); setBusy(true); setError("");
+          try {
+            const result = await useStore.getState().restoreFullBackup(preview, body);
+            setPreview(null); setReview(null); previewGuard.current = null; setRestorePassword(""); setFile(null);
+            if (fileInput.current) fileInput.current.value = "";
+            setMessage(result.alreadyRestored ? "Bu inceleme daha önce geri yüklenmiş; kopya eklenmedi." : "Tam yedek başarıyla geri yüklendi.");
+          } finally { setBusy(false); }
+        }} />}
       </div>}
     </div>
     {busy && <p role="status" className="text-sm text-text-secondary">Yedek işleniyor…</p>}

@@ -32,6 +32,9 @@ import { CsvImportError, parseVaultCsv } from "@/lib/csv-import";
 import { importMasterKey, encryptJSON, decryptJSON } from "@vaultmaster/crypto";
 import { api } from "@/lib/api";
 import type { AuditEventResponse, DeviceResponse, EmergencyAccessGrantResponse, SharedVaultMemberResponse, VaultItemData } from "@vaultmaster/shared";
+import { legacyImportSnapshot, reviewImport, type ImportReview } from "@/lib/import-conflicts";
+import ImportReviewPanel from "@/components/vault/ImportReviewPanel";
+import type { RestoreBackupInput } from "@vaultmaster/shared";
 import TwoFactorSettings from "@/components/vault/TwoFactorSettings";
 import WebAuthnSettings from "@/components/vault/WebAuthnSettings";
 import AccountSecurityPanel from "@/components/vault/AccountSecurityPanel";
@@ -39,18 +42,6 @@ import SecurityNotifications from "@/components/vault/SecurityNotifications";
 import FullBackupPanel from "@/components/vault/FullBackupPanel";
 import PlaintextExportConfirmModal from "@/components/vault/PlaintextExportConfirmModal";
 import { useShallow } from "zustand/shallow";
-
-interface ImportedBackupItem {
-  data: VaultItemData;
-  folderId?: string | null;
-  favorite?: boolean;
-}
-
-interface ImportedBackupPayload {
-  version?: string;
-  folders?: Array<{ id: string; name: string }>;
-  items?: ImportedBackupItem[];
-}
 
 export default function SettingsPage() {
   const {
@@ -63,8 +54,6 @@ export default function SettingsPage() {
     masterKeyBase64,
     lastSyncedAt,
     isUsingOfflineData,
-    createFolder,
-    createVaultItem,
     currentDeviceId,
     runWithValidAccessToken,
     sharedVaults,
@@ -102,8 +91,6 @@ export default function SettingsPage() {
       masterKeyBase64: state.masterKeyBase64,
       lastSyncedAt: state.lastSyncedAt,
       isUsingOfflineData: state.isUsingOfflineData,
-      createFolder: state.createFolder,
-      createVaultItem: state.createVaultItem,
       currentDeviceId: state.currentDeviceId,
       runWithValidAccessToken: state.runWithValidAccessToken,
       sharedVaults: state.sharedVaults,
@@ -138,6 +125,10 @@ export default function SettingsPage() {
   const [showPlaintextCsvConfirm, setShowPlaintextCsvConfirm] = useState(false);
   const [importStatus, setImportStatus] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
+  const [importReview, setImportReview] = useState<ImportReview | null>(null);
+  const importGuard = useRef<(() => void) | null>(null);
+  const importRequest = useRef(0);
+  useEffect(() => { importRequest.current++; setImportReview(null); importGuard.current = null; }, [masterKeyBase64]);
   const [devices, setDevices] = useState<DeviceResponse[]>([]);
   const [auditEvents, setAuditEvents] = useState<AuditEventResponse[]>([]);
   const [securityLoading, setSecurityLoading] = useState(false);
@@ -290,115 +281,50 @@ export default function SettingsPage() {
     setTimeout(() => setExportStatus(null), 3000);
   };
 
-  const handleImportCSV = async (file: File) => {
-    setImporting(true);
-    setImportStatus(null);
-
-    try {
-      const text = await file.text();
-      const result = parseVaultCsv(text);
-
-      for (const item of result.items) {
-        await createVaultItem(item);
-      }
-
-      const skippedText = result.skipped > 0 ? `, ${result.skipped} satır atlandı` : "";
-      setImportStatus(`${result.items.length} öğe başarıyla içe aktarıldı (${result.provider} CSV${skippedText})`);
-    } catch (e) {
-      console.error("Import hatası:", e);
-      setImportStatus(e instanceof CsvImportError ? e.code : "error");
-    }
-
-    setImporting(false);
-  };
-
-  const handleImportJSON = async (file: File) => {
-    setImporting(true);
-    setImportStatus(null);
-    if (!masterKeyBase64) {
-      setImportStatus("error");
-      setImporting(false);
-      return;
-    }
-
-    try {
-      const text = await file.text();
-      const parsed = JSON.parse(text);
-
-      if (!parsed.encrypted || !parsed.ciphertext || !parsed.iv) {
-        setImportStatus("invalid_json");
-        setImporting(false);
-        return;
-      }
-
-      const masterKey = await importMasterKey(masterKeyBase64);
-      let decryptedData: ImportedBackupPayload;
-      try {
-        decryptedData = await decryptJSON(parsed.ciphertext, parsed.iv, masterKey);
-      } catch {
-        setImportStatus("decrypt_error");
-        setImporting(false);
-        return;
-      }
-
-      if (!decryptedData.items || !Array.isArray(decryptedData.items)) {
-        setImportStatus("invalid_json");
-        setImporting(false);
-        return;
-      }
-
-      const folderMap = new Map<string, string | null>();
-      const existingFolders = new Map(
-        folders.map((folder) => [folder.name.trim().toLowerCase(), folder.id])
-      );
-
-      for (const folder of decryptedData.folders ?? []) {
-        const normalizedName = folder.name.trim().toLowerCase();
-        const existingFolderId = existingFolders.get(normalizedName);
-
-        if (existingFolderId) {
-          folderMap.set(folder.id, existingFolderId);
-          continue;
-        }
-
-        const createdFolder = await createFolder(folder.name);
-        existingFolders.set(normalizedName, createdFolder.id);
-        folderMap.set(folder.id, createdFolder.id);
-      }
-
-      let imported = 0;
-
-      for (const item of decryptedData.items) {
-        const mappedFolderId = item.folderId
-          ? folderMap.get(item.folderId) ?? null
-          : null;
-
-        await createVaultItem(item.data, mappedFolderId, item.favorite ?? false);
-        imported++;
-      }
-
-      setImportStatus(`${imported} öğe başarıyla içe aktarıldı (JSON)`);
-    } catch (e) {
-      console.error("JSON Import hatası:", e);
-      setImportStatus("error");
-    }
-
-    setImporting(false);
-  };
-
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
+  const handleFileSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
     if (!file) return;
-
-    if (file.name.endsWith(".csv")) {
-      handleImportCSV(file);
-    } else if (file.name.endsWith(".json")) {
-      handleImportJSON(file);
-    } else {
-      setImportStatus("unsupported");
-    }
-
-    e.target.value = "";
+    const requestId = ++importRequest.current;
+    setImporting(true); setImportStatus(null); setImportReview(null);
+    const guard = useStore.getState().getVaultOperationGuard();
+    const assertCurrent = () => { guard(); if (importRequest.current !== requestId) throw new Error("Import cancelled"); };
+    try {
+      if (file.size > 24 * 1024 * 1024) throw new Error("Import limit");
+      const text = await file.text(); assertCurrent();
+      let payload: unknown;
+      if (file.name.toLowerCase().endsWith(".csv")) {
+        const result = parseVaultCsv(text);
+        const folderIds = new Map<string, string>();
+        for (const record of result.records) if (record.folderName && !folderIds.has(record.folderName)) folderIds.set(record.folderName, crypto.randomUUID());
+        payload = { folders: [...folderIds].map(([name, id]) => ({ id, name })),
+          items: result.records.map(record => ({ data: record.data, folderId: folderIds.get(record.folderName) ?? null, favorite: record.favorite })) };
+        if (result.skipped || result.ignoredColumns) setImportStatus(`${result.skipped} desteklenmeyen/boş satır ve ${result.ignoredColumns} desteklenmeyen sütun atlandı. Yalnızca desteklenen içerik içe aktarılacak; onaydan önce kontrol edin.`);
+      } else if (file.name.toLowerCase().endsWith(".json")) {
+        const parsed = JSON.parse(text);
+        if (parsed.encrypted !== true || typeof parsed.ciphertext !== "string" || typeof parsed.iv !== "string") throw new Error("Invalid import");
+        payload = await decryptJSON(parsed.ciphertext, parsed.iv, await importMasterKey(masterKeyBase64!));
+      } else throw new Error("Unsupported import");
+      assertCurrent();
+      const snapshot = await legacyImportSnapshot(payload, masterKeyBase64!, assertCurrent);
+      const current = await runWithValidAccessToken(token => { assertCurrent(); return api.backups.importState(token); });
+      const review = await reviewImport({ backupId: crypto.randomUUID(), snapshot }, current.data, masterKeyBase64!, assertCurrent);
+      assertCurrent(); importGuard.current = assertCurrent; setImportReview(review);
+    } catch (failure) {
+      if (requestId === importRequest.current) setImportStatus(failure instanceof CsvImportError ? failure.code : "error");
+    } finally { if (requestId === importRequest.current) setImporting(false); }
+  };
+  const commitImport = async (body: RestoreBackupInput) => {
+    const guard = importGuard.current;
+    if (!guard) throw new Error("Import cancelled");
+    guard(); setImporting(true);
+    try {
+      await runWithValidAccessToken(token => { guard(); return api.backups.restore(body, token, guard); });
+      guard();
+      setImportReview(null); importGuard.current = null;
+      setImportStatus(`${body.snapshot.items.length} öğe başarıyla içe aktarıldı`);
+      await useStore.getState().loadVault();
+    } finally { setImporting(false); }
   };
 
   const handleSetupLocalUnlock = async () => {
@@ -1544,6 +1470,7 @@ export default function SettingsPage() {
               ref={fileInputRef}
               type="file"
               accept=".csv,.json"
+              disabled={importing}
               onChange={handleFileSelect}
               className="hidden"
             />
@@ -1571,6 +1498,7 @@ export default function SettingsPage() {
               )}
             </button>
 
+            {importReview && <ImportReviewPanel key={importReview.body.backupId} review={importReview} busy={importing} commit={commitImport} cancel={() => { importRequest.current++; setImportReview(null); importGuard.current = null; setImportStatus(null); }} />}
             {importStatus && (
               <div
                 className={`mt-4 flex items-center gap-2 p-3 rounded-xl text-sm ${

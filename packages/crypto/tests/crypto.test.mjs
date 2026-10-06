@@ -114,3 +114,14 @@ test("auth hash is deterministic for same key and password", async () => {
 
   assert.equal(hashA, hashB);
 });
+
+test("import content uses fresh randomized ciphertext and retains credentials, tags and whitespace without key leakage", async () => {
+  const key = await deriveMasterKey("Synthetic-import-master", "synthetic@example.test");
+  const payload = { type: "login", title: "Synthetic", username: " User ", password: " Secret ", tags: ["work"], customFields: [{ id: "id", label: "Synthetic", value: "Concealed", concealed: true }] };
+  const first = await encryptJSON(payload, key), second = await encryptJSON(payload, key);
+  assert.notEqual(first.ciphertext, second.ciphertext); assert.notEqual(first.iv, second.iv);
+  assert.deepEqual(await decryptJSON(second.ciphertext, second.iv, key), payload);
+  assert.ok(!JSON.stringify(second).includes(payload.password));
+  assert.ok(!JSON.stringify(second).includes(await exportMasterKeyBase64(key)));
+  await assert.rejects(decryptJSON(first.ciphertext, second.iv, key));
+});

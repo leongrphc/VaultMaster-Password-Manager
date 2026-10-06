@@ -1,6 +1,6 @@
 import { securityNotification } from "../utils/security-notifications.js";
 import { durableLimit } from "../middleware/durable-limit.js";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { Router, type Request, type Response, type NextFunction } from "express";
 import { Prisma } from "@prisma/client";
 import { countBackup, MAX_BACKUP_SNAPSHOT_BYTES, MAX_CHUNKED_SNAPSHOT_BYTES, MAX_BACKUP_TRANSFER_BYTES, BACKUP_TRANSFER_CHUNK_BYTES, backupTransferSchema, backupTransferChunkSchema, personalSnapshotSchema, restoreBackupSchema } from "@vaultmaster/shared";
@@ -14,6 +14,32 @@ router.use((_req, res, next) => { res.setHeader("Cache-Control", "no-store"); ne
 const chunkLimiter = durableLimit("backup-chunks", 400, true);
 router.use("/transfers/:id/chunks", chunkLimiter);
 class BackupTooLarge extends Error {}
+
+const importSelect = { id: true, encryptedData: true, iv: true, folderId: true, favorite: true,
+  deletedAt: true, createdAt: true, updatedAt: true,
+  _count: { select: { versions: true, attachments: true } } } as const;
+async function importState(tx: Prisma.TransactionClient, userId: string) {
+  const sizes = await tx.$queryRaw<Array<{ bytes: bigint }>>`SELECT COALESCE(SUM(OCTET_LENGTH("encryptedData")), 0) AS bytes FROM vault_items WHERE "userId" = ${userId}`;
+  if (Number(sizes[0]!.bytes) > MAX_CHUNKED_SNAPSHOT_BYTES) throw new BackupTooLarge();
+  if (await tx.vaultItem.count({ where: { userId } }) > 10000 || await tx.folder.count({ where: { userId } }) > 10000) throw new BackupTooLarge();
+  const items = await tx.vaultItem.findMany({ where: { userId }, orderBy: { id: "asc" }, select: importSelect });
+  const folders = await tx.folder.findMany({ where: { userId }, orderBy: { id: "asc" },
+    select: { id: true, name: true, createdAt: true, updatedAt: true } });
+  const serialized = JSON.stringify({ items, folders });
+  if (Buffer.byteLength(serialized) > MAX_CHUNKED_SNAPSHOT_BYTES) throw new BackupTooLarge();
+  return { items, folders, state: createHash("sha256").update(serialized).digest("hex") };
+}
+router.get("/import-state", async (req, res, next) => {
+  try {
+    const data = await prisma.$transaction(tx => importState(tx, req.user!.userId),
+      { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead, timeout: 30000 });
+    res.json({ success: true, data });
+  } catch (error) {
+    if (error instanceof BackupTooLarge) { res.status(413).json({ success: false, error: "Import review size limit exceeded" }); return; }
+    next(error);
+  }
+});
+class ImportConflict extends Error {}
 
 router.get("/snapshot", async (req: Request, res: Response, next: NextFunction) => {
   try {
@@ -72,7 +98,8 @@ async function restore(req: Request, res: Response, next: NextFunction, chunked 
     if (Buffer.byteLength(JSON.stringify(req.body)) > (chunked ? MAX_BACKUP_TRANSFER_BYTES : MAX_BACKUP_SNAPSHOT_BYTES)) {
       res.status(413).json({ success: false, error: "Yedek geri yükleme boyut sınırını aşıyor." }); return;
     }
-    const { backupId, snapshot } = restoreBackupSchema.parse(req.body);
+    const { backupId, snapshot, review } = restoreBackupSchema.parse(req.body);
+    const importDigest = review ? createHash("sha256").update(JSON.stringify(req.body)).digest("hex") : null;
     if (Buffer.byteLength(JSON.stringify(snapshot)) > (chunked ? MAX_CHUNKED_SNAPSHOT_BYTES : MAX_BACKUP_SNAPSHOT_BYTES)) throw new BackupTooLarge();
     const userId = req.user!.userId;
     const counts = countBackup(snapshot);
@@ -81,16 +108,40 @@ async function restore(req: Request, res: Response, next: NextFunction, chunked 
       // response) cannot duplicate an already committed backup.
       await tx.$queryRaw`SELECT id FROM users WHERE id = ${userId} FOR UPDATE`;
       const previous = await tx.backupRestore.findUnique({ where: { userId_backupId: { userId, backupId } } });
-      if (previous) return { alreadyRestored: true, counts: previous.counts };
-      const folderIds = new Map(snapshot.folders.map(folder => [folder.id, randomUUID()]));
-      if (snapshot.folders.length) await tx.folder.createMany({ data: snapshot.folders.map(folder => ({ ...folder,
+      if (previous) {
+        const stored = previous.counts as unknown as Record<string, number | string>;
+        if (review && stored.importDigest !== importDigest) throw new ImportConflict();
+        const { importDigest: _digest, ...publicCounts } = stored;
+        return { alreadyRestored: true, counts: publicCounts };
+      }
+      const current = review ? await importState(tx, userId) : null;
+      if (review && current?.state !== review.state) throw new ImportConflict();
+      const sourceFolders = new Set(snapshot.folders.map(folder => folder.id));
+      const sourceItems = new Set(snapshot.items.map(item => item.id));
+      const replacementTargets = Object.values(review?.replacements ?? {});
+      if (review && (new Set(replacementTargets).size !== replacementTargets.length ||
+        (replacementTargets.length > 0 && !review.overwriteApproved) ||
+        Object.entries(review.folderMap).some(([source, target]) => !sourceFolders.has(source) || !current!.folders.some(folder => folder.id === target)) ||
+        Object.entries(review.replacements).some(([source, target]) => !sourceItems.has(source) || !current!.items.some(item => item.id === target && !item.deletedAt) ||
+          snapshot.items.some(item => item.id === source && (item.deletedAt || item.versions.length || item.attachments.length))))) throw new ImportConflict();
+      const folderIds = new Map(snapshot.folders.map(folder => [folder.id, review?.folderMap[folder.id] ?? randomUUID()]));
+      if (snapshot.folders.length) await tx.folder.createMany({ data: snapshot.folders.filter(folder => !review?.folderMap[folder.id]).map(folder => ({ ...folder,
         id: folderIds.get(folder.id)!, userId, createdAt: new Date(folder.createdAt), updatedAt: new Date(folder.updatedAt) })) });
       const items: Prisma.VaultItemCreateManyInput[] = [];
       const versions: Prisma.VaultItemVersionCreateManyInput[] = [];
       const attachments: Prisma.AttachmentCreateManyInput[] = [];
       for (const item of snapshot.items) {
         const { versions: history, attachments: files, ...fields } = item;
-        const itemId = randomUUID();
+        const target = review?.replacements[item.id];
+        const itemId = target ?? randomUUID();
+        if (target) {
+          const before = current!.items.find(entry => entry.id === target)!;
+          await tx.vaultItemVersion.create({ data: { vaultItemId: target, encryptedData: before.encryptedData,
+            iv: before.iv, folderId: before.folderId, favorite: before.favorite, reason: "import_before" } });
+          await tx.vaultItem.update({ where: { id: target }, data: { encryptedData: item.encryptedData,
+            iv: item.iv, folderId: item.folderId ? folderIds.get(item.folderId)! : null, favorite: item.favorite } });
+          continue;
+        }
         items.push({ ...fields, id: itemId, userId, folderId: item.folderId ? folderIds.get(item.folderId)! : null,
           createdAt: new Date(item.createdAt), updatedAt: new Date(item.updatedAt), deletedAt: item.deletedAt ? new Date(item.deletedAt) : null });
         versions.push(...history.map(version => ({ ...version, id: randomUUID(), vaultItemId: itemId,
@@ -101,12 +152,15 @@ async function restore(req: Request, res: Response, next: NextFunction, chunked 
       if (items.length) await tx.vaultItem.createMany({ data: items });
       if (versions.length) await tx.vaultItemVersion.createMany({ data: versions });
       if (attachments.length) await tx.attachment.createMany({ data: attachments });
-      await tx.backupRestore.create({ data: { userId, backupId, counts: { ...counts } } });
+      await tx.backupRestore.create({ data: { userId, backupId, counts: { ...counts, ...(importDigest ? { importDigest } : {}) } } });
       return { alreadyRestored: false, counts };
-    }, { timeout: 60000, maxWait: 10000 });
+    }, { timeout: 60000, maxWait: 10000, isolationLevel: review ? Prisma.TransactionIsolationLevel.Serializable : Prisma.TransactionIsolationLevel.ReadCommitted });
     await logAuditEvent({ userId, action: "vault.backup.restore", status: "success", metadata: { backupId, alreadyRestored: result.alreadyRestored } });
     res.json({ success: true, data: result });
   } catch (error) {
+    if (error instanceof ImportConflict || (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2034")) {
+      res.status(409).json({ success: false, error: "Import conflict. Review the current vault again; no changes committed." }); return;
+    }
     if (error instanceof BackupTooLarge) { res.status(413).json({ success: false, error: "Backup size limit exceeded" }); return; }
     next(error);
   }
