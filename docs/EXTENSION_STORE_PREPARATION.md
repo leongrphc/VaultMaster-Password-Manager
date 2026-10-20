@@ -215,3 +215,27 @@ page. Chromium identity/packaging remains unchanged. The
 archive commands, host/data permissions, temporary installation, update/restart
 evidence and signed AMO release prerequisites. This historical P1-5 evidence does
 not certify Firefox store acceptance or signed update delivery.
+
+## ZIP verifier hardening (20 October 2026, local checks)
+
+The verifier checks actual decompressed lengths and CRC32, complete consumption
+of compressed payloads, local/central header agreement, exact local offsets, and
+end-record directory size, offset, disk numbers and entry counts. Unexpected
+entries, extra fields, comments, trailing bytes and truncated records are rejected.
+These checks validate archive consistency; the inventory and adjacent checksum
+are not a publisher signature.
+
+Run the dependency-free regression suite with:
+
+```sh
+node --test apps/extension/tests/zip-validation.test.mjs
+```
+
+The synthetic suite passed 20 checks, including truncation at every byte boundary
+and corrupted headers with matching inventory data. After a frozen dependency
+install, all 107 extension tests, the Firefox reproducible-package test, 24 real
+Chromium extension checks and four documentation checks passed. Workspace
+typecheck, lint (two existing navigation warnings), and static/API/extension builds
+also passed. The additional offline-gate suite passed 33 of 34 checks; its symlink
+fixture failed with Windows `EPERM` before exercising that assertion. Hosted CI
+and production deployment are separate verification steps.
