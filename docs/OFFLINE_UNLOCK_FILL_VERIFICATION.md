@@ -64,4 +64,17 @@ exchange recovery drill was performed for this change. Those implementation
 acceptance checks remain mandatory if a later review permits a candidate. Existing
 safety-guard/unit results must not substitute for them. No production data,
 deployment, store publication, hosted CI result or independent audit is claimed.
-P2-5 was not started.
+P2-5 was not started by the original P2-4 verification above.
+
+## Windows test portability — 20 October 2026
+
+The tree-review regression is now split into source/directory additions,
+directory links, and file symlinks. Windows uses a real directory junction to
+verify link rejection without administrator privileges. Only file-symlink
+creation returning Windows `EPERM` is explicitly skipped; other failures still
+fail the suite. On systems with symlink privileges, including Linux CI, the
+file-symlink assertion runs normally.
+
+Local result: 35 passed, one explicitly skipped, zero failed. This changes test
+fixtures only; offline approval remains denied and runtime link rejection is
+unchanged.

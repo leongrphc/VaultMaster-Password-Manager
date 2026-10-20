@@ -82,7 +82,7 @@ for (const [index, path] of REVIEWED_PATHS.entries()) {
   });
 }
 
-test('added source, empty directory and symlink cannot evade the tree review', t => {
+test('added source and empty directory cannot evade the tree review', t => {
   const f = fixture(t);
   const added = join(f.root, 'apps/extension/src/new-offline.js');
   writeFileSync(added, 'unreviewed');
@@ -91,7 +91,26 @@ test('added source, empty directory and symlink cannot evade the tree review', t
   mkdirSync(added);
   assert.throws(() => checkOfflineDisabled(f.root), /reviewed source changed/);
   rmSync(added, { recursive: true });
-  symlinkSync(join(f.root, modelPath), added);
+});
+
+test('directory links cannot evade the tree review, including Windows junctions', t => {
+  const f = fixture(t);
+  const added = join(f.root, 'apps/extension/src/linked-directory');
+  // Junctions exercise real reparse-point rejection without Windows symlink privileges.
+  symlinkSync(join(f.root, 'docs'), added, process.platform === 'win32' ? 'junction' : 'dir');
+  assert.throws(() => checkOfflineDisabled(f.root), /rejects links/);
+});
+
+test('file symlinks cannot evade the tree review', t => {
+  const f = fixture(t);
+  const added = join(f.root, 'apps/extension/src/linked-file.js');
+  try {
+    symlinkSync(join(f.root, modelPath), added, 'file');
+  } catch (error) {
+    if (process.platform !== 'win32' || error.code !== 'EPERM') throw error;
+    t.skip('Windows file symlinks require Developer Mode or elevated symlink privileges; junction rejection is tested separately');
+    return;
+  }
   assert.throws(() => checkOfflineDisabled(f.root), /rejects links/);
 });
 
