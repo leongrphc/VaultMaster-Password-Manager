@@ -9,7 +9,8 @@ const documents = ['apps/extension/README.md', 'docs/TERMINOLOGY.md',
   'docs/EXTENSION_DOCUMENTATION.md', 'docs/EXTENSION_STORE_PREPARATION.md', 'docs/FIREFOX_SUPPORT.md',
   'docs/ADVANCED_AUTOFILL_SECURITY.md', 'docs/PASSWORD_CHANGE_AUTOFILL.md',
   'docs/IMPORT_CONFLICT_RESOLUTION.md', 'docs/HEALTH_REPORT_PRIVACY.md',
-  'docs/SENSITIVE_ACTION_SECURITY.md', 'ReadMe.md', 'DEPLOYMENT.md'];
+  'docs/SENSITIVE_ACTION_SECURITY.md', 'docs/RELEASE_RUNBOOK.md',
+  'CHANGELOG.md', 'ReadMe.md', 'DEPLOYMENT.md'];
 const github = 'https://github.com/leongrphc/VaultMaster-Password-Manager/blob/feature/p1-6-extension-docs-terminology/';
 function reviewCopy(text) {
   assert.doesNotMatch(text, /-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----|\b(?:ghp_|github_pat_|AKIA)[A-Za-z0-9_]{16,}|\beyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/);

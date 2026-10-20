@@ -164,3 +164,7 @@ Load `apps/extension/dist` using **Load unpacked**.
 Extension setup, permissions, trust limitations, save/update, troubleshooting and
 manual updates: [extension guide](apps/extension/README.md). Shared English/Turkish
 UI vocabulary: [glossary](docs/TERMINOLOGY.md).
+
+Release preparation and verification: [release runbook](docs/RELEASE_RUNBOOK.md).
+Versioned changes: [changelog](CHANGELOG.md). Current priorities:
+[development roadmap](CURRENT_DEVELOPMENT_ROADMAP.md).
